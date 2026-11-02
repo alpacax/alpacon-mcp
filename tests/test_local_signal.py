@@ -6,11 +6,13 @@ import base64
 import importlib
 import json
 import re
+import shutil
 import subprocess
 import threading
 from copy import deepcopy
 from html import escape
 from pathlib import Path
+from time import perf_counter
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -34,6 +36,7 @@ def signal_environment(monkeypatch):
         'WAYLAND_DISPLAY',
         'DBUS_SESSION_BUS_ADDRESS',
         'ALPACON_WORK_SESSION',
+        'SystemRoot',
     ):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setattr(local_signal, '_limiter', local_signal.RateLimiter())
@@ -188,7 +191,7 @@ async def test_console_link_rule_on_every_platform(
     monkeypatch.setattr(local_signal, 'is_headless', lambda: False)
     monkeypatch.setattr(local_signal, 'notify', platform_notify)
     monkeypatch.setattr(
-        'utils.local_signal.shutil.which', lambda name: '/usr/bin/notify-send'
+        'utils.local_signal.shutil.which', lambda name, **kwargs: '/usr/bin/notify-send'
     )
     monkeypatch.setattr('utils.local_signal.subprocess.run', run)
     signal = local_signal.Signal(
@@ -291,7 +294,7 @@ def test_exact_text_and_command_privacy(kind, title, body):
         ('psql "$(printf a b)"', 'psql'),
         ('bad=name', ''),
         ('a' * 65, ''),
-        ('/opt/雪/run', 'run'),
+        ('/opt/雪/run', ''),
         ('雪', ''),
     ],
 )
@@ -402,6 +405,7 @@ def test_no_opt_out_or_tty_gate():
             'DISPLAY',
             'WAYLAND_DISPLAY',
             'DBUS_SESSION_BUS_ADDRESS',
+            'SystemRoot',
         },
         'utils/notification_context.py': set(),
         'utils/common.py': {
@@ -485,6 +489,7 @@ def test_no_opt_out_or_tty_gate():
         'DBUS_SESSION_BUS_ADDRESS',
         'SSH_CONNECTION',
         'SSH_TTY',
+        'SystemRoot',
     }
 
 
@@ -494,7 +499,7 @@ def test_platform_invocation_keeps_values_as_data(monkeypatch, platform):
     monkeypatch.setattr('utils.local_signal.sys.platform', platform)
     monkeypatch.setattr(local_signal, 'is_headless', lambda: False)
     monkeypatch.setattr(
-        'utils.local_signal.shutil.which', lambda name: '/usr/bin/notify-send'
+        'utils.local_signal.shutil.which', lambda name, **kwargs: '/usr/bin/notify-send'
     )
     monkeypatch.setattr('utils.local_signal.subprocess.run', run)
     title, body = 'Alpacon: "title"', 'quotes " \\ ; $(touch unwanted) <>&'
@@ -523,7 +528,7 @@ def test_platform_invocation_keeps_values_as_data(monkeypatch, platform):
         ]
     else:
         assert command[:4] == [
-            'powershell.exe',
+            r'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe',
             '-NoProfile',
             '-NonInteractive',
             '-EncodedCommand',
@@ -551,7 +556,7 @@ def test_platform_skip(monkeypatch, reason):
         'utils.local_signal.sys.platform',
         'other' if reason == 'unsupported' else 'linux',
     )
-    monkeypatch.setattr('utils.local_signal.shutil.which', lambda name: None)
+    monkeypatch.setattr('utils.local_signal.shutil.which', lambda name, **kwargs: None)
     platform_notify('title', 'body')
     run.assert_not_called()
 
@@ -667,7 +672,7 @@ async def test_validated_arguments_and_http_refusal(
 
 
 @pytest.mark.asyncio
-async def test_session_title_name_and_batch_folding(monkeypatch, desktop_notifications):
+async def test_session_id_and_batch_folding(monkeypatch, desktop_notifications):
     now = [0.0]
     monkeypatch.setattr(local_signal, 'monotonic', lambda: now[0])
     with local_signal.stdio_transport():
@@ -701,7 +706,7 @@ async def test_session_title_name_and_batch_folding(monkeypatch, desktop_notific
     await drain_signals()
     bodies = [call.args[1] for call in desktop_notifications.call_args_list]
     assert (
-        'Work Session Maintenance is waiting for approval. Open the approval or wait for an approver.'
+        'Work Session s1 is waiting for approval. Open the approval or wait for an approver.'
     ) in bodies
     assert (
         'id on web-1 was refused by the risk gate and did not run. Session s1. +2 more.'
@@ -849,22 +854,22 @@ def test_rate_state_expiration_key_cap_and_pruning(monkeypatch):
     monkeypatch.setattr(local_signal, 'monotonic', lambda: now[0])
     limiter = local_signal.RateLimiter()
     limiter._windows = {
-        ('old', 'denied'): (0, 0),
-        ('folded', 'denied'): (0, 2),
-        ('future', 'denied'): (now[0] + 100, 4),
+        ('old', 'denied', '', ''): (0, 0),
+        ('folded', 'denied', '', ''): (0, 2),
+        ('future', 'denied', '', ''): (now[0] + 100, 4),
     }
     assert limiter.take('future', 'denied') == 0
-    assert ('old', 'denied') not in limiter._windows
-    assert ('folded', 'denied') not in limiter._windows
+    assert ('old', 'denied', '', '') not in limiter._windows
+    assert ('folded', 'denied', '', '') not in limiter._windows
     assert limiter.take('folded', 'denied') == 0
     assert limiter.take('s' * 1000, 'denied') == 0
     assert limiter.take('s' * 128, 'denied') is None
     assert max(len(key[0]) for key in limiter._windows) <= 128
     now[0] += 24 * 60 * 60 + 1
     limiter.take('new', 'paused')
-    assert ('future', 'denied') not in limiter._windows
-    assert ('folded', 'denied') not in limiter._windows
-    assert ('s' * 128, 'denied') not in limiter._windows
+    assert ('future', 'denied', '', '') not in limiter._windows
+    assert ('folded', 'denied', '', '') not in limiter._windows
+    assert ('s' * 128, 'denied', '', '') not in limiter._windows
     assert limiter.take('s' * 128, 'denied') == 0
 
 
@@ -1202,7 +1207,7 @@ def test_platform_cleans_controls_and_linux_markup(monkeypatch, platform):
     monkeypatch.setattr('utils.local_signal.sys.platform', platform)
     monkeypatch.setattr(local_signal, 'is_headless', lambda: False)
     monkeypatch.setattr(
-        'utils.local_signal.shutil.which', lambda name: '/usr/bin/notify-send'
+        'utils.local_signal.shutil.which', lambda name, **kwargs: '/usr/bin/notify-send'
     )
     monkeypatch.setattr('utils.local_signal.subprocess.run', run)
     controls = ''.join(
@@ -1477,15 +1482,7 @@ async def test_history_sudo_guidance_preserves_result(
     await drain_signals()
     assert json.dumps(result).encode() == json.dumps(baseline).encode()
     assert repeated == baseline
-    if code == 'SUDO_APPROVAL_REQUIRED':
-        desktop_notifications.assert_called_once_with(
-            'Alpacon: approval pending',
-            'sudo on web-1 as operator is waiting for approval. Session session-1. '
-            'Open the approval or wait for an approver.',
-            '',
-        )
-    else:
-        desktop_notifications.assert_not_called()
+    desktop_notifications.assert_not_called()
 
 
 def test_command_controls_are_delimiters_before_cleaning():
@@ -1497,3 +1494,230 @@ def test_command_controls_are_delimiters_before_cleaning():
     assert signal is not None
     assert signal.argv0 == 'echo'
     assert 'SECRET' not in signal.text()[1]
+
+
+@pytest.mark.parametrize(
+    'separator', ['\u00a0', '\u2003', '\u3000', '\u0085', '\x1c', '\u2028']
+)
+def test_argv0_omits_non_ascii_and_controls(separator):
+    assert local_signal.command_argv0(f'TOKEN=abc{separator}sk_live_X') == ''
+    assert local_signal.command_argv0(f'echo{separator}secret') == ''
+    assert local_signal.command_argv0(f'{separator}echo') == ''
+
+
+def test_argv0_input_limit_and_linear_assignment_scan():
+    command = 'X=a ' * 256 + 'echo'
+    assert local_signal.command_argv0(command) == 'echo'
+    assert local_signal.command_argv0(' ' * 4092 + 'echo') == 'echo'
+    assert local_signal.command_argv0(' ' * 4093 + 'echo') == ''
+    command = 'X=a ' * (128 * 1024) + 'echo'
+    started = perf_counter()
+    assert local_signal.command_argv0(command) == ''
+    assert perf_counter() - started < 0.05
+
+
+@pytest.mark.parametrize(
+    'suffix',
+    [
+        '/a b https://evil.example/x',
+        '/\u00a0',
+        '/\u2028',
+        '/a#fragment',
+        '/a#',
+        '/caf\u00e9',
+    ],
+)
+def test_console_link_rejects_raw_display_characters(suffix):
+    origin = 'https://example.ap1.alpacon.io'
+    assert (
+        local_signal.Signal(
+            'denied', console_url=origin + suffix, workspace_url=origin
+        ).console_url
+        == ''
+    )
+
+
+@pytest.mark.parametrize(
+    'session', ['a b', ' s1 ', 'https://example.com', 'a' * 65, '雪']
+)
+def test_session_clause_omits_invalid_id(session):
+    assert (
+        local_signal.Signal('paused', session=session).text()
+        == local_signal.Signal('paused').text()
+    )
+    signal = local_signal._from_result(
+        {'status': 'pending_approval', 'work_session_id': session},
+        {},
+        'execute_command',
+    )
+    assert signal is not None
+    assert signal.session == ''
+
+
+def test_work_session_signal_uses_id_instead_of_title():
+    signal = local_signal._from_result(
+        {
+            'status': 'pending_approval',
+            'data': {'id': 'session-1', 'title': 'Maintenance title'},
+        },
+        {},
+        'work_session_create',
+    )
+    assert signal is not None
+    assert signal.session == 'session-1'
+    assert 'Maintenance' not in signal.text()[1]
+
+
+def test_server_and_account_display_limits():
+    signal = local_signal.Signal('denied', server='雪' * 65, account='a' * 65)
+    assert signal.server == '雪' * 64
+    assert signal.account == 'a' * 64
+    assert len(signal.text()[1]) <= 256
+    assert (
+        local_signal.Signal(
+            'denied', server='https://example.com', account='http://example.com'
+        ).text()
+        == local_signal.Signal('denied').text()
+    )
+
+
+@pytest.mark.parametrize(
+    'character', ['\x85', '\u061c', '\u200b', '\ufeff', '\u00ad', '\u2028', '\u2029']
+)
+def test_all_display_values_strip_unicode_controls(character):
+    assert local_signal.clean(f'a{character}b') == 'ab'
+    signal = local_signal.Signal(
+        'denied',
+        argv0=f'e{character}cho',
+        server=f'we{character}b',
+        account=f'ro{character}ot',
+        gate=f'ri{character}sk',
+        session=f's{character}1',
+    )
+    assert (
+        signal.text()
+        == local_signal.Signal(
+            'denied',
+            argv0='echo',
+            server='web',
+            account='root',
+            gate='risk',
+            session='s1',
+        ).text()
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('session_id', ['', 'session-1'])
+async def test_rate_limit_is_scoped_to_workspace_and_region(
+    desktop_notifications,
+    session_id,
+):
+    with local_signal.stdio_transport():
+        for workspace, region in [
+            ('one', 'ap1'),
+            ('two', 'ap1'),
+            ('one', 'us1'),
+            ('one', 'ap1'),
+        ]:
+            local_signal.signal_result(
+                {'status': 'error', 'status_code': 403, 'gate': 'risk'},
+                {
+                    'workspace': workspace,
+                    'region': region,
+                    'work_session_id': session_id,
+                },
+                tool_name='execute_command',
+            )
+    await drain_signals()
+    assert desktop_notifications.call_count == 3
+
+
+def test_linux_notifier_ignores_path(monkeypatch, tmp_path):
+    fake = tmp_path / 'notify-send'
+    fake.write_text('#!/bin/sh\nexit 1\n')
+    fake.chmod(0o755)
+    monkeypatch.setenv('PATH', str(tmp_path))
+    monkeypatch.setattr('utils.local_signal.sys.platform', 'linux')
+    monkeypatch.setattr(local_signal, 'is_headless', lambda: False)
+    run = Mock()
+    which = Mock(wraps=shutil.which)
+    monkeypatch.setattr('utils.local_signal.shutil.which', which)
+    monkeypatch.setattr('utils.local_signal.subprocess.run', run)
+    platform_notify('title', 'body')
+    which.assert_called_once_with('notify-send', path='/usr/bin:/bin')
+    if run.called:
+        assert run.call_args.args[0][0] in ('/usr/bin/notify-send', '/bin/notify-send')
+
+
+@pytest.mark.parametrize(
+    'system_root, expected',
+    [
+        (None, r'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'),
+        ('', r'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'),
+        ('.', r'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'),
+        (r'C:Windows', r'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'),
+        (r'\Windows', r'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'),
+        (r'D:\Windows', r'D:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'),
+    ],
+)
+def test_windows_notifier_uses_system_root(monkeypatch, system_root, expected):
+    if system_root is not None:
+        monkeypatch.setenv('SystemRoot', system_root)
+    monkeypatch.setattr('utils.local_signal.sys.platform', 'win32')
+    monkeypatch.setattr(local_signal, 'is_headless', lambda: False)
+    run = Mock()
+    monkeypatch.setattr('utils.local_signal.subprocess.run', run)
+    platform_notify('title', 'body')
+    assert run.call_args.args[0][0] == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('platform', ['darwin', 'linux', 'win32'])
+async def test_console_link_is_reserialized_for_every_display(monkeypatch, platform):
+    origin = 'https://example.ap1.alpacon.io'
+    url = origin + '/approval'
+    signal = local_signal.Signal(
+        'denied',
+        console_url='HTTPS://example.ap1.alpacon.io/approval?',
+        workspace_url=origin,
+    )
+    assert signal.console_url == url
+    title, body = signal.text()
+    assert body.endswith(' ' + url)
+    monkeypatch.setattr('utils.local_signal.sys.platform', platform)
+    monkeypatch.setattr(local_signal, 'is_headless', lambda: False)
+    monkeypatch.setattr(local_signal, 'notify', platform_notify)
+    monkeypatch.setattr(
+        'utils.local_signal.shutil.which', lambda name, **kwargs: '/usr/bin/notify-send'
+    )
+    run = Mock()
+    monkeypatch.setattr('utils.local_signal.subprocess.run', run)
+    await local_signal._deliver(title, body, signal)
+    command = run.call_args.args[0]
+    if platform == 'win32':
+        script = base64.b64decode(command[-1]).decode('utf-16-le')
+        payload = re.search(r"FromBase64String\('([^']+)'\)", script)
+        assert payload is not None
+        data = json.loads(base64.b64decode(payload[1]))
+        assert data['console_url'] == url
+        assert data['body'] == body
+    else:
+        assert command[-1] == body
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('tool_name', ['list_commands', 'list_servers'])
+@pytest.mark.parametrize(
+    'result',
+    [
+        {'status': 'pending_approval'},
+        {'status': 'error', 'code': 'session_paused'},
+        {'sudo_denial': {'status': 'pending_approval'}},
+    ],
+)
+async def test_list_tools_never_signal(desktop_notifications, tool_name, result):
+    with local_signal.stdio_transport():
+        local_signal.signal_result(result, {}, tool_name=tool_name)
+    await drain_signals()
+    desktop_notifications.assert_not_called()

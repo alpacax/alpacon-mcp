@@ -5,6 +5,7 @@ import base64
 import ctypes
 import ipaddress
 import json
+import ntpath
 import os
 import re
 import shutil
@@ -17,7 +18,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, fields
 from time import monotonic
 from typing import Literal, get_args
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 from xml.sax.saxutils import escape
 
 import httpx
@@ -72,10 +73,10 @@ _REFUSAL_GATES = frozenset(
 )
 _WORK_SESSION_GATE_CODES = frozenset(get_args(WorkSessionGateCode.__value__))
 _APPROVAL_LAPSES = frozenset({'approval_expired', 'approval_cancelled'})
-_CONTROL_CHARACTERS = re.compile(
-    r'[\x00-\x1f\x7f\u200e\u200f\u202a-\u202e\u2066-\u2069]'
-)
 _ARGV0 = re.compile(r'[A-Za-z0-9._+-]{1,64}')
+_ASSIGNMENT = re.compile(r'[A-Za-z_][A-Za-z0-9_]*=')
+_SESSION_ID = re.compile(r'[A-Za-z0-9_-]{1,64}')
+_WORD_SPACE = ' \t\n\r'
 _MAX_BODY = 256
 
 
@@ -84,7 +85,11 @@ def is_stdio() -> bool:
 
 
 def clean(value: str) -> str:
-    return _CONTROL_CHARACTERS.sub('', value)
+    return ''.join(
+        character
+        for character in value
+        if unicodedata.category(character) not in ('Cc', 'Cf', 'Zl', 'Zp')
+    )
 
 
 def _normalized_host(host: str) -> str:
@@ -121,19 +126,22 @@ def _origin(value: str) -> tuple[str, str, int]:
 
 
 def _console_url(value: str, workspace_url: str, base_domain: str = '') -> str:
+    if not value.isascii() or '#' in value or any(c.isspace() for c in value):
+        return ''
     try:
         scheme, host, port = _origin(value)
+        serialized = urlunsplit(urlsplit(value))
         workspace_scheme, workspace_host, workspace_port = _origin(workspace_url)
         if scheme != workspace_scheme:
             return ''
         if host == workspace_host and port == workspace_port:
-            return value
+            return serialized
         if base_domain:
             domain = _normalized_host(base_domain)
             if (host == domain or host.endswith('.' + domain)) and port == (
                 443 if scheme == 'https' else 80
             ):
-                return value
+                return serialized
         return ''
     except (ValueError, httpx.InvalidURL):
         return ''
@@ -149,13 +157,28 @@ def stdio_transport() -> Iterator[None]:
 
 
 def command_argv0(command: str) -> str:
-    remaining = command.lstrip()
-    while remaining:
-        assignment = bool(re.match(r'[A-Za-z_][A-Za-z0-9_]*=', remaining))
+    if (
+        len(command) > 4096
+        or len(command.encode('utf-8', errors='surrogatepass')) > 4096
+    ):
+        return ''
+    index = 0
+    while index < len(command):
+        if command[index] in _WORD_SPACE:
+            index += 1
+            continue
+        start = index
+        assignment = bool(_ASSIGNMENT.match(command, index))
         quote = ''
         escaped = False
-        for index, character in enumerate(remaining):
-            if character == '`' or remaining.startswith(('$(', '${'), index):
+        while index < len(command):
+            character = command[index]
+            if (not character.isascii()) or (
+                (ord(character) < 32 or ord(character) == 127)
+                and character not in _WORD_SPACE
+            ):
+                return ''
+            if character == '`' or command.startswith(('$(', '${'), index):
                 return ''
             if quote and character in '"\'' and (escaped or character != quote):
                 return ''
@@ -172,18 +195,19 @@ def command_argv0(command: str) -> str:
                 if assignment:
                     return ''
                 break
-            elif character.isspace():
-                if assignment:
-                    remaining = remaining[index:].lstrip()
+            elif character in _WORD_SPACE:
                 break
+            index += 1
         else:
             if assignment:
                 return ''
         if not assignment:
-            break
-    word = re.split(r"[\s;|&<>()$`'\"\\]", remaining, maxsplit=1)[0]
-    basename = word.rsplit('/', 1)[-1]
-    return basename if _ARGV0.fullmatch(basename) else ''
+            word = re.split(
+                r"[ \t\n\r;|&<>()$`'\"\\]", command[start:index], maxsplit=1
+            )[0]
+            basename = word.rsplit('/', 1)[-1]
+            return basename if _ARGV0.fullmatch(basename) else ''
+    return ''
 
 
 @dataclass(frozen=True)
@@ -207,6 +231,11 @@ class Signal:
         )
         for field in fields(self):
             object.__setattr__(self, field.name, clean(getattr(self, field.name)))
+        if not _SESSION_ID.fullmatch(self.session):
+            object.__setattr__(self, 'session', '')
+        for name in ('server', 'account'):
+            value = getattr(self, name)
+            object.__setattr__(self, name, '' if '://' in value else value[:64])
 
     def text(self, folded: int = 0) -> tuple[str, str]:
         if self.kind == 'paused':
@@ -250,16 +279,18 @@ class Signal:
 
 class RateLimiter:
     def __init__(self) -> None:
-        self._windows: dict[tuple[str, SignalKind], tuple[float, int]] = {}
+        self._windows: dict[tuple[str, SignalKind, str, str], tuple[float, int]] = {}
 
-    def take(self, session_id: str, kind: SignalKind) -> int | None:
+    def take(
+        self, session_id: str, kind: SignalKind, workspace: str = '', region: str = ''
+    ) -> int | None:
         now = monotonic()
         self._windows = {
             key: value
             for key, value in self._windows.items()
             if now - value[0] <= 24 * 60 * 60
         }
-        key = (session_id[:128], kind)
+        key = (session_id[:128], kind, workspace, region)
         previous = self._windows.get(key)
         if previous is not None:
             started, folded = previous
@@ -331,8 +362,14 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
 [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('{{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}}\\WindowsPowerShell\\v1.0\\powershell.exe').Show($toast)
 """
     encoded = base64.b64encode(script.encode('utf-16-le')).decode('ascii')
+    system_root = os.environ.get('SystemRoot') or r'C:\Windows'
+    if not ntpath.isabs(system_root) or not ntpath.splitdrive(system_root)[0]:
+        system_root = r'C:\Windows'
     return [
-        'powershell.exe',
+        ntpath.join(
+            system_root,
+            r'System32\WindowsPowerShell\v1.0\powershell.exe',
+        ),
         '-NoProfile',
         '-NonInteractive',
         '-EncodedCommand',
@@ -367,7 +404,7 @@ def notify(
                 body,
             ]
         elif sys.platform.startswith('linux'):
-            executable = shutil.which('notify-send')
+            executable = shutil.which('notify-send', path='/usr/bin:/bin')
             if executable is None:
                 return
             command = [
@@ -401,8 +438,8 @@ def _string(fields: Mapping[str, object], key: str) -> str:
     return clean(value).strip() if isinstance(value, str) else ''
 
 
-def _raw_console_url(fields: Mapping[str, object]) -> str:
-    value = fields.get('console_url')
+def _raw_string(fields: Mapping[str, object], key: str) -> str:
+    value = fields.get(key)
     return value if isinstance(value, str) else ''
 
 
@@ -412,6 +449,8 @@ def _from_result(
     tool_name: str,
     console_url: str = '',
 ) -> Signal | None:
+    if tool_name.startswith('list_'):
+        return None
     data = result.get('data')
     details = result.get('details')
     row = data if isinstance(data, dict) else details
@@ -436,7 +475,14 @@ def _from_result(
     if status == 'error' and code == 'session_paused':
         kind: SignalKind = 'paused'
     elif status == 'pending_approval' or (
-        isinstance(sudo_denial, dict)
+        tool_name
+        in {
+            'execute_command',
+            'execute_command_multi_server',
+            'execute_file',
+            'state_command_purpose',
+        }
+        and isinstance(sudo_denial, dict)
         and sudo_denial.get('status') == 'pending_approval'
     ):
         kind = 'approval_pending'
@@ -462,22 +508,26 @@ def _from_result(
     else:
         return None
 
-    session_id = _string(result, 'work_session_id') or _string(result, 'session_id')
-    session_id = session_id or _string(arguments, 'work_session_id')
-    session_id = session_id or _string(row, 'work_session')
+    session_id = _raw_string(result, 'work_session_id') or _raw_string(
+        result, 'session_id'
+    )
+    session_id = session_id or _raw_string(arguments, 'work_session_id')
+    session_id = session_id or _raw_string(row, 'work_session')
     if tool_name.startswith('work_session_'):
-        session_id = session_id or _string(arguments, 'session_id')
+        session_id = session_id or _raw_string(arguments, 'session_id')
     session_id = session_id or resolve_work_session_id(None) or ''
-    session = session_id
     if tool_name.startswith('work_session_') and isinstance(data, dict):
-        session_id = _string(data, 'id') or session_id
-        session = _string(data, 'title') or session_id
+        session_id = _raw_string(data, 'id') or session_id
     server = _string(result, 'server_name') or _string(row, 'server_name')
     server_object = row.get('server')
     if not server and isinstance(server_object, dict):
         server = _string(server_object, 'name')
     command = arguments.get('command') or result.get('command') or row.get('command')
-    console_url = _raw_console_url(result) or _raw_console_url(row) or console_url
+    console_url = (
+        _raw_string(result, 'console_url')
+        or _raw_string(row, 'console_url')
+        or console_url
+    )
     workspace, region = arguments.get('workspace'), arguments.get('region')
     workspace_url = ''
     if console_url and isinstance(workspace, str) and isinstance(region, str):
@@ -488,7 +538,7 @@ def _from_result(
         server=server,
         account=_string(arguments, 'username') or _string(row, 'username'),
         gate=gate,
-        session=session,
+        session=session_id,
         session_id=session_id,
         console_url=console_url,
         workspace_url=workspace_url,
@@ -526,7 +576,12 @@ def signal_result(
         link = console_links.get(id(result)) if console_links else None
         signal = _from_result(result, arguments, tool_name, link[1] if link else '')
         if signal is not None:
-            folded = _limiter.take(signal.session_id, signal.kind)
+            folded = _limiter.take(
+                signal.session_id,
+                signal.kind,
+                _string(arguments, 'workspace'),
+                _string(arguments, 'region'),
+            )
             if folded is not None:
                 task = asyncio.create_task(_deliver(*signal.text(folded), signal))
                 _tasks.add(task)
@@ -538,11 +593,5 @@ def signal_result(
                 signal_result(
                     entry, arguments, tool_name=tool_name, console_links=console_links
                 )
-        if tool_name == 'list_commands':
-            data = result.get('data')
-            entries = data.get('results') if isinstance(data, dict) else None
-            for entry in entries if isinstance(entries, list) else ():
-                if isinstance(entry, dict):
-                    signal_result({'data': entry}, arguments, tool_name=tool_name)
     except Exception:
         logger.debug('Desktop notification skipped: result hook failed')
