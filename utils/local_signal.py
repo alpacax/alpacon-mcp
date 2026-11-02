@@ -286,12 +286,14 @@ def is_headless() -> bool:
         return True
     if 'SSH_CONNECTION' in os.environ or 'SSH_TTY' in os.environ:
         return True
-    if sys.platform.startswith('linux'):
+    # A plain str so mypy checks every branch on every platform it runs on.
+    platform: str = sys.platform
+    if platform.startswith('linux'):
         return not (
             (os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY'))
             and os.environ.get('DBUS_SESSION_BUS_ADDRESS')
         )
-    return sys.platform == 'win32' and _windows_session_zero()
+    return platform == 'win32' and _windows_session_zero()
 
 
 def _powershell_toast(title: str, body: str, console_url: str) -> list[str]:
