@@ -25,12 +25,10 @@ guidance; only rules already covered by stack review criteria are omitted.
 - **MCP**: Flag another capitalization of MCP when referring to Model Context
   Protocol. The result misnames the protocol in documentation or user-facing
   text.
-- **Imports**: Flag a function/method-local import without a one-line comment
-  identifying a real circular import, an optional/heavy dependency, or a
-  documented ordering hazard. The result defers dependency loading without
-  recording why it is necessary, so a reviewer cannot distinguish a required
-  ordering constraint from an accidental local import. Imports without such
-  a reason belong at the top of the file.
+- **Imports**: Flag a function- or method-local import with no one-line comment
+  giving the reason (circular import, optional or heavy dependency, ordering
+  hazard): the hidden import cycle or load cost goes unexplained and gets
+  tidied into a break.
 - **English artifacts**: Flag non-English code comments, documentation,
   commit messages, PR titles or descriptions, docstrings, or variable,
   function, and class names. The result introduces non-English content into
