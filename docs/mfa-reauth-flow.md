@@ -7,6 +7,7 @@ This document describes how the MCP server answers Alpacon's MFA refusals: a ste
 Some Alpacon workspaces require MFA for sensitive actions (`websh`, `webftp`, `command`). The MCP server does not decide that itself: it calls Alpacon, and Alpacon's own gate refuses before the view runs. What happens next depends on the 401 code, in remote mode (`ALPACON_MCP_AUTH_ENABLED=true`, a JWT caller):
 
 - `auth_mfa_required` (an action asked for a fresh MFA): the tool call returns `status="mfa_required"` with Alpacon's MFA link. The same token passes on a retry, because Alpacon credits the browser step-up to the token's client instance.
+- A 2026-07-28 request that declares `elicitation.url` gets that link as a URL elicitation (`InputRequiredResult`) instead, unless the result carries `partial_result` or `already_sent`. Its `accept` is consent, not completion, so the retry polls `/api/auth0/mfa/completion/` before calling Alpacon again, as Case 2b shows. Every ask and the final result fetch a new link, because the `step_up_ticket` Alpacon puts in it redeems once and expires in 10 minutes.
 - `auth_token_mfa_missing` (the token lacks the workspace's sign-in MFA, which a refresh never adds): the request answers 403 `insufficient_scope` and the client re-authenticates through the two-stage OAuth flow below.
 
 The re-login challenge is a 403, not a 401. MCP clients answer a 401 by refreshing the token first and drop the challenge's scope while the refresh succeeds, so a 401 never reaches `/oauth/authorize` and the refreshed token still lacks MFA. On `insufficient_scope` the TypeScript SDK and Claude's clients skip the refresh and authorize with the union of the granted and challenged scopes.
@@ -55,6 +56,43 @@ sequenceDiagram
 The link fetch answers an object whose only key is `detail` (Alpacon sends `{"detail": "MFA is already done."}`, read by shape so a translated text still counts) when it already holds a fresh MFA for the token; the result then carries `mfa_url: null` and the same retry instruction. Any other answer, or a failed fetch, also gives `mfa_url: null` and asks for a retry once the service recovers, since MFA done in the web console credits that browser, not this connection. Any other 401 on the link fetch ends the call like an upstream 401 elsewhere: the 401 `invalid_token` challenge, or Case 3's 403 when the code is `auth_token_mfa_missing`; an `auth_mfa_required` there counts as a failed fetch.
 
 A tool that fans out to several calls and swallows a refusal still answers `mfa_required`: the step-up is recorded in a per-call holder (`utils/mfa_step_up.py`) at the moment the 401 arrives, and the outermost `with_error_handling` reads it. When a tool that is not read-only caught the refusal and returned normally, the result adds `partial_result`, the tool's own result as returned (it may hold no successful part), and asks for a retry of the refused parts only, never the whole call. When the refusal propagated instead, the holder also says whether a POST or PATCH of the call had already succeeded: if so, the result lists them in `already_sent` and asks to check what they did before retrying what did not run, since a whole retry would repeat them (a command submitted before its result poll was refused would run twice); if not, it asks for the whole call again with the same arguments. A read-only tool always asks for the whole call to be retried. Once a step-up is recorded, every further request the tool itself makes, a retry after backoff included, raises before it is sent (the link fetch above runs after the holder is released), checked after the wait for the connection pool so a sibling's refusal during that wait still counts.
+
+### Case 2b: step-up answered with a URL elicitation
+
+```mermaid
+sequenceDiagram
+    participant C as MCP Client (2026-07-28, elicitation.url)
+    participant S as MCP Server
+    participant A as Alpacon API
+    participant B as Browser
+
+    C->>S: Tool Call (workspace=ws2)
+    S->>A: API call (JWT)
+    A-->>S: 401 auth_mfa_required
+    S->>A: GET /api/auth0/mfa/?location=cli&workspace=ws2
+    A-->>S: mfa_url
+    S-->>C: InputRequiredResult: elicitation/create (mode=url, url=mfa_url), requestState (asked=1)
+
+    C->>B: User accepts, page opens
+    C->>S: Tool Call (retry, inputResponses: accept, requestState)
+    loop up to 10 seconds
+        S->>A: GET /api/auth0/mfa/completion/
+        A-->>S: completed
+    end
+    alt completed, or no verdict
+        S->>A: API call (same JWT)
+        A-->>S: 200 OK
+        S-->>C: Tool Result
+    else still not completed, declined, or cancelled
+        S->>A: GET /api/auth0/mfa/?location=cli&workspace=ws2
+        A-->>S: new mfa_url
+        alt accepted and fewer than 3 asks so far
+            S-->>C: InputRequiredResult again, new mfa_url (asked + 1)
+        else
+            S-->>C: Tool Result: status="mfa_required", new mfa_url
+        end
+    end
+```
 
 ### Case 3: `auth_token_mfa_missing`, re-login
 
@@ -121,7 +159,9 @@ One id per grant means one MFA record per MCP client installation: a step-up in 
 |-----------|------|------|
 | Upstream 401 detection | `utils/http_client.py` | Records a step-up on `auth_mfa_required`; signals MFA re-auth on `auth_token_mfa_missing` |
 | MFA step-up | `utils/mfa_step_up.py` | Per-call holder, `MfaStepUpRequired`, the link fetch and the `mfa_required` result |
-| Result assembly | `utils/decorators.py` | The outermost `with_error_handling` calls `step_up_result` |
+| Result assembly | `utils/decorators.py` | The outermost `with_error_handling` calls `step_up_result`, asks `unfinished` first on an elicitation retry, and turns a whole-retry result into an elicitation |
+| Tool call round | `utils/client_surfaces.py` | `bind_tool_call_round` binds each `tools/call`'s declared surfaces, `requestState` and `inputResponses` |
+| URL elicitation | `utils/mfa_elicitation.py` | Builds the `InputRequiredResult` for a whole-retry `mfa_required`, polls completion on the retry, and bounds the asks |
 | Auth error middleware | `utils/auth_error_middleware.py` | Answers an MFA signal with 403 `insufficient_scope` and `mfa` in the scope |
 | OAuth proxy (authorize) | `utils/oauth.py` | Routes to MFA or regular audience based on scope |
 | OAuth proxy (callback) | `utils/oauth.py` | Handles two-stage callback (MFA → regular) |
@@ -138,4 +178,4 @@ The legacy Auth0 environment variable names still work as fallbacks and will be 
 |---------------------|-------------|---------|
 | `AUTH0_ALPACON_MFA_AUDIENCE` | Auth0 MFA API audience | `https://{domain}/mfa/` |
 | `AUTH0_ALPACON_NAMESPACE` | JWT custom claim namespace | `https://alpacon.io/` |
-| `ALPACON_MCP_GRANT_SECRET` | Key that seals codes and refresh tokens (optional; derived from the client secret otherwise) | `openssl rand -hex 32` |
+| `ALPACON_MCP_GRANT_SECRET` | Key that seals codes, refresh tokens and a URL elicitation's `requestState` (optional; derived from the client secret otherwise) | `openssl rand -hex 32` |

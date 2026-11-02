@@ -121,6 +121,7 @@ Things the code will not tell you at a glance:
   fetch runs after the holder is released), so a refusal
   is not followed by more side effects. There is no MFA pre-check: Alpacon
   decides. `auth_token_mfa_missing` keeps the 403 re-login.
+- **A 2026-07-28 request declaring `elicitation.url` gets the whole-retry `mfa_required` as an `InputRequiredResult`** (#427). The outermost `with_error_handling` builds it, so a tool calling a tool still gets the link. The retry's `requestState` and `inputResponses` reach it through `utils/client_surfaces.py`'s `bind_tool_call_round`, and it answers with a freshly fetched link, without calling the tool, until Alpacon's completion poll stops saying MFA is not done; the link's ticket redeems once, so a sealed one is never reused. The `requestState` is sealed under a grant-secret key so any replica opens it, or per process when no grant or client secret is set.
 - **The code and refresh token a remote client holds are sealed by this
   server**, carrying the device id minted for that grant. Rotating
   `ALPACON_MCP_GRANT_SECRET` (or `AUTH0_ALPACON_LOGIN_CLIENT_SECRET`, which it is derived
