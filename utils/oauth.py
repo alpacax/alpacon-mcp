@@ -53,6 +53,7 @@ _LEDGER_SCOPE_PREFIX = 'ledger:'
 
 # Domain-separates the ledger grant key from the grant seal's HMAC key.
 _LEDGER_KEY_INFO = b'alpacon-mcp-ledger-key-v1'
+_REQUEST_STATE_KEY_INFO = b'alpacon-mcp-request-state-v1'
 
 # Holds the encrypted ledger token from the ledger callback to the final one,
 # so it never rides a URL to Auth0. Same attributes as the nonce cookie.
@@ -416,6 +417,19 @@ def ledger_grant_key() -> bytes:
     """AES-256 key for ledger grants, derived from the grant secret so every replica
     reads what another wrapped; rotating that secret drops every ledger grant."""
     return hmac.new(_get_grant_secret(), _LEDGER_KEY_INFO, hashlib.sha256).digest()
+
+
+def request_state_key() -> bytes:
+    """Key for a tools/call requestState, derived from the grant secret so a retry may land
+    on any replica; without one, a random key that only this process opens."""
+    try:
+        secret = _get_grant_secret()
+    except ValueError as e:
+        logger.warning(
+            'requestState sealed per process (%s): a retry must reach this replica', e
+        )
+        return secrets.token_bytes(32)
+    return hmac.new(secret, _REQUEST_STATE_KEY_INFO, hashlib.sha256).digest()
 
 
 async def _read_bounded_body(request: Request) -> bytes | None:
