@@ -168,6 +168,10 @@ Things the code will not tell you at a glance:
 
 ## Language and writing style
 
+`REVIEW.md` retains the repository-specific review checks, including those also
+stated here as authoring guidance. Only checks already covered by the plugin's
+stack review criteria are omitted there.
+
 - English only: code, comments, docstrings, documentation, commit messages, PR
   titles and bodies, every identifier, and the user-facing CLI/console output
   the setup wizard and the entry points print.
@@ -201,7 +205,9 @@ the job that needs them, never at the workflow level.
   tool—module skeleton, `TOOLSET_REGISTRY` entry, `tools/resources.py` row,
   test, docs. Follow it whenever you add a tool.
 - `CONTRIBUTING.md` (`### Code style`): the import rule—function/method-local
-  imports need a stated reason, not habit.
+  imports need a one-line comment explaining a real circular import, an
+  optional/heavy dependency, or a documented ordering hazard. Keep other
+  imports at the top of the file.
 - `docs/configuration.md`: token discovery order, transports, `--toolsets`,
   client config. Read it when authentication or startup misbehaves.
 - `README.md` (`Pinning a workspace API host`): the object form of a token entry
