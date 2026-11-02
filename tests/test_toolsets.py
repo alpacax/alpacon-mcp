@@ -4,6 +4,7 @@ import ast
 import importlib
 import importlib.util
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -168,18 +169,6 @@ class TestCliWiring:
         assert captured['t'] == 'stdio'
         assert captured['toolsets'] == 'servers'
 
-    def test_sse_entry_point_forwards_toolsets(self, monkeypatch):
-        module = self._load('main_sse.py')
-        captured: dict[str, object] = {}
-        monkeypatch.setattr(
-            module, 'run', lambda transport, **kw: captured.update(kw, t=transport)
-        )
-        monkeypatch.setattr(sys, 'argv', ['main_sse.py', '--toolsets', 'metrics'])
-        module.main()
-
-        assert captured['t'] == 'sse'
-        assert captured['toolsets'] == 'metrics'
-
 
 class TestRunWiring:
     def test_run_imports_selection_and_hands_it_to_register_resources(
@@ -225,3 +214,30 @@ class TestModulesToLoad:
     def test_local_default_loads_everything(self):
         modules = server._modules_to_load(None, remote_mode=False)
         assert modules == ALL_MODULES | server.ALWAYS_ON_MODULES
+
+
+@pytest.mark.parametrize('transport', ['sse', 'streamable-http', 'unknown'])
+def test_run_rejects_other_transports_before_startup(monkeypatch, transport):
+    def unexpected(*args, **kwargs):
+        pytest.fail('Unsupported transport started a server')
+
+    monkeypatch.setattr(server, 'prepare', unexpected)
+    monkeypatch.setattr(server.mcp, 'run', unexpected)
+    with pytest.raises(RuntimeError, match='stdio only'):
+        server.run(transport)
+
+
+def test_run_defaults_to_stdio(monkeypatch):
+    calls = []
+    monkeypatch.setattr(server, 'prepare', lambda *args, **kwargs: None)
+    monkeypatch.setattr(server.mcp, 'run', lambda **kwargs: calls.append(kwargs))
+    server.run()
+    assert calls == [{'transport': 'stdio'}]
+
+
+def test_removed_entry_point_is_unavailable():
+    project = tomllib.loads(
+        (Path(server.__file__).parent / 'pyproject.toml').read_text()
+    )
+    assert 'alpacon-mcp-sse' not in project['project']['scripts']
+    assert importlib.util.find_spec('main_sse') is None

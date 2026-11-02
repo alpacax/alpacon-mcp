@@ -338,7 +338,6 @@ class TestEnvironmentFallback:
         ('transport', 'enabled'),
         [
             (server_module.TRANSPORT_STDIO, True),
-            (server_module.TRANSPORT_SSE, False),
             (server_module.TRANSPORT_STREAMABLE_HTTP, False),
         ],
     )

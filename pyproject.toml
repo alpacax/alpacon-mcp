@@ -62,7 +62,6 @@ Changelog = "https://github.com/alpacax/alpacon-mcp/blob/main/CHANGELOG.md"
 
 [project.scripts]
 alpacon-mcp = "main:main"
-alpacon-mcp-sse = "main_sse:main"
 alpacon-mcp-http = "main_http:main"
 
 [project.optional-dependencies]
@@ -93,7 +92,6 @@ include = [
     "/py.typed",
     "/server.py",
     "/main.py",
-    "/main_sse.py",
     "/main_http.py",
     "/tools/**/*.py",
     "/utils/**/*.py",
@@ -171,7 +169,6 @@ disallow_untyped_calls = false  # test helpers stay untyped until the tests are 
 module = [
     "main",
     "main_http",
-    "main_sse",
     "server",
     "tests.*",
     "tools.*",

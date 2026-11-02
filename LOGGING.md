@@ -37,7 +37,7 @@ python main.py
 ### Server start
 ```
 2024-01-20 10:30:15 - alpacon_mcp.token_manager - INFO - [token_manager.py:48] - Using local config file: config/token.json
-2024-01-20 10:30:15 - alpacon_mcp.server - INFO - [server.py:208] - Creating MCP server without auth (stdio/SSE mode)
+2024-01-20 10:30:15 - alpacon_mcp.server - INFO - [server.py:208] - Creating MCP server without auth (stdio mode)
 2024-01-20 10:30:15 - alpacon_mcp.main - INFO - [main.py:126] - Starting Alpacon MCP Server
 ```
 
@@ -65,7 +65,7 @@ python main.py
 
 ### 2. Module-specific loggers
 `get_logger('<name>')` returns the standard `logging.Logger` named `alpacon_mcp.<name>`. The main ones:
-- `main`, `main_sse`, `main_http`: Server startup for each transport
+- `main`, `main_http`: Server startup for each transport
 - `server`: MCP server creation and application lifespan
 - `decorators`: The entry and completion line of every tool call
 - `http_client`: HTTP requests/responses
@@ -139,7 +139,7 @@ Every tool call behind `@mcp_tool_handler` writes one `called with` line at INFO
 - No log file is written: stdout is the only sink, as in alpacon-server.
 - A startup that fails because `AUTH0_ALPACON_DOMAIN` or `AUTH0_ALPACON_LOGIN_CLIENT_ID` is unset writes one `ERROR` record naming the missing variables, then exits with status 1.
 - Any other value, or none, keeps the text format on stderr.
-- stdio and SSE never read the switch. In stdio, stdout carries the MCP protocol itself.
+- stdio never reads the switch. In stdio, stdout carries the MCP protocol itself.
 
 ## 🔌 Libraries
 

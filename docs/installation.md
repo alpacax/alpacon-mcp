@@ -373,14 +373,6 @@ chmod 600 config/token.json
 sudo chown -R 200:200 config/
 ```
 
-### Network security
-
-```bash
-# Firewall rules (if needed for SSE mode)
-sudo ufw allow 8237/tcp  # Ubuntu/Debian
-sudo firewall-cmd --add-port=8237/tcp --permanent  # RHEL/CentOS
-```
-
 ### User isolation
 
 ```bash

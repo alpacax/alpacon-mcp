@@ -61,7 +61,7 @@ from utils.webftp_shapes import (
 _MAX_UPLOAD_CONTENT_BYTES = 3 * 1024 * 1024
 
 _FILE_CONTENT_DESCRIPTION = (
-    'Base64-encoded bytes. On streamable-http/SSE it is capped at '
+    'Base64-encoded bytes. On streamable-http it is capped at '
     f'{_MAX_UPLOAD_CONTENT_BYTES // (1024 * 1024)} MiB decoded; '
     'use webftp_upload_file in local mode for larger files.'
 )
@@ -74,7 +74,7 @@ _RESOURCE_TYPE_DESCRIPTION = 'file or folder; set "folder" for directories.'
 
 _REMOTE_MODE_ERROR = (
     'This tool reads or writes a local file, which the MCP server cannot reach in remote mode. '
-    'Use local mode (stdio or SSE), or webftp_upload_content and webftp_download_file, '
+    'Use local mode (stdio), or webftp_upload_content and webftp_download_file, '
     'which work in remote mode.'
 )
 
@@ -607,7 +607,7 @@ async def webftp_upload_content(
     except binascii.Error as exc:
         return error_response(f'Invalid base64 content: {exc}', code='invalid_content')
 
-    # Only the HTTP transports carry the SDK body cap this works around. An unset
+    # Only streamable-http carries the SDK body cap this works around. An unset
     # transport means a caller outside prepare(), and fails closed.
     transport = os.environ.get('ALPACON_MCP_TRANSPORT', '')
     if transport != TRANSPORT_STDIO and len(raw_bytes) > _MAX_UPLOAD_CONTENT_BYTES:
