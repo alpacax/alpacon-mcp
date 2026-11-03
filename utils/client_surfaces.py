@@ -65,6 +65,12 @@ def current_round() -> ToolCallRound | None:
     return _round.get()
 
 
+def apps_declaration() -> Declaration:
+    """What the tools/call in flight declared about MCP Apps; unknown outside one."""
+    round_ = current_round()
+    return round_.surfaces.apps if round_ is not None else 'unknown'
+
+
 def _round_of(ctx: ServerRequestContext[object, object]) -> ToolCallRound:
     surfaces = client_surfaces(ctx.session.client_capabilities)
     params = ctx.params or {}

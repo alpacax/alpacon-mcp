@@ -1,6 +1,7 @@
 """Tests for input validation wired into MCP tool functions."""
 
 import ast
+import importlib
 from pathlib import Path
 from types import FunctionType
 from unittest.mock import AsyncMock, patch
@@ -748,11 +749,22 @@ class TestPathIdentifierValidation:
         for module in sorted(tools_dir.glob('*.py')):
             tree = ast.parse(module.read_text(encoding='utf-8'), str(module))
 
-            # Anything assigned at module level is fixed at import, so it is
-            # never a value the client sent. Only the strings can be resolved.
+            # Anything assigned at module level, or a string imported from utils, is
+            # fixed at import, so it is never a value the client sent. Only the
+            # strings can be resolved.
             module_names: set[str] = set()
             constants: dict[str, str] = {}
             for statement in tree.body:
+                if isinstance(statement, ast.ImportFrom) and (
+                    statement.module or ''
+                ).startswith('utils.'):
+                    source = importlib.import_module(statement.module or '')
+                    for alias in statement.names:
+                        value = getattr(source, alias.name, None)
+                        if isinstance(value, str):
+                            module_names.add(alias.asname or alias.name)
+                            constants[alias.asname or alias.name] = value
+                    continue
                 if not isinstance(statement, ast.Assign):
                     continue
                 resolved = fold(statement.value, constants)

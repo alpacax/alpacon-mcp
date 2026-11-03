@@ -10,7 +10,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+from mcp.types import ClientCapabilities
 
+from tests.conftest import APPS_CAPS, in_tool_call_round
 from tools import command_tools, system_info_tools
 from utils import mfa_step_up, request_signal
 from utils.decorators import with_error_handling
@@ -70,6 +72,58 @@ class TestMfaRequiredResult:
         assert (result['workspace'], result['region']) == ('acme', 'ap1')
         assert 'retry the same call once' in result['message']
         assert remote == {}
+
+    @pytest.mark.asyncio
+    async def test_mcp_apps_client_is_pointed_at_show_mfa_and_still_gets_the_link(
+        self, remote, mfa_fetch
+    ):
+        result = await in_tool_call_round(APPS_CAPS, lambda: refused_tool(token=JWT))
+
+        assert result['status'] == 'mfa_required'
+        assert result['mfa_url'] == LINK
+        assert 'Call show_mfa with the same workspace and region' in result['message']
+        assert 'retry the same call once' in result['message']
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ('retry', 'already_sent'),
+        [('sent', ['POST /api/events/commands/']), ('partial', [])],
+    )
+    async def test_mcp_apps_client_with_part_of_the_call_run_is_never_told_to_redo_it(
+        self, retry, already_sent
+    ):
+        client = MagicMock(get=AsyncMock(return_value={'mfa_url': LINK}))
+
+        result = await mfa_step_up.step_up_result(
+            client,
+            workspace='acme',
+            region='ap1',
+            token=JWT,
+            source='command',
+            retry=retry,
+            already_sent=already_sent,
+            apps_declared=True,
+        )
+
+        message = result['message']
+        assert isinstance(message, str)
+        assert 'show_mfa' in message
+        assert 'never the whole call' in message
+        assert 'retry the same call once' not in message
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'capabilities',
+        [None, ClientCapabilities()],
+        ids=['unknown', 'declared-absent'],
+    )
+    async def test_client_without_mcp_apps_is_not_pointed_at_show_mfa(
+        self, remote, mfa_fetch, capabilities
+    ):
+        result = await in_tool_call_round(capabilities, lambda: refused_tool(token=JWT))
+
+        assert result['mfa_url'] == LINK
+        assert 'show_mfa' not in result['message']
 
     @pytest.mark.asyncio
     async def test_link_is_fetched_with_cli_location_workspace_and_callers_token(

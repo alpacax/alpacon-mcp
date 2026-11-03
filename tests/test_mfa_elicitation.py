@@ -11,6 +11,8 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 from mcp import Client
+from mcp.client import advertise
+from mcp.server.apps import APP_MIME_TYPE, EXTENSION_ID
 from mcp.types import CallToolResult, ElicitRequestURLParams, ElicitResult, TextContent
 
 from server import mcp
@@ -120,6 +122,18 @@ async def test_accept_then_completed_mfa_runs_the_call(alpacon):
     assert [(p.mode, p.url) for p in user.asked] == [('url', _link(1))]
     assert alpacon.server_calls == 2
     assert alpacon.completion_probes == 1
+
+
+async def test_a_client_declaring_mcp_apps_too_is_asked_through_elicitation(alpacon):
+    user = _answering(ACCEPT, alpacon=alpacon, done_on=1)
+    apps = advertise(EXTENSION_ID, {'mimeTypes': [APP_MIME_TYPE]})
+
+    result = await _list_servers(
+        mode=MODERN, elicitation_callback=user.callback, extensions=[apps]
+    )
+
+    assert _body(result)['status'] == 'success'
+    assert [(p.mode, p.url) for p in user.asked] == [('url', _link(1))]
 
 
 async def test_mfa_completed_during_the_poll_runs_the_call(alpacon):

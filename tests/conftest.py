@@ -2,7 +2,7 @@
 Autouse fixtures keep tests off the real TokenManager and its token.json.
 """
 
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
 from http import HTTPStatus
 from types import SimpleNamespace
@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+from mcp.server.apps import APP_MIME_TYPE, EXTENSION_ID
 from mcp.server.auth.provider import AccessToken
 from mcp.server.context import ServerRequestContext
 from mcp.types import ClientCapabilities
@@ -19,6 +20,7 @@ import server as server_module
 from server import mcp
 from utils import request_signal
 from utils.auth import Auth0TokenVerifier
+from utils.client_surfaces import bind_tool_call_round
 from utils.http_client import AlpaconHTTPClient
 
 # The AlpaconHTTPClient methods a tool calls.
@@ -206,7 +208,10 @@ async def make_client():
         await client.close()
 
 
-# The logger the MFA link fetch writes to.
+# A client that renders MCP Apps, and the logger the MFA link fetch writes to.
+APPS_CAPS = ClientCapabilities.model_validate(
+    {'extensions': {EXTENSION_ID: {'mimeTypes': [APP_MIME_TYPE]}}}
+)
 LINK_LOGGER = 'alpacon_mcp.mfa_link'
 
 
@@ -224,3 +229,19 @@ def request_context(
         params=params,
     )
     return cast(ServerRequestContext[object, object], ctx)
+
+
+async def in_tool_call_round[T](
+    capabilities: ClientCapabilities | None,
+    call: Callable[[], Awaitable[T]],
+    protocol_version: str = '2026-07-28',
+) -> T:
+    """Run the call inside the tools/call round the server middleware binds."""
+    seen: list[T] = []
+
+    async def call_next(_: object) -> None:
+        seen.append(await call())
+
+    ctx = request_context('tools/call', capabilities, {}, protocol_version)
+    await bind_tool_call_round(ctx, call_next)
+    return seen[0]

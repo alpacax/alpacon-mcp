@@ -9,6 +9,7 @@ from typing import Final, Literal, NoReturn
 from urllib.parse import urlparse
 
 from mcp.server import MCPServer
+from mcp.server.apps import Apps
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -70,7 +71,11 @@ TOOLSET_REGISTRY: dict[str, str] = {
     'tokens': 'token_tools',
     'ledger': 'ledger_tools',
 }
-ALL_TOOL_MODULES: frozenset[str] = frozenset(TOOLSET_REGISTRY.values())
+
+# Remote mode only, so no toolset name selects them: Alpacon serves the MFA link and
+# its completion to an Auth0 JWT alone, and an API token gets nothing from them.
+MFA_MODULES: frozenset[str] = frozenset({'mfa_tools'})
+ALL_TOOL_MODULES: frozenset[str] = frozenset(TOOLSET_REGISTRY.values()) | MFA_MODULES
 
 # Served over stdio, and over streamable-http once ALPACON_MCP_REMOTE_LEDGER is
 # on. stdio caches a person's sign-in in the process; remote mode carries it in
@@ -212,6 +217,7 @@ def _create_mcp_server() -> MCPServer[None]:
             request_state_security=RequestStateSecurity(
                 codec=AESGCMRequestStateCodec([request_state_key()])
             ),
+            extensions=[Apps()],
             lifespan=app_lifespan,
             middleware=REMOTE_MIDDLEWARE,
         )
@@ -257,7 +263,7 @@ def resolve_toolsets(toolsets: str | None) -> set[str]:
         )
 
     if not names or TOOLSETS_ALL in names:
-        return set(ALL_TOOL_MODULES)
+        return set(TOOLSET_REGISTRY.values())
     selected = {TOOLSET_REGISTRY[n] for n in names if n in TOOLSET_REGISTRY}
     if not selected:
         # Only always-on names were given; warn so an all-no-op selection isn't silent.

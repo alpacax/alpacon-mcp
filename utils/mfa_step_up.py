@@ -23,6 +23,11 @@ if TYPE_CHECKING:  # http_client imports this module
 _NEEDS_MFA = 'Alpacon needs a fresh MFA for this action'
 _WAIT = 'and wait until they finish MFA in the browser, '
 _LEAD_LINK = f'{_NEEDS_MFA}. Show the mfa_url link to the person {_WAIT}'
+_LEAD_SHOW_MFA = (
+    f'{_NEEDS_MFA}. Call show_mfa with the same workspace and region so the person '
+    f'gets an Authenticate button, or show them the mfa_url link if no panel appears, '
+    f'{_WAIT}'
+)
 _LEAD_ALREADY_DONE = 'Alpacon reports MFA already completed; '
 _LEAD_NO_LINK = (
     f'{_NEEDS_MFA}, but no link could be fetched. MFA done in the web console does '
@@ -43,11 +48,11 @@ _SENT_PREFIX = (
 )
 
 
-def lead(outcome: MFALinkOutcome) -> str:
+def lead(outcome: MFALinkOutcome, *, names_show_mfa: bool) -> str:
     """The message's opening for a link fetch outcome; it ends ready for a retry clause."""
     match outcome:
         case MFALink():
-            return _LEAD_LINK
+            return _LEAD_SHOW_MFA if names_show_mfa else _LEAD_LINK
         case MFAAlreadyDone():
             return _LEAD_ALREADY_DONE
         case _:
@@ -119,6 +124,7 @@ async def step_up_result(
     source: str,
     retry: Retry,
     already_sent: list[str],
+    apps_declared: bool,
     partial_result: JsonValue = None,
 ) -> dict[str, JsonValue]:
     """The ``mfa_required`` result. An UpstreamAuthError from the link fetch propagates; any
@@ -130,7 +136,7 @@ async def step_up_result(
     except MfaStepUpRequired:  # the link endpoint itself wants MFA: no link to give
         outcome = MFALinkRaised()
     mfa_url = outcome.url if isinstance(outcome, MFALink) else None
-    opening = lead(outcome)
+    opening = lead(outcome, names_show_mfa=apps_declared)
 
     match retry:
         case 'whole':

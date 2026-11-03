@@ -88,10 +88,10 @@ class TestRegistryConsistency:
         """resources.py is the resource registry, not a tool module, hence excluded."""
         tools_dir = Path(server.__file__).parent / server.TOOLS_PACKAGE
         on_disk = {p.stem for p in tools_dir.glob('*.py')} - {'__init__', 'resources'}
-        assert on_disk == ALL_MODULES | server.ALWAYS_ON_MODULES
+        assert on_disk == server.ALL_TOOL_MODULES | server.ALWAYS_ON_MODULES
 
     def test_registry_modules_are_importable(self):
-        for module_name in ALL_MODULES | server.ALWAYS_ON_MODULES:
+        for module_name in server.ALL_TOOL_MODULES | server.ALWAYS_ON_MODULES:
             importlib.import_module(f'{server.TOOLS_PACKAGE}.{module_name}')
 
 
@@ -171,11 +171,9 @@ class TestCliWiring:
 
 
 class TestRunWiring:
-    def test_run_imports_selection_and_hands_it_to_register_resources(
-        self, monkeypatch
-    ):
-        """run() is where the pieces meet; unit tests of the parts miss a
-        mismatch here (e.g. handing register_resources the sorted list)."""
+    @pytest.fixture
+    def stdio_run(self, monkeypatch):
+        """Record run()'s imports and keep register_resources' argument."""
         imported: list[str] = []
         real_import = importlib.import_module
         handed: dict[str, object] = {}
@@ -191,6 +189,12 @@ class TestRunWiring:
         monkeypatch.delenv('ALPACON_MCP_AUTH_ENABLED', raising=False)
         # run('stdio') turns the declared-agent fallback on; restore it after.
         monkeypatch.setattr(declared_agent, '_environment_fallback', False)
+        return imported, handed
+
+    def test_run_imports_selection_and_hands_it_to_register_resources(self, stdio_run):
+        """run() is where the pieces meet; unit tests of the parts miss a
+        mismatch here (e.g. handing register_resources the sorted list)."""
+        imported, handed = stdio_run
 
         server.run('stdio', toolsets='servers')
 
@@ -201,6 +205,31 @@ class TestRunWiring:
         }
         assert handed['m'] == expected
 
+    def test_stdio_does_not_import_the_mfa_tools(self, stdio_run):
+        imported, _ = stdio_run
+
+        server.run('stdio')
+
+        assert f'{server.TOOLS_PACKAGE}.server_tools' in imported
+        assert f'{server.TOOLS_PACKAGE}.mfa_tools' not in imported
+
+
+class TestMfaModules:
+    def test_remote_mode_loads_the_mfa_tools(self):
+        modules = server._modules_to_load(None, remote_mode=True)
+
+        assert server.MFA_MODULES <= modules
+
+    def test_local_mode_never_loads_the_mfa_tools(self):
+        modules = server._modules_to_load('all', remote_mode=False)
+
+        assert not modules & server.MFA_MODULES
+        assert 'server_tools' in modules
+
+    def test_mfa_is_not_a_toolset_name(self):
+        with pytest.raises(server.ToolsetError, match='Unknown toolset'):
+            server.resolve_toolsets('mfa')
+
 
 class TestModulesToLoad:
     def test_local_mode_selects_subset_plus_always_on(self):
@@ -209,7 +238,7 @@ class TestModulesToLoad:
 
     def test_remote_mode_ignores_toolsets(self):
         modules = server._modules_to_load('servers', remote_mode=True)
-        assert modules == ALL_MODULES | server.ALWAYS_ON_MODULES
+        assert modules == server.ALL_TOOL_MODULES | server.ALWAYS_ON_MODULES
 
     def test_local_default_loads_everything(self):
         modules = server._modules_to_load(None, remote_mode=False)
