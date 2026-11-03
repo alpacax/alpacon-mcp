@@ -26,6 +26,7 @@ from utils.common import (
     validate_token,
 )
 from utils.error_handler import (
+    MfaStepUpRequired,
     Region,
     ServedRegion,
     UpstreamAuthError,
@@ -552,7 +553,7 @@ def with_error_handling[**P, R](
 
             return result
 
-        except (UpstreamAuthError, mfa_step_up.MfaStepUpRequired):
+        except (UpstreamAuthError, MfaStepUpRequired):
             # The wrapper answers MfaStepUpRequired; UpstreamAuthError only ends the call,
             # and request_signal carries its re-auth signal to the ASGI boundary.
             raise
@@ -598,7 +599,7 @@ def with_error_handling[**P, R](
                 raised = False
                 try:
                     result = await answer(*args, **kwargs)
-                except mfa_step_up.MfaStepUpRequired:
+                except MfaStepUpRequired:
                     raised = True
                 if not call.required:
                     return cast(ToolResult[R], result)

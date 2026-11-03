@@ -14,7 +14,7 @@ import pytest
 from tools import command_tools, system_info_tools
 from utils import mfa_step_up, request_signal
 from utils.decorators import with_error_handling
-from utils.error_handler import UpstreamAuthError
+from utils.error_handler import MfaStepUpRequired, UpstreamAuthError
 from utils.http_client import AlpaconHTTPClient, http_client
 
 JWT = 'header.payload.signature'
@@ -340,7 +340,7 @@ class TestSourceBoundary:
             for source in ('command', 'webftp'):
                 try:
                     _refuse(source=source)
-                except mfa_step_up.MfaStepUpRequired:
+                except MfaStepUpRequired:
                     pass
             return {'status': 'success'}
 
@@ -523,7 +523,7 @@ class TestPartialWrites:
                 mfa_step_up.record('command')  # a sibling request was refused meanwhile
                 release.set()
                 await holding
-                with pytest.raises(mfa_step_up.MfaStepUpRequired):
+                with pytest.raises(MfaStepUpRequired):
                     await queued
 
         assert received == ['/slow']

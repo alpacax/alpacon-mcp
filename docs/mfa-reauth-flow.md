@@ -158,7 +158,8 @@ One id per grant means one MFA record per MCP client installation: a step-up in 
 | Component | File | Role |
 |-----------|------|------|
 | Upstream 401 detection | `utils/http_client.py` | Records a step-up on `auth_mfa_required`; signals MFA re-auth on `auth_token_mfa_missing` |
-| MFA step-up | `utils/mfa_step_up.py` | Per-call holder, `MfaStepUpRequired`, the link fetch and the `mfa_required` result |
+| MFA step-up | `utils/mfa_step_up.py` | Per-call holder, the link fetch and the `mfa_required` result |
+| Step-up signal | `utils/error_handler.py` | `MfaStepUpRequired`, which ends a call once it recorded a step-up |
 | Result assembly | `utils/decorators.py` | The outermost `with_error_handling` calls `step_up_result`, asks `unfinished` first on an elicitation retry, and turns a whole-retry result into an elicitation |
 | Tool call round | `utils/client_surfaces.py` | `bind_tool_call_round` binds each `tools/call`'s declared surfaces, `requestState` and `inputResponses` |
 | URL elicitation | `utils/mfa_elicitation.py` | Builds the `InputRequiredResult` for a whole-retry `mfa_required`, polls completion on the retry, and bounds the asks |

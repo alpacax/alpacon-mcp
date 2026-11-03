@@ -7,9 +7,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
-from mcp.server.mcpserver.exceptions import ToolError
-
-from utils.error_handler import UpstreamAuthError
+from utils.error_handler import MfaStepUpRequired, UpstreamAuthError
 from utils.logger import get_logger
 from utils.types import JsonValue
 
@@ -47,15 +45,6 @@ _SENT_PREFIX = (
 # whole: nothing ran or the tool is read-only; sent: writes went through before the
 # refusal ended the call; partial: the tool caught the refusal and returned.
 Retry = Literal['whole', 'sent', 'partial']
-
-
-class MfaStepUpRequired(ToolError):  # noqa: N818  # a signal, named for the state
-    """Alpacon refused with ``auth_mfa_required``. Not an UpstreamAuthError, which comes
-    with a request_signal entry and so a re-auth challenge in place of the result."""
-
-    def __init__(self, source: str = '') -> None:
-        self.source = source
-        super().__init__('MFA step-up required')
 
 
 @dataclass
