@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import json
 import logging
 import re
 from collections.abc import Awaitable, Callable, Mapping
@@ -10,7 +11,7 @@ from functools import wraps
 from typing import Annotated, Protocol, cast
 
 from mcp.server.auth.middleware.auth_context import get_access_token
-from mcp.types import ToolAnnotations
+from mcp.types import CallToolResult, TextContent, ToolAnnotations
 from pydantic import Field
 
 from utils import mfa_elicitation, mfa_step_up, token_manager
@@ -19,6 +20,7 @@ from utils.auth import (
     get_token_workspaces,
     match_workspace,
 )
+from utils.client_surfaces import apps_declaration
 from utils.common import (
     error_response,
     is_auth_enabled,
@@ -26,6 +28,7 @@ from utils.common import (
     validate_token,
 )
 from utils.error_handler import (
+    MfaStepUpRequired,
     Region,
     ServedRegion,
     UpstreamAuthError,
@@ -529,6 +532,19 @@ def with_token_validation[**P, R](
     return wrapper
 
 
+def _enriched_call_result(result: CallToolResult, tool_name: str) -> CallToolResult:
+    """Recovery hints for a CallToolResult's error body; its text block is re-rendered as
+    that body's JSON, the form a tool returning CallToolResult uses."""
+    body = result.structured_content
+    if not isinstance(body, dict) or 'recovery_hints' in body:
+        return result
+    enriched = enrich_error_response(dict(body), tool_name=tool_name)
+    if 'recovery_hints' not in enriched:
+        return result
+    text = TextContent(type='text', text=json.dumps(enriched, indent=2))
+    return result.model_copy(update={'structured_content': enriched, 'content': [text]})
+
+
 def with_error_handling[**P, R](
     func: Callable[P, Awaitable[R]], *, read_only: bool = False
 ) -> Callable[P, Awaitable[ToolResult[R]]]:
@@ -549,10 +565,12 @@ def with_error_handling[**P, R](
 
             if isinstance(result, dict):
                 return enrich_error_response(result, tool_name=func_name)
+            if isinstance(result, CallToolResult):
+                return cast(ToolResult[R], _enriched_call_result(result, func_name))
 
             return result
 
-        except (UpstreamAuthError, mfa_step_up.MfaStepUpRequired):
+        except (UpstreamAuthError, MfaStepUpRequired):
             # The wrapper answers MfaStepUpRequired; UpstreamAuthError only ends the call,
             # and request_signal carries its re-auth signal to the ASGI boundary.
             raise
@@ -598,7 +616,7 @@ def with_error_handling[**P, R](
                 raised = False
                 try:
                     result = await answer(*args, **kwargs)
-                except mfa_step_up.MfaStepUpRequired:
+                except MfaStepUpRequired:
                     raised = True
                 if not call.required:
                     return cast(ToolResult[R], result)
@@ -616,6 +634,7 @@ def with_error_handling[**P, R](
             source=source,
             retry=retry,
             already_sent=call.sent,
+            apps_declared=apps_declaration() == 'declared',
             partial_result=cast(JsonValue, result),
         )
         if retry == 'whole':

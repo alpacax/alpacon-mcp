@@ -8,6 +8,7 @@ Some Alpacon workspaces require MFA for sensitive actions (`websh`, `webftp`, `c
 
 - `auth_mfa_required` (an action asked for a fresh MFA): the tool call returns `status="mfa_required"` with Alpacon's MFA link. The same token passes on a retry, because Alpacon credits the browser step-up to the token's client instance.
 - A 2026-07-28 request that declares `elicitation.url` gets that link as a URL elicitation (`InputRequiredResult`) instead, unless the result carries `partial_result` or `already_sent`. Its `accept` is consent, not completion, so the retry polls `/api/auth0/mfa/completion/` before calling Alpacon again, as Case 2b shows. Every ask and the final result fetch a new link, because the `step_up_ticket` Alpacon puts in it redeems once and expires in 10 minutes.
+- A client that renders MCP Apps (it declares `io.modelcontextprotocol/ui` with `text/html;profile=mcp-app` in `mimeTypes`) gets a link result whose message names `show_mfa`. That tool fetches a fresh link and returns `status="mfa_link_shown"`, with the link only in the result's `_meta["alpacon/mfa"]`, so the `ui://alpacon/mfa` panel shows an Authenticate button. When the host can open links, the panel opens the link through it; when the host also lets the panel call server tools, it polls the app-only `get_mfa_completion` (`GET /api/auth0/mfa/completion/`) every 3 seconds for up to 5 minutes, stopping on an error result, and tells the person to ask the agent to retry once it reports `completed: true`. A client that declares no MCP Apps support never sees either tool in `tools/list`.
 - `auth_token_mfa_missing` (the token lacks the workspace's sign-in MFA, which a refresh never adds): the request answers 403 `insufficient_scope` and the client re-authenticates through the two-stage OAuth flow below.
 
 The re-login challenge is a 403, not a 401. MCP clients answer a 401 by refreshing the token first and drop the challenge's scope while the refresh succeeds, so a 401 never reaches `/oauth/authorize` and the refreshed token still lacks MFA. On `insufficient_scope` the TypeScript SDK and Claude's clients skip the refresh and authorize with the union of the granted and challenged scopes.
@@ -158,9 +159,13 @@ One id per grant means one MFA record per MCP client installation: a step-up in 
 | Component | File | Role |
 |-----------|------|------|
 | Upstream 401 detection | `utils/http_client.py` | Records a step-up on `auth_mfa_required`; signals MFA re-auth on `auth_token_mfa_missing` |
-| MFA step-up | `utils/mfa_step_up.py` | Per-call holder, `MfaStepUpRequired`, the link fetch and the `mfa_required` result |
+| MFA step-up | `utils/mfa_step_up.py` | Per-call holder and the `mfa_required` result |
+| Step-up signal | `utils/error_handler.py` | `MfaStepUpRequired`, which ends a call once it recorded a step-up |
+| MFA link fetch | `utils/mfa_link.py` | Fetches `/api/auth0/mfa/` for the result and `show_mfa`, and reads a link, an already-done answer, a raised fetch or an answer without a link, logging why a fetch failed; an MFA refusal of the fetch itself propagates |
 | Result assembly | `utils/decorators.py` | The outermost `with_error_handling` calls `step_up_result`, asks `unfinished` first on an elicitation retry, and turns a whole-retry result into an elicitation |
 | Tool call round | `utils/client_surfaces.py` | `bind_tool_call_round` binds each `tools/call`'s declared surfaces, `requestState` and `inputResponses` |
+| MCP App tool listing | `utils/ui_tools.py` | `hide_ui_tools`, remote mode only, drops `_meta.ui` tools from `tools/list` for a client without MCP Apps |
+| MFA panel | `tools/mfa_tools.py`, `tools/mfa_app.html` | `show_mfa` hands the link to the `ui://alpacon/mfa` panel, which polls `get_mfa_completion` |
 | URL elicitation | `utils/mfa_elicitation.py` | Builds the `InputRequiredResult` for a whole-retry `mfa_required`, polls completion on the retry, and bounds the asks |
 | Auth error middleware | `utils/auth_error_middleware.py` | Answers an MFA signal with 403 `insufficient_scope` and `mfa` in the scope |
 | OAuth proxy (authorize) | `utils/oauth.py` | Routes to MFA or regular audience based on scope |

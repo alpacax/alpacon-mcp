@@ -19,11 +19,11 @@ from utils.client_surfaces import PER_REQUEST_CAPABILITIES_VERSION, current_roun
 from utils.error_handler import UpstreamAuthError
 from utils.http_client import http_client
 from utils.logger import get_logger
+from utils.mfa_link import MFA_COMPLETION_ENDPOINT
 from utils.types import JsonValue
 
 logger = get_logger('mfa_elicitation')
 
-COMPLETION_ENDPOINT = '/api/auth0/mfa/completion/'
 INPUT_KEY = 'alpacon_mfa'
 MAX_ASKS = 3  # elicitations in all for one call, the first included
 # The whole tools/call is one JSON response, so the poll holds its connection open.
@@ -92,7 +92,7 @@ async def _mfa_pending(region: str, workspace: str, token: str) -> bool:
         async with asyncio.timeout(POLL_SECONDS):
             while True:
                 body = await http_client.get(
-                    region, workspace, COMPLETION_ENDPOINT, token=token
+                    region, workspace, MFA_COMPLETION_ENDPOINT, token=token
                 )
                 pending = isinstance(body, dict) and body.get('completed') is False
                 if not pending:
