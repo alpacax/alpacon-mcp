@@ -39,6 +39,7 @@ def ledger_url_error(url: str) -> str | None:
     try:
         parts = urlsplit(url)
         host = parts.hostname
+        _ = parts.port  # urlsplit validates the port only when it is read
     except ValueError:
         return not_a_url
     if not host:

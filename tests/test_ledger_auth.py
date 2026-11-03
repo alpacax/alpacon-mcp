@@ -84,6 +84,8 @@ class TestSettings:
             ('http://localhost.example.com', False),
             ('//alpacon.ai', False),
             ('http://[::1', False),
+            ('https://ledger.example:abc', False),
+            ('http://localhost:99999', False),
             ('', False),
         ],
     )
