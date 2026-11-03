@@ -200,3 +200,7 @@ async def make_client():
     yield build
     for client in clients:
         await client.close()
+
+
+# The logger the MFA link fetch writes to.
+LINK_LOGGER = 'alpacon_mcp.mfa_link'

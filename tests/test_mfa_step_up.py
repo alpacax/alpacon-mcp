@@ -19,7 +19,6 @@ from utils.http_client import AlpaconHTTPClient, http_client
 
 JWT = 'header.payload.signature'
 LINK = 'https://tenant.auth0.com/authorize?ticket=secret'
-STEP_UP_LOGGER = 'alpacon_mcp.mfa_step_up'
 
 
 def _401_with_body(body: dict[str, object]) -> httpx.HTTPStatusError:
@@ -117,23 +116,30 @@ class TestMfaRequiredResult:
     )
     @pytest.mark.asyncio
     async def test_failed_link_fetch_returns_no_link_and_asks_for_a_later_retry(
-        self, remote, mfa_fetch, failure, caplog
+        self, remote, mfa_fetch, failure
     ):
         if isinstance(failure, Exception):
             mfa_fetch.side_effect = failure
         else:
             mfa_fetch.return_value = failure
 
-        with caplog.at_level(logging.WARNING, logger=STEP_UP_LOGGER):
-            result = await refused_tool(token=JWT)
+        result = await refused_tool(token=JWT)
 
         assert result['status'] == 'mfa_required'
         assert result['mfa_url'] is None
         assert 'does not count for this connection' in result['message']
-        assert any(
-            r.levelno == logging.WARNING and r.name == STEP_UP_LOGGER
-            for r in caplog.records
-        )
+
+    @pytest.mark.asyncio
+    async def test_link_endpoint_refused_for_mfa_returns_no_link_instead_of_raising(
+        self, remote, mfa_fetch
+    ):
+        mfa_fetch.side_effect = lambda *args, **kwargs: _refuse()
+
+        result = await refused_tool(token=JWT)
+
+        assert result['status'] == 'mfa_required'
+        assert result['mfa_url'] is None
+        assert 'does not count for this connection' in result['message']
 
     @pytest.mark.asyncio
     async def test_link_is_not_written_to_the_log(self, remote, mfa_fetch, caplog):
