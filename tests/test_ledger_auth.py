@@ -15,6 +15,7 @@ from utils.ledger_auth import (
     ledger_audience,
     ledger_base_url,
 )
+from utils.ledger_grant import ledger_url_error
 
 TARGET = LedgerTarget(
     domain='auth.example.com',
@@ -71,6 +72,23 @@ class TestSettings:
         monkeypatch.setenv(ledger_auth.LEDGER_AUDIENCE_ENV, 'https://ledger.test/')
         assert ledger_base_url() == 'https://ledger.test'
         assert ledger_audience() == 'https://ledger.test/'
+
+    @pytest.mark.parametrize(
+        ('url', 'allowed'),
+        [
+            ('https://alpacon.ai', True),
+            ('http://localhost:8400', True),
+            ('http://127.0.0.2', True),
+            ('http://[::1]', True),
+            ('http://alpacon.ai', False),
+            ('http://localhost.example.com', False),
+            ('//alpacon.ai', False),
+            ('http://[::1', False),
+            ('', False),
+        ],
+    )
+    def test_only_https_or_loopback_http_carries_the_token(self, url, allowed):
+        assert (ledger_url_error(url) is None) is allowed
 
 
 class TestDeviceAuthorization:

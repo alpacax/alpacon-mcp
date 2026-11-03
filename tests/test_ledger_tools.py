@@ -2,8 +2,9 @@
 
 import importlib
 import json
+import re
 from http import HTTPStatus
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import DEFAULT, AsyncMock, MagicMock, patch
 
 import pytest
 from mcp.types import CallToolResult
@@ -72,7 +73,34 @@ UNAUTHORIZED_ENVELOPE = {
     'response': json.dumps(UNAUTHORIZED_BODY),
 }
 
+OTHER_WORKSPACE_ID = '99999999-8888-7777-6666-555555555555'
+_ENTRY_URL = re.compile(r'/api/acl/entries/(?P<id>[^/]+)/$')
+
 mock_http_client = http_client_fixture('tools.ledger_tools')
+
+
+def answer_entry_reads(owners: dict[str, str] | None = None):
+    """A `request` side effect that answers a read of one entry with that entry,
+    owned by `owners[id]` (this workspace by default); any other call returns the
+    mock's `return_value`."""
+
+    def answer(method, url, **kwargs):
+        match = _ENTRY_URL.search(url)
+        if method != 'GET' or match is None:
+            return DEFAULT
+        entry_id = match['id']
+        return {
+            'id': entry_id,
+            'workspace_id': (owners or {}).get(entry_id, WORKSPACE_ID),
+            'command_pattern': 'uptime',
+        }
+
+    return answer
+
+
+def changes(mock_http_client):
+    """Every ledger request that is not a read."""
+    return [c for c in mock_http_client.request.call_args_list if c.args[0] != 'GET']
 
 
 @pytest.fixture
@@ -81,7 +109,9 @@ def ledger(mock_http_client, mock_token_manager, monkeypatch):
     monkeypatch.delenv('ALPACON_MCP_LEDGER_URL', raising=False)
     monkeypatch.setenv('ALPACON_MCP_TRANSPORT', 'stdio')
     mock_http_client.get.return_value = AI_ENV
-    mock_http_client.request = AsyncMock(return_value={'ok': True})
+    mock_http_client.request = AsyncMock(
+        return_value={'ok': True}, side_effect=answer_entry_reads()
+    )
     authorizer = MagicMock()
     authorizer.token_for = AsyncMock(return_value='ledger-jwt')
     with patch('tools.ledger_tools.ledger_authorizer', authorizer):
@@ -665,6 +695,200 @@ class TestEntries:
         assert kwargs['json_data'] is None
         assert result['status'] == 'success'
         assert result['entry_id'] == ENTRY_ID
+
+
+class TestEntriesOfAnotherWorkspace:
+    """The ledger finds an id in every workspace the caller administers, so a
+    change by id is checked against the named workspace before it is sent."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ('tool', 'method', 'suffix'),
+        [
+            (revoke_ledger_entry, 'DELETE', ''),
+            (disable_ledger_entry, 'POST', 'disable/'),
+            (enable_ledger_entry, 'POST', 'enable/'),
+        ],
+    )
+    async def test_an_entry_here_is_read_then_changed(
+        self, ledger, tool, method, suffix
+    ):
+        client, _ = ledger
+
+        result = await tool(workspace='testworkspace', region='ap1', entry_id=ENTRY_ID)
+
+        calls = [c.args[:2] for c in client.request.call_args_list]
+        assert calls == [
+            ('GET', f'{LEDGER}entries/{ENTRY_ID}/'),
+            (method, f'{LEDGER}entries/{ENTRY_ID}/{suffix}'),
+        ]
+        assert result['status'] == 'success'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'tool', [revoke_ledger_entry, disable_ledger_entry, enable_ledger_entry]
+    )
+    async def test_an_entry_of_another_workspace_is_refused(self, ledger, tool):
+        client, _ = ledger
+        client.request.side_effect = answer_entry_reads({ENTRY_ID: OTHER_WORKSPACE_ID})
+
+        result = await tool(workspace='testworkspace', region='ap1', entry_id=ENTRY_ID)
+
+        assert result['status'] == 'error'
+        assert 'another workspace' in result['message']
+        assert ENTRY_ID in result['message']
+        assert result['entry_id'] == ENTRY_ID
+        assert result['workspace'] == 'testworkspace'
+        assert changes(client) == []
+
+    @pytest.mark.asyncio
+    async def test_the_workspace_id_is_compared_without_case(self, ledger):
+        client, _ = ledger
+        client.request.side_effect = answer_entry_reads(
+            {ENTRY_ID: WORKSPACE_ID.upper()}
+        )
+
+        result = await revoke_ledger_entry(
+            workspace='testworkspace', region='ap1', entry_id=ENTRY_ID
+        )
+
+        assert result['status'] == 'success'
+        assert len(changes(client)) == 1
+
+    @pytest.mark.asyncio
+    async def test_an_entry_without_a_workspace_is_refused(self, ledger):
+        client, _ = ledger
+        client.request.side_effect = None
+        client.request.return_value = {'id': ENTRY_ID}
+
+        result = await revoke_ledger_entry(
+            workspace='testworkspace', region='ap1', entry_id=ENTRY_ID
+        )
+
+        assert result['status'] == 'error'
+        assert changes(client) == []
+
+    @pytest.mark.asyncio
+    async def test_a_failed_read_changes_nothing(self, ledger):
+        client, _ = ledger
+        client.request.side_effect = None
+        client.request.return_value = {
+            'error': 'HTTP Error',
+            'status_code': HTTPStatus.NOT_FOUND,
+            'message': 'Not found',
+            'response': json.dumps({'detail': 'Not found.'}),
+        }
+
+        result = await disable_ledger_entry(
+            workspace='testworkspace', region='ap1', entry_id=ENTRY_ID
+        )
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == HTTPStatus.NOT_FOUND
+        assert result['detail'] == {'detail': 'Not found.'}
+        assert result['entry_id'] == ENTRY_ID
+        assert changes(client) == []
+
+    @pytest.mark.asyncio
+    async def test_bulk_revoke_reads_every_entry_first(self, ledger):
+        client, _ = ledger
+        client.request.return_value = {'revoked': 2}
+
+        result = await revoke_ledger_entries(
+            workspace='testworkspace',
+            region='ap1',
+            entry_ids=[ENTRY_ID, SECOND_ENTRY_ID],
+        )
+
+        calls = [c.args[:2] for c in client.request.call_args_list]
+        assert calls == [
+            ('GET', f'{LEDGER}entries/{ENTRY_ID}/'),
+            ('GET', f'{LEDGER}entries/{SECOND_ENTRY_ID}/'),
+            ('POST', f'{LEDGER}entries/bulk/delete/'),
+        ]
+        assert result['data'] == {'revoked': 2}
+
+    @pytest.mark.asyncio
+    async def test_bulk_revoke_with_one_entry_elsewhere_revokes_none(self, ledger):
+        client, _ = ledger
+        client.request.side_effect = answer_entry_reads(
+            {SECOND_ENTRY_ID: OTHER_WORKSPACE_ID}
+        )
+
+        result = await revoke_ledger_entries(
+            workspace='testworkspace',
+            region='ap1',
+            entry_ids=[ENTRY_ID, SECOND_ENTRY_ID],
+        )
+
+        assert result['status'] == 'error'
+        assert SECOND_ENTRY_ID in result['message']
+        assert 'nothing was revoked' in result['message'].lower()
+        assert changes(client) == []
+
+
+class TestLedgerUrl:
+    """The ledger token is a bearer credential: it goes over https only, or plain
+    http to this machine."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'url',
+        [
+            'http://ledger.example.com',
+            'http://10.0.0.5:8400',
+            'ftp://ledger.example.com',
+            'ledger.example.com',
+            'https://',
+        ],
+    )
+    async def test_a_url_the_token_must_not_reach_is_refused_before_sign_in(
+        self, ledger, monkeypatch, url
+    ):
+        client, authorizer = ledger
+        monkeypatch.setenv('ALPACON_MCP_LEDGER_URL', url)
+
+        result = await revoke_ledger_entry(
+            workspace='testworkspace', region='ap1', entry_id=ENTRY_ID
+        )
+
+        assert result['status'] == 'error'
+        assert 'ALPACON_MCP_LEDGER_URL' in result['message']
+        assert result['workspace'] == 'testworkspace'
+        authorizer.token_for.assert_not_called()
+        client.request.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_capability_is_refused_too(self, ledger, monkeypatch):
+        client, authorizer = ledger
+        monkeypatch.setenv('ALPACON_MCP_LEDGER_URL', 'http://ledger.example.com')
+
+        result = await get_ledger_capability(workspace='testworkspace', region='ap1')
+
+        assert result['status'] == 'error'
+        assert 'https' in result['message']
+        authorizer.token_for.assert_not_called()
+        client.request.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'url',
+        [
+            'https://ledger.example.com/',
+            'HTTPS://ledger.example.com',
+            'http://localhost:8400',
+            'http://127.0.0.1:8400/',
+            'http://[::1]:8400',
+        ],
+    )
+    async def test_https_or_loopback_http_is_used(self, ledger, monkeypatch, url):
+        client, _ = ledger
+        monkeypatch.setenv('ALPACON_MCP_LEDGER_URL', url)
+
+        result = await list_ledger_entries(workspace='testworkspace', region='ap1')
+
+        assert result['status'] == 'success'
+        client.request.assert_called_once()
 
 
 class TestAdmins:

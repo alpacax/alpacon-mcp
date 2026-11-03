@@ -27,7 +27,11 @@ from utils.ledger_auth import (
     ledger_authorizer,
     ledger_base_url,
 )
-from utils.ledger_grant import RETRY_WINDOW_SECONDS, ledger_grant_of
+from utils.ledger_grant import (
+    RETRY_WINDOW_SECONDS,
+    ledger_grant_of,
+    ledger_url_error,
+)
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
 from utils.types import (
     JsonValue,
@@ -144,6 +148,16 @@ async def _ledger_target(
         return error_response(
             'This workspace does not sign in through Auth0, so the command '
             'pre-approval ledger cannot authorize anyone here.',
+            command_acl_surface=surface,
+            region=region,
+            workspace=workspace,
+        )
+
+    # Before any sign-in, so no ledger token is minted for a host it must not reach.
+    url_error = ledger_url_error(ledger_base_url())
+    if url_error:
+        return error_response(
+            url_error,
             command_acl_surface=surface,
             region=region,
             workspace=workspace,
@@ -291,6 +305,44 @@ async def _ledger_request(
     return success_response(data=result, **context)
 
 
+async def _refuse_entries_elsewhere(
+    target: LedgerTarget,
+    entry_ids: list[str],
+    *,
+    region: str,
+    workspace: str,
+    nothing_changed: str,
+) -> ToolResponse | None:
+    """Read each entry and refuse unless all belong to the target workspace: the
+    ledger finds an id in every workspace the caller administers."""
+    for entry_id in entry_ids:
+        result = await _ledger_request(
+            target,
+            'GET',
+            f'entries/{entry_id}/',
+            region=region,
+            workspace=workspace,
+            default_message=(
+                f'Failed to read the command pre-approval ledger entry {entry_id}; '
+                f'{nothing_changed}'
+            ),
+            entry_id=entry_id,
+        )
+        if result.get('status') != 'success':
+            return result
+        data = result.get('data')
+        owner = data.get('workspace_id') if isinstance(data, dict) else None
+        if str(owner or '').lower() != target.workspace_id.lower():
+            return error_response(
+                f'Entry {entry_id} belongs to another workspace; {nothing_changed} '
+                'Call the tool with the workspace the entry belongs to.',
+                entry_id=entry_id,
+                region=region,
+                workspace=workspace,
+            )
+    return None
+
+
 async def _ledger_call(
     method: str,
     path: str,
@@ -300,15 +352,31 @@ async def _ledger_call(
     token: str | None,
     default_message: str,
     scope_to_workspace: Literal['query', 'body'] | None = None,
+    entries_here: list[str] | None = None,
     json_data: RequestBody | None = None,
     params: QueryParams | None = None,
     **id_context: object,
 ) -> ToolResponse:
     """Resolve the ledger target, then call it; `scope_to_workspace` puts the workspace
-    id in the query (lists) or body (writes), which the ledger demands."""
+    id in the query (lists) or body (writes), which the ledger demands, and
+    `entries_here` names entries that must belong to the workspace first."""
     target = await _ledger_target(region, workspace, token)
     if isinstance(target, dict):
         return target
+    if entries_here:
+        refused = await _refuse_entries_elsewhere(
+            target,
+            entries_here,
+            region=region,
+            workspace=workspace,
+            nothing_changed=(
+                'nothing was revoked.'
+                if len(entries_here) > 1
+                else 'nothing was changed.'
+            ),
+        )
+        if refused is not None:
+            return refused
     if scope_to_workspace == 'query':
         params = {'workspace_id': target.workspace_id, **(params or {})}
     elif scope_to_workspace == 'body':
@@ -507,6 +575,7 @@ async def revoke_ledger_entry(
         workspace=workspace,
         token=kwargs.get('token'),
         default_message='Failed to revoke the command pre-approval ledger entry',
+        entries_here=[entry_id],
         entry_id=entry_id,
     )
 
@@ -515,7 +584,8 @@ async def revoke_ledger_entry(
     description=(
         'Revoke several command pre-approvals on the command pre-approval '
         'ledger in one request. All or nothing: an id that is unknown, already '
-        'revoked or outside your authority refuses the batch. Requires a '
+        'revoked, outside your authority or in another workspace refuses the '
+        'batch. Requires a '
         'Command ACL admin. Related: revoke_ledger_entry, list_ledger_entries.'
     ),
     annotations=DESTRUCTIVE,
@@ -539,6 +609,7 @@ async def revoke_ledger_entries(
         region=region,
         workspace=workspace,
         token=kwargs.get('token'),
+        entries_here=list(entry_ids),
         json_data={'ids': list(entry_ids)},
         default_message='Failed to revoke the command pre-approval ledger entries',
     )
@@ -558,6 +629,7 @@ async def _set_entry_enabled(
         workspace=workspace,
         token=token,
         default_message=f'Failed to {action} the command pre-approval ledger entry',
+        entries_here=[entry_id],
         entry_id=entry_id,
     )
 
