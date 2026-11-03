@@ -94,6 +94,7 @@ include = [
     "/main.py",
     "/main_http.py",
     "/tools/**/*.py",
+    "/tools/**/*.html",
     "/utils/**/*.py",
     "/config/token.json.example",
 ]

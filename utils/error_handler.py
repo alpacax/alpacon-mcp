@@ -32,6 +32,15 @@ class UpstreamAuthError(ToolError):
         super().__init__(msg)
 
 
+class MfaStepUpRequired(ToolError):  # noqa: N818  # a signal, named for the state
+    """Alpacon refused with ``auth_mfa_required``. Not an UpstreamAuthError, which comes
+    with a request_signal entry and so a re-auth challenge in place of the result."""
+
+    def __init__(self, source: str = '') -> None:
+        self.source = source
+        super().__init__('MFA step-up required')
+
+
 def validate_workspace_format(workspace: str) -> bool:
     """Alphanumeric with inner hyphens/underscores, at most 63 characters."""
     if not workspace or not isinstance(workspace, str):

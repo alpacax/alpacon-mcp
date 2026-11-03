@@ -10,16 +10,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+from mcp.types import ClientCapabilities
 
+from tests.conftest import APPS_CAPS, in_tool_call_round
 from tools import command_tools, system_info_tools
 from utils import mfa_step_up, request_signal
 from utils.decorators import with_error_handling
-from utils.error_handler import UpstreamAuthError
+from utils.error_handler import MfaStepUpRequired, UpstreamAuthError
 from utils.http_client import AlpaconHTTPClient, http_client
 
 JWT = 'header.payload.signature'
 LINK = 'https://tenant.auth0.com/authorize?ticket=secret'
-STEP_UP_LOGGER = 'alpacon_mcp.mfa_step_up'
 
 
 def _401_with_body(body: dict[str, object]) -> httpx.HTTPStatusError:
@@ -73,6 +74,58 @@ class TestMfaRequiredResult:
         assert remote == {}
 
     @pytest.mark.asyncio
+    async def test_mcp_apps_client_is_pointed_at_show_mfa_and_still_gets_the_link(
+        self, remote, mfa_fetch
+    ):
+        result = await in_tool_call_round(APPS_CAPS, lambda: refused_tool(token=JWT))
+
+        assert result['status'] == 'mfa_required'
+        assert result['mfa_url'] == LINK
+        assert 'Call show_mfa with the same workspace and region' in result['message']
+        assert 'retry the same call once' in result['message']
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ('retry', 'already_sent'),
+        [('sent', ['POST /api/events/commands/']), ('partial', [])],
+    )
+    async def test_mcp_apps_client_with_part_of_the_call_run_is_never_told_to_redo_it(
+        self, retry, already_sent
+    ):
+        client = MagicMock(get=AsyncMock(return_value={'mfa_url': LINK}))
+
+        result = await mfa_step_up.step_up_result(
+            client,
+            workspace='acme',
+            region='ap1',
+            token=JWT,
+            source='command',
+            retry=retry,
+            already_sent=already_sent,
+            apps_declared=True,
+        )
+
+        message = result['message']
+        assert isinstance(message, str)
+        assert 'show_mfa' in message
+        assert 'never the whole call' in message
+        assert 'retry the same call once' not in message
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'capabilities',
+        [None, ClientCapabilities()],
+        ids=['unknown', 'declared-absent'],
+    )
+    async def test_client_without_mcp_apps_is_not_pointed_at_show_mfa(
+        self, remote, mfa_fetch, capabilities
+    ):
+        result = await in_tool_call_round(capabilities, lambda: refused_tool(token=JWT))
+
+        assert result['mfa_url'] == LINK
+        assert 'show_mfa' not in result['message']
+
+    @pytest.mark.asyncio
     async def test_link_is_fetched_with_cli_location_workspace_and_callers_token(
         self, remote, mfa_fetch
     ):
@@ -117,23 +170,30 @@ class TestMfaRequiredResult:
     )
     @pytest.mark.asyncio
     async def test_failed_link_fetch_returns_no_link_and_asks_for_a_later_retry(
-        self, remote, mfa_fetch, failure, caplog
+        self, remote, mfa_fetch, failure
     ):
         if isinstance(failure, Exception):
             mfa_fetch.side_effect = failure
         else:
             mfa_fetch.return_value = failure
 
-        with caplog.at_level(logging.WARNING, logger=STEP_UP_LOGGER):
-            result = await refused_tool(token=JWT)
+        result = await refused_tool(token=JWT)
 
         assert result['status'] == 'mfa_required'
         assert result['mfa_url'] is None
         assert 'does not count for this connection' in result['message']
-        assert any(
-            r.levelno == logging.WARNING and r.name == STEP_UP_LOGGER
-            for r in caplog.records
-        )
+
+    @pytest.mark.asyncio
+    async def test_link_endpoint_refused_for_mfa_returns_no_link_instead_of_raising(
+        self, remote, mfa_fetch
+    ):
+        mfa_fetch.side_effect = lambda *args, **kwargs: _refuse()
+
+        result = await refused_tool(token=JWT)
+
+        assert result['status'] == 'mfa_required'
+        assert result['mfa_url'] is None
+        assert 'does not count for this connection' in result['message']
 
     @pytest.mark.asyncio
     async def test_link_is_not_written_to_the_log(self, remote, mfa_fetch, caplog):
@@ -340,7 +400,7 @@ class TestSourceBoundary:
             for source in ('command', 'webftp'):
                 try:
                     _refuse(source=source)
-                except mfa_step_up.MfaStepUpRequired:
+                except MfaStepUpRequired:
                     pass
             return {'status': 'success'}
 
@@ -523,7 +583,7 @@ class TestPartialWrites:
                 mfa_step_up.record('command')  # a sibling request was refused meanwhile
                 release.set()
                 await holding
-                with pytest.raises(mfa_step_up.MfaStepUpRequired):
+                with pytest.raises(MfaStepUpRequired):
                     await queued
 
         assert received == ['/slow']

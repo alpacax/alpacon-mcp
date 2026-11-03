@@ -491,6 +491,12 @@ OAuth/browser callers must scope command execution and file transfers under an a
 
 These are served over stdio, and in remote mode once the operator enables them, and need a separate browser sign-in on first use; see `docs/api-reference.md`.
 
+### 🔑 MFA
+- **show_mfa**: Show the user an Authenticate button for a fresh MFA check, in a client that renders MCP Apps
+- **get_mfa_completion**: Whether that MFA check is complete; called by the panel, not the model
+
+These are served in remote mode only; see `docs/api-reference.md`.
+
 ### ✅ Approvals & sudo
 - **list_approval_requests** / **get_approval_request**: Pending and historical approval requests
 - **explain_approval_decision**: Why an agent cannot approve, and who can
