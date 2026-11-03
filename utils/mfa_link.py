@@ -53,7 +53,7 @@ async def fetch_mfa_link(
             MFA_LINK_ENDPOINT,
             token=token,
             # cli on purpose: Alpacon stores no location, and its MFA success page
-            # returns step_up_ticket only for cli (#427 step 3). Nit: tidy later.
+            # returns step_up_ticket only for cli (#427 step 3).
             params={'location': 'cli', 'workspace': workspace},
         )
     except (UpstreamAuthError, MfaStepUpRequired):
