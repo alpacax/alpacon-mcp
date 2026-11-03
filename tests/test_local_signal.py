@@ -17,12 +17,14 @@ from time import perf_counter
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from mcp.types import CallToolResult, TextContent
 
 import server
 from tools import command_tools
-from utils import local_signal
+from utils import local_signal, mfa_step_up
 from utils.common import unwrap_http_result
 from utils.decorators import mcp_tool_handler, with_error_handling
+from utils.error_handler import MfaStepUpRequired
 from utils.http_client import http_client
 from utils.local_signal import notify as platform_notify
 
@@ -1489,6 +1491,86 @@ async def test_remote_call_does_not_bind_signal_arguments(monkeypatch):
 
     assert await tool() == {'status': 'success'}
     signature.bind.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_decorator_pending_approval_in_mfa_holder_signals_once(
+    desktop_notifications,
+):
+    result = {'status': 'pending_approval', 'data': {'message': 'original'}}
+    original = deepcopy(result)
+
+    @with_error_handling
+    async def tool():
+        with mfa_step_up.tool_call() as nested:
+            assert nested is None
+        return result
+
+    with local_signal.stdio_transport():
+        answer = await tool()
+    await drain_signals()
+    assert answer is result
+    assert answer == original
+    desktop_notifications.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_decorator_mfa_step_up_returns_link_without_notification(
+    monkeypatch, desktop_notifications
+):
+    link = 'https://tenant.auth0.com/authorize?ticket=test'
+    fetch = AsyncMock(return_value={'mfa_url': link})
+    monkeypatch.setattr(http_client, 'get', fetch)
+
+    async def refuse(*args, **kwargs):
+        mfa_step_up.record('command')
+        raise MfaStepUpRequired('command')
+
+    post = AsyncMock(side_effect=refuse)
+    monkeypatch.setattr(http_client, 'post', post)
+
+    @with_error_handling
+    async def tool(workspace='example', region='ap1'):
+        return await http_client.post(region, workspace, '/api/events/commands/')
+
+    with local_signal.stdio_transport():
+        answer = await tool()
+    await drain_signals()
+    assert answer['status'] == 'mfa_required'
+    assert answer['mfa_url'] == link
+    assert answer['source'] == 'command'
+    post.assert_awaited_once_with('ap1', 'example', '/api/events/commands/')
+    fetch.assert_awaited_once_with(
+        'ap1',
+        'example',
+        '/api/auth0/mfa/',
+        token=None,
+        params={'location': 'cli', 'workspace': 'example'},
+    )
+    desktop_notifications.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_decorator_mfa_call_tool_result_is_unchanged_without_notification(
+    desktop_notifications,
+):
+    body = {'status': 'mfa_link_shown'}
+    result = CallToolResult(
+        content=[TextContent(type='text', text=json.dumps(body))],
+        structured_content=body,
+    )
+    original = result.model_dump()
+
+    @with_error_handling
+    async def tool():
+        return result
+
+    with local_signal.stdio_transport():
+        answer = await tool()
+    await drain_signals()
+    assert answer is result
+    assert answer.model_dump() == original
+    desktop_notifications.assert_not_called()
 
 
 @pytest.mark.asyncio
