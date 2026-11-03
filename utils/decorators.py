@@ -13,7 +13,7 @@ from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from utils import local_signal, mfa_step_up, token_manager
+from utils import local_signal, mfa_elicitation, mfa_step_up, token_manager
 from utils.auth import (
     WorkspaceClaim,
     get_token_workspaces,
@@ -37,7 +37,7 @@ from utils.error_handler import (
 )
 from utils.http_client import AlpaconHTTPClient, http_client
 from utils.logger import describe_for_log, get_logger
-from utils.notification_context import capture_console_links
+from utils.notification_context import ConsoleLinks, capture_console_links
 from utils.recovery_hints import enrich_error_response
 from utils.types import JsonValue, ToolErrorResponse, ToolResult
 from utils.workspace_resolver import resolve_workspace
@@ -574,46 +574,71 @@ def with_error_handling[**P, R](
 
     @wraps(func)
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> ToolResult[R]:
-        raised = False
-        result: ToolResult[R] | None = None
-        with (
-            mfa_step_up.tool_call() as call,
-            capture_console_links(local_signal.is_stdio()) as console_links,
-        ):
-            try:
-                result = await answer(*args, **kwargs)
-            except mfa_step_up.MfaStepUpRequired:
-                if call is None:
-                    raise
-                raised = True
-        if call is None or not call.required:
+        token = kwargs.get('token')
+
+        def target() -> tuple[str, str]:  # bound late: a bad call fails inside answer()
+            arguments = call_arguments(*args, **kwargs)
+            return (
+                str(arguments.get('region', 'unknown')),
+                str(arguments.get('workspace', 'unknown')),
+            )
+
+        def signalled(
+            outcome: ToolResult[R], console_links: ConsoleLinks | None
+        ) -> ToolResult[R]:
             if local_signal.is_stdio():
                 local_signal.signal_result(
-                    result,
+                    outcome,
                     call_arguments(*args, **kwargs),
                     tool_name=func_name,
                     console_links=console_links,
                 )
-            return cast(ToolResult[R], result)
+            return outcome
+
+        result: ToolResult[R] | None = None
+        with mfa_step_up.tool_call() as call:
+            if call is None:
+                with capture_console_links(local_signal.is_stdio()) as console_links:
+                    result = await answer(*args, **kwargs)
+                return signalled(result, console_links)
+            previous = mfa_elicitation.resumed()
+            region, workspace = target() if previous is not None else ('', '')
+            retry: mfa_step_up.Retry = 'whole'
+            # A retry of a URL elicitation stops here until Alpacon reports MFA done.
+            if previous is not None and await mfa_elicitation.unfinished(
+                previous, region=region, workspace=workspace, token=token
+            ):
+                source = previous[0]['source']
+            else:
+                raised = False
+                with capture_console_links(local_signal.is_stdio()) as console_links:
+                    try:
+                        result = await answer(*args, **kwargs)
+                    except mfa_step_up.MfaStepUpRequired:
+                        raised = True
+                if not call.required:
+                    return signalled(cast(ToolResult[R], result), console_links)
+                source = call.source
+                logger.info('%s needs an MFA step-up (source=%s)', func_name, source)
+                region, workspace = target()
+                if not read_only and (call.sent or not raised):
+                    retry = 'sent' if raised else 'partial'
         # The holder is released above, so the link fetch is not refused by it.
-        logger.info('%s needs an MFA step-up (source=%s)', func_name, call.source)
-        token = kwargs.get('token')
-        arguments = call_arguments(*args, **kwargs)
-        retry: mfa_step_up.Retry
-        if read_only or (raised and not call.sent):
-            retry = 'whole'
-        else:
-            retry = 'sent' if raised else 'partial'
-        return await mfa_step_up.step_up_result(
+        step_up = await mfa_step_up.step_up_result(
             http_client,
-            workspace=str(arguments.get('workspace', 'unknown')),
-            region=str(arguments.get('region', 'unknown')),
+            workspace=workspace,
+            region=region,
             token=token if isinstance(token, str) else None,
-            source=call.source,
+            source=source,
             retry=retry,
             already_sent=call.sent,
             partial_result=cast(JsonValue, result),
         )
+        if retry == 'whole':
+            elicited = mfa_elicitation.elicitation(step_up, previous)
+            if elicited is not None:
+                return cast(ToolResult[R], elicited)
+        return cast(ToolResult[R], step_up)
 
     setattr(wrapper, ERROR_HANDLING_MARKER, True)
     return wrapper
