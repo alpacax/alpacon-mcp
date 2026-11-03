@@ -163,6 +163,7 @@ One id per grant means one MFA record per MCP client installation: a step-up in 
 | MFA link fetch | `utils/mfa_link.py` | Fetches `/api/auth0/mfa/` for the `mfa_required` result and reads a link, an already-done answer, a raised fetch or an answer without a link, logging why a fetch failed; an MFA refusal of the fetch itself propagates |
 | Result assembly | `utils/decorators.py` | The outermost `with_error_handling` calls `step_up_result`, asks `unfinished` first on an elicitation retry, and turns a whole-retry result into an elicitation |
 | Tool call round | `utils/client_surfaces.py` | `bind_tool_call_round` binds each `tools/call`'s declared surfaces, `requestState` and `inputResponses` |
+| MCP App tool listing | `utils/ui_tools.py` | `hide_ui_tools`, remote mode only, drops `_meta.ui` tools from `tools/list` for a client without MCP Apps |
 | URL elicitation | `utils/mfa_elicitation.py` | Builds the `InputRequiredResult` for a whole-retry `mfa_required`, polls completion on the retry, and bounds the asks |
 | Auth error middleware | `utils/auth_error_middleware.py` | Answers an MFA signal with 403 `insufficient_scope` and `mfa` in the scope |
 | OAuth proxy (authorize) | `utils/oauth.py` | Routes to MFA or regular audience based on scope |

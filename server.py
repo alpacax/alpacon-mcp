@@ -21,10 +21,13 @@ from utils.health import get_health_info
 from utils.http_client import http_client
 from utils.logger import get_logger, stop_log_listener
 from utils.routes import RouteRegistry
+from utils.ui_tools import hide_ui_tools
 
 logger = get_logger('server')
 
 SERVER_MIDDLEWARE = [capture_declared_agent, bind_tool_call_round]
+# Remote only: stdio never serves an MCP App tool.
+REMOTE_MIDDLEWARE = [*SERVER_MIDDLEWARE, hide_ui_tools]
 
 TRANSPORT_STDIO: Final = 'stdio'
 TRANSPORT_STREAMABLE_HTTP: Final = 'streamable-http'
@@ -210,7 +213,7 @@ def _create_mcp_server() -> MCPServer[None]:
                 codec=AESGCMRequestStateCodec([request_state_key()])
             ),
             lifespan=app_lifespan,
-            middleware=SERVER_MIDDLEWARE,
+            middleware=REMOTE_MIDDLEWARE,
         )
     else:
         logger.info('Creating MCP server without auth (stdio mode)')

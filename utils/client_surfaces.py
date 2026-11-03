@@ -1,13 +1,13 @@
 """
 Which MCP surfaces the connected client declared, logged on every tools/call, and the
-round a retry echoes back. apps means the extension key is declared.
+round a retry echoes back. apps means the extension lists the MCP App HTML type.
 """
 
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Literal
 
-from mcp.server.apps import EXTENSION_ID
+from mcp.server.apps import APP_MIME_TYPE, EXTENSION_ID
 from mcp.server.context import CallNext, HandlerResult, ServerRequestContext
 from mcp.types import ClientCapabilities, InputResponseRequestParams, InputResponses
 from pydantic import ValidationError
@@ -42,6 +42,12 @@ class ToolCallRound:
 _round: ContextVar[ToolCallRound | None] = ContextVar('tool_call_round', default=None)
 
 
+def _renders_app_html(capabilities: ClientCapabilities) -> bool:
+    settings = (capabilities.extensions or {}).get(EXTENSION_ID)
+    mime_types = settings.get('mimeTypes') if isinstance(settings, dict) else None
+    return isinstance(mime_types, list) and APP_MIME_TYPE in mime_types
+
+
 def client_surfaces(capabilities: ClientCapabilities | None) -> ClientSurfaces:
     if capabilities is None:
         return ClientSurfaces(url_elicitation='unknown', apps='unknown')
@@ -50,9 +56,7 @@ def client_surfaces(capabilities: ClientCapabilities | None) -> ClientSurfaces:
         url_elicitation='declared'
         if elicitation is not None and elicitation.url is not None
         else 'absent',
-        apps='declared'
-        if EXTENSION_ID in (capabilities.extensions or {})
-        else 'absent',
+        apps='declared' if _renders_app_html(capabilities) else 'absent',
     )
 
 

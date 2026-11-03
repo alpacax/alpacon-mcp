@@ -2,14 +2,18 @@
 Autouse fixtures keep tests off the real TokenManager and its token.json.
 """
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from http import HTTPStatus
+from types import SimpleNamespace
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 from mcp.server.auth.provider import AccessToken
+from mcp.server.context import ServerRequestContext
+from mcp.types import ClientCapabilities
 
 import server as server_module
 from server import mcp
@@ -204,3 +208,19 @@ async def make_client():
 
 # The logger the MFA link fetch writes to.
 LINK_LOGGER = 'alpacon_mcp.mfa_link'
+
+
+def request_context(
+    method: str,
+    capabilities: ClientCapabilities | None,
+    params: Mapping[str, object] | None = None,
+    protocol_version: str = '2026-07-28',
+) -> ServerRequestContext[object, object]:
+    """The parts of the SDK's request context that server middleware reads."""
+    ctx = SimpleNamespace(
+        method=method,
+        protocol_version=protocol_version,
+        session=SimpleNamespace(client_capabilities=capabilities),
+        params=params,
+    )
+    return cast(ServerRequestContext[object, object], ctx)
