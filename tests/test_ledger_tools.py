@@ -36,7 +36,7 @@ from utils.ledger_auth import (
 )
 from utils.recovery_hints import get_recovery_hints
 
-WORKSPACE_ID = '11111111-2222-3333-4444-555555555555'
+WORKSPACE_ID = '1111aaaa-2222-bbbb-3333-cccc4444dddd'  # letters, so .upper() differs
 ENTRY_ID = '7e3984de-49ab-4cc6-bcdf-21fbd35858b8'
 SECOND_ENTRY_ID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
 SERVICE_TOKEN_ID = '550e8400-e29b-41d4-a716-446655440001'
