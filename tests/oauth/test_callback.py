@@ -7,6 +7,8 @@ from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from starlette.applications import Starlette
+from starlette.testclient import TestClient
 
 from tests.oauth._support import (
     DEVICE_ID,
@@ -17,10 +19,12 @@ from tests.oauth._support import (
     TEST_NONCE,
     TRUSTED_REDIRECT_URI,
     UNLISTED_PATH_URI,
+    MockMCPServer,
     _forge_state_under_valid_signature,
     _mock_auth0_response,
     _state_payload,
 )
+from utils.oauth import register_oauth_routes
 from utils.oauth._http import (
     _AUTHORIZE_PATH,
     _CALLBACK_PATH,
@@ -560,3 +564,91 @@ class TestOAuthCallback:
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
         assert 'location' not in response.headers
+
+
+@pytest.fixture
+def browser():
+    """One cookie jar across requests, over https so it keeps __Host- cookies."""
+    mock_server = MockMCPServer()
+    register_oauth_routes(mock_server)
+    return TestClient(
+        Starlette(routes=mock_server.routes),
+        base_url='https://testserver',
+        raise_server_exceptions=False,
+    )
+
+
+def _start_flow(browser, client_state):
+    """Run /oauth/authorize as a client would and return the state Auth0 echoes."""
+    response = browser.get(
+        _AUTHORIZE_PATH,
+        params={
+            'redirect_uri': 'http://localhost:52048/callback',
+            'state': client_state,
+            **PKCE_PARAMS,
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == HTTPStatus.FOUND
+    return parse_qs(urlparse(response.headers['location']).query)['state'][0]
+
+
+class TestOverlappingFlows:
+    """Two MCP clients signing in through the same browser at the same time."""
+
+    def test_first_flow_completes_after_a_second_authorize(self, browser):
+        first = _start_flow(browser, 'client-1')
+        _start_flow(browser, 'client-2')
+
+        response = browser.get(
+            _CALLBACK_PATH,
+            params={'code': 'auth-code', 'state': first},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == HTTPStatus.FOUND
+        params = parse_qs(urlparse(response.headers['location']).query)
+        assert params['state'] == ['client-1']
+
+    def test_both_flows_complete_in_either_order(self, browser):
+        first = _start_flow(browser, 'client-1')
+        second = _start_flow(browser, 'client-2')
+
+        answers = [
+            browser.get(
+                _CALLBACK_PATH,
+                params={'code': 'auth-code', 'state': state},
+                follow_redirects=False,
+            )
+            for state in (second, first)
+        ]
+
+        assert [r.status_code for r in answers] == [HTTPStatus.FOUND] * 2
+        delivered = [
+            parse_qs(urlparse(r.headers['location']).query)['state'] for r in answers
+        ]
+        assert delivered == [['client-2'], ['client-1']]
+
+    def test_finishing_one_flow_leaves_the_other_flows_cookie(self, browser):
+        first = _start_flow(browser, 'client-1')
+        second = _start_flow(browser, 'client-2')
+        browser.get(
+            _CALLBACK_PATH,
+            params={'code': 'auth-code', 'state': first},
+            follow_redirects=False,
+        )
+
+        replay = browser.get(
+            _CALLBACK_PATH,
+            params={'code': 'auth-code', 'state': first},
+            follow_redirects=False,
+        )
+        response = browser.get(
+            _CALLBACK_PATH,
+            params={'code': 'auth-code', 'state': second},
+            follow_redirects=False,
+        )
+
+        assert replay.status_code == HTTPStatus.BAD_REQUEST
+        assert replay.json()['error'] == 'invalid_request'
+        assert response.status_code == HTTPStatus.FOUND

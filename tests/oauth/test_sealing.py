@@ -24,7 +24,6 @@ from utils.oauth import register_oauth_routes, request_state_key
 from utils.oauth._sealing import (
     _GRANT_SECRET_ENV,
     _GRANT_SECRET_INFO,
-    _NONCE_COOKIE_NAME,
     _SEAL_KIND_CODE,
     _SEAL_KIND_REFRESH,
     _STAGE_MFA,
@@ -37,6 +36,7 @@ from utils.oauth._sealing import (
     _hash_nonce,
     _mint_device_id,
     _mint_nonce,
+    _nonce_cookie_name,
     _open_seal,
     _seal_code,
     _seal_refresh_token,
@@ -212,7 +212,12 @@ class TestNonceHelpers:
         assert _hash_nonce('abc') == expected
 
     def test_nonce_cookie_name_carries_the_host_prefix(self):
-        assert _NONCE_COOKIE_NAME == '__Host-alpacon_oauth_nonce'
+        assert _nonce_cookie_name(_hash_nonce('abc')).startswith('__Host-')
+
+    def test_nonce_cookie_name_differs_per_flow(self):
+        assert _nonce_cookie_name(_hash_nonce('abc')) != _nonce_cookie_name(
+            _hash_nonce('abd')
+        )
 
 
 class TestStateEnvelope:

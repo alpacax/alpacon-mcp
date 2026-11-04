@@ -25,6 +25,7 @@ from tests.oauth._support import (
     OAUTH_ENV,
     PKCE_PARAMS,
     TEST_NONCE,
+    TEST_NONCE_COOKIE,
     MockMCPServer,
     _mock_auth0_response,
 )
@@ -67,9 +68,8 @@ from utils.ledger_grant import (
     wrap_access_token,
 )
 from utils.oauth import ledger_grant_key, register_oauth_routes
-from utils.oauth._ledger import _LEDGER_COOKIE_NAME, _ledger_org
+from utils.oauth._ledger import _ledger_cookie_name, _ledger_org
 from utils.oauth._sealing import (
-    _NONCE_COOKIE_NAME,
     _build_state,
     _hash_nonce,
     _open_seal,
@@ -79,6 +79,8 @@ from utils.oauth._sealing import (
 )
 
 KEY = b'k' * 32
+# The staged-grant cookie of TEST_NONCE's flow
+LEDGER_COOKIE = _ledger_cookie_name(_hash_nonce(TEST_NONCE))
 OTHER_KEY = b'o' * 32
 DEVICE_ID = 'a' * 32
 ALICE = 'auth0|alice'
@@ -298,7 +300,7 @@ def oauth(remote_env):
     return TestClient(
         Starlette(routes=mock_server.routes),
         raise_server_exceptions=False,
-        cookies={_NONCE_COOKIE_NAME: TEST_NONCE},
+        cookies={TEST_NONCE_COOKIE: TEST_NONCE},
     )
 
 
@@ -430,7 +432,7 @@ class TestCallback:
         state = _verify_state(query['state'])
         assert state is not None
         assert (state['stage'], state['ledger_org']) == ('regular', WORKSPACE)
-        cookie = response.cookies.get(_LEDGER_COOKIE_NAME)
+        cookie = response.cookies.get(LEDGER_COOKIE)
         assert token not in response.headers['location']
         grant = open_stage(ledger_grant_key(), cookie, _hash_nonce(TEST_NONCE))
         assert grant is not None
@@ -441,7 +443,7 @@ class TestCallback:
         assert _query(response)['audience'] == OAUTH_ENV['AUTH0_ALPACON_USER_AUDIENCE']
         staged = open_stage(
             ledger_grant_key(),
-            response.cookies.get(_LEDGER_COOKIE_NAME),
+            response.cookies.get(LEDGER_COOKIE),
             _hash_nonce(TEST_NONCE),
         )
         assert staged is not None
@@ -516,7 +518,7 @@ class TestCallback:
 
     def _final(self, oauth, cookie: str | None, ledger_org: str = WORKSPACE):
         if cookie is not None:
-            oauth.cookies.set(_LEDGER_COOKIE_NAME, cookie)
+            oauth.cookies.set(LEDGER_COOKIE, cookie)
         return oauth.get(
             '/oauth/callback',
             params={
@@ -541,10 +543,10 @@ class TestCallback:
         cleared = [
             c
             for c in response.headers.get_list('set-cookie')
-            if c.startswith(f'{_LEDGER_COOKIE_NAME}=')
+            if c.startswith(f'{LEDGER_COOKIE}=')
         ]
         assert len(cleared) == 1
-        assert cleared[0].startswith(f'{_LEDGER_COOKIE_NAME}="";')
+        assert cleared[0].startswith(f'{LEDGER_COOKIE}="";')
         assert 'max-age=0' in cleared[0].lower()
 
     @pytest.mark.parametrize('case', ['other-browser', 'other-org', 'garbage', 'none'])
@@ -1065,3 +1067,49 @@ class TestLedgerUnauthorizedIsNotASessionReauth:
         finally:
             request_signal.end_request()
         assert 'mfa_required' in signal
+
+
+class TestOverlappingLedgerFlows:
+    """Two clients stepping up to the ledger through the same browser at once."""
+
+    @pytest.fixture
+    def browser(self, remote_env):
+        mock_server = MockMCPServer()
+        register_oauth_routes(mock_server)
+        return TestClient(
+            Starlette(routes=mock_server.routes),
+            base_url='https://testserver',
+            raise_server_exceptions=False,
+        )
+
+    def _ledger_leg(self, browser, token: str) -> str:
+        """Authorize, then run the ledger callback; returns the final stage's state."""
+        state = _query(_authorize(browser, f'openid profile ledger:{WORKSPACE}'))
+        auth0 = _mock_auth0_response(json_data={'access_token': token})
+        with patch('utils.oauth._ledger.httpx.AsyncClient', return_value=auth0):
+            response = browser.get(
+                '/oauth/callback',
+                params={'code': 'ledger-code', 'state': state['state']},
+                follow_redirects=False,
+            )
+        assert response.status_code == HTTPStatus.FOUND
+        return _query(response)['state']
+
+    def test_each_flow_keeps_its_own_staged_grant(self, browser):
+        first_token = _jwt(ALICE, int(time.time()) + 600)
+        second_token = _jwt(ALICE, int(time.time()) + 900)
+        first = self._ledger_leg(browser, first_token)
+        self._ledger_leg(browser, second_token)
+
+        response = browser.get(
+            '/oauth/callback',
+            params={'code': 'final-code', 'state': first},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == HTTPStatus.FOUND
+        opened = _open_seal('code', _query(response)['code'])
+        assert opened is not None
+        grant = open_grant(ledger_grant_key(), opened.ledger)
+        assert grant is not None
+        assert grant.token == first_token

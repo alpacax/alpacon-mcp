@@ -12,7 +12,6 @@ from tests.oauth._support import (
     EVIL_REDIRECT_URI,
     EXEMPT_REDIRECT_URI,
     LISTED_REDIRECT_URI,
-    NONCE_COOKIE_PREFIX,
     OTHER_DEVICE_ID,
     PKCE_CHALLENGE,
     PKCE_PARAMS,
@@ -22,6 +21,7 @@ from tests.oauth._support import (
     TEST_NONCE,
     TEST_RESOURCE_URL,
     UNLISTED_PATH_URI,
+    _issued_nonce,
     _state_payload,
 )
 from utils.oauth._http import (
@@ -32,7 +32,7 @@ from utils.oauth._http import (
     _RESPONSE_TYPE_CODE,
 )
 from utils.oauth._sealing import (
-    _NONCE_COOKIE_NAME,
+    _NONCE_COOKIE_PREFIX,
     _STATE_SECRET_ENV,
     _hash_nonce,
 )
@@ -492,7 +492,7 @@ class TestOAuthAuthorize:
             follow_redirects=False,
         )
         raw = response.headers['set-cookie'].lower()
-        assert raw.startswith(NONCE_COOKIE_PREFIX)
+        assert raw.startswith(f'{_NONCE_COOKIE_PREFIX.lower()}_')
         assert 'secure' in raw
         assert 'httponly' in raw
         assert 'samesite=lax' in raw
@@ -506,7 +506,7 @@ class TestOAuthAuthorize:
             params={'redirect_uri': 'http://localhost:52048/callback', **PKCE_PARAMS},
             follow_redirects=False,
         )
-        nonce = response.cookies[_NONCE_COOKIE_NAME]
+        nonce = _issued_nonce(response)
         state = parse_qs(urlparse(response.headers['location']).query)['state'][0]
         payload = _state_payload(state)
         assert payload['nonce_hash'] == _hash_nonce(nonce)
@@ -523,14 +523,14 @@ class TestOAuthAuthorize:
             },
             follow_redirects=False,
         )
-        nonce = response.cookies[_NONCE_COOKIE_NAME]
+        nonce = _issued_nonce(response)
         state = parse_qs(urlparse(response.headers['location']).query)['state'][0]
         payload = _state_payload(state)
         assert payload['stage'] == 'mfa'
         assert payload['nonce_hash'] == _hash_nonce(nonce)
 
-    def test_authorize_replaces_a_stale_nonce_cookie(self, oauth_app):
-        """A browser arriving with an old cookie is re-marked, not trusted as it is."""
+    def test_authorize_mints_a_fresh_nonce_despite_an_old_cookie(self, oauth_app):
+        """A browser arriving with an old cookie gets a new mark, not the old one."""
         response = oauth_app.get(
             _AUTHORIZE_PATH,
             params={'redirect_uri': 'http://localhost:52048/callback', **PKCE_PARAMS},

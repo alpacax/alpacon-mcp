@@ -40,7 +40,6 @@ from utils.oauth._ledger import (
 )
 from utils.oauth._redirect_uris import _is_allowed_redirect_uri
 from utils.oauth._sealing import (
-    _NONCE_COOKIE_NAME,
     _STAGE_LEDGER,
     _STAGE_MFA,
     _STAGE_REGULAR,
@@ -48,8 +47,8 @@ from utils.oauth._sealing import (
     _clear_nonce_cookie,
     _is_device_id,
     _nonce_cookie_matches,
+    _refresh_nonce_cookie,
     _seal_code,
-    _set_nonce_cookie,
     _state_str,
     _verify_state,
     ledger_grant_key,
@@ -192,8 +191,10 @@ async def _complete_ledger_stage(
         url=_final_stage_url(config, server_url, state),
         status_code=HTTPStatus.FOUND,
     )
-    _set_nonce_cookie(response, request.cookies[_NONCE_COOKIE_NAME])
-    _set_ledger_cookie(response, seal_stage(key, staged, state.nonce_hash))
+    _refresh_nonce_cookie(request, response, state.nonce_hash)
+    _set_ledger_cookie(
+        response, seal_stage(key, staged, state.nonce_hash), state.nonce_hash
+    )
     logger.info(
         'Ledger stage complete (token obtained: %s); redirecting to the '
         'regular audience',
@@ -258,9 +259,7 @@ async def _complete_mfa_stage(
         auth0_url = _final_stage_url(config, server_url, state)
         logger.info('Stage 2: Redirecting to Auth0 regular audience (SSO)')
     response = RedirectResponse(url=auth0_url, status_code=HTTPStatus.FOUND)
-    # The next stage restarts the state expiry; re-set the cookie so the two
-    # do not drift apart.
-    _set_nonce_cookie(response, request.cookies[_NONCE_COOKIE_NAME])
+    _refresh_nonce_cookie(request, response, state.nonce_hash)
     return response
 
 
@@ -352,7 +351,7 @@ def _deliver_code(request: Request, state: _CallbackState, code: str) -> Respons
         )
     else:
         response = JSONResponse(params)
-    _clear_nonce_cookie(response)
+    _clear_nonce_cookie(response, state.nonce_hash)
     if state.ledger_org:
-        _clear_ledger_cookie(response)
+        _clear_ledger_cookie(response, state.nonce_hash)
     return response

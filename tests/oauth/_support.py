@@ -5,10 +5,17 @@ import json
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx
 from starlette.routing import Route
 
 from utils.oauth._http import _PKCE_CHALLENGE_METHOD
-from utils.oauth._sealing import _NONCE_COOKIE_NAME, _sign_state, _verify_state
+from utils.oauth._sealing import (
+    _NONCE_COOKIE_PREFIX,
+    _hash_nonce,
+    _nonce_cookie_name,
+    _sign_state,
+    _verify_state,
+)
 
 # Test configuration constants
 TEST_AUTH0_ALPACON_DOMAIN = 'test.us.auth0.com'
@@ -65,9 +72,10 @@ PKCE_PARAMS = {
 
 # The nonce a browser is pretending to carry through the callback tests
 TEST_NONCE = 'test-nonce-value'
+TEST_NONCE_COOKIE = _nonce_cookie_name(_hash_nonce(TEST_NONCE))
 
 # Set-Cookie assertions lowercase the whole header, so the name must match in kind
-NONCE_COOKIE_PREFIX = f'{_NONCE_COOKIE_NAME.lower()}='
+NONCE_COOKIE_PREFIX = f'{TEST_NONCE_COOKIE.lower()}='
 
 
 class MockMCPServer:
@@ -104,6 +112,19 @@ def _mock_auth0_response(status_code=HTTPStatus.OK, json_data=None):
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=None)
     return mock_client
+
+
+def _issued_nonce(response: httpx.Response) -> str:
+    """The nonce authorize set, after checking its cookie is named for its own flow."""
+    issued = {
+        name: value
+        for name, value in response.cookies.items()
+        if name.startswith(f'{_NONCE_COOKIE_PREFIX}_')
+    }
+    assert len(issued) == 1
+    [(name, nonce)] = issued.items()
+    assert name == _nonce_cookie_name(_hash_nonce(nonce))
+    return nonce
 
 
 def _state_payload(state: str) -> dict[str, object]:

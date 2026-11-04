@@ -32,14 +32,15 @@ from utils.oauth._sealing import (
     _DEVICE_SCOPE_PREFIX,
     _NONCE_COOKIE_ATTRS,
     _STATE_TTL_SECONDS,
+    _flow_cookie_name,
     ledger_grant_key,
 )
 
 _LEDGER_SCOPE_PREFIX = 'ledger:'
 
 # Holds the encrypted ledger token from the ledger callback to the final one,
-# so it never rides a URL to Auth0. Same attributes as the nonce cookie.
-_LEDGER_COOKIE_NAME = '__Host-alpacon_ledger_grant'
+# so it never rides a URL to Auth0. Same attributes and per-flow name as the nonce cookie.
+_LEDGER_COOKIE_PREFIX = '__Host-alpacon_ledger_grant'
 
 
 def _ledger_org(scope: str) -> str:
@@ -135,22 +136,30 @@ async def _exchange_ledger_code(
     return grant
 
 
-def _set_ledger_cookie(response: Response, sealed: str) -> None:
+def _ledger_cookie_name(nonce_hash: str) -> str:
+    return _flow_cookie_name(_LEDGER_COOKIE_PREFIX, nonce_hash)
+
+
+def _set_ledger_cookie(response: Response, sealed: str, nonce_hash: str) -> None:
     response.set_cookie(
-        _LEDGER_COOKIE_NAME, sealed, max_age=_STATE_TTL_SECONDS, **_NONCE_COOKIE_ATTRS
+        _ledger_cookie_name(nonce_hash),
+        sealed,
+        max_age=_STATE_TTL_SECONDS,
+        **_NONCE_COOKIE_ATTRS,
     )
 
 
-def _clear_ledger_cookie(response: Response) -> None:
-    response.delete_cookie(_LEDGER_COOKIE_NAME, **_NONCE_COOKIE_ATTRS)
+def _clear_ledger_cookie(response: Response, nonce_hash: str) -> None:
+    response.delete_cookie(_ledger_cookie_name(nonce_hash), **_NONCE_COOKIE_ATTRS)
 
 
 def _staged_ledger_grant(request: Request, ledger_org: str, nonce_hash: str) -> str:
-    """The encrypted grant the ledger stage left for this browser, or ''."""
+    """The encrypted grant the ledger stage left for this flow, or ''."""
     if not ledger_org:
         return ''
     key = ledger_grant_key()
-    grant = open_stage(key, request.cookies.get(_LEDGER_COOKIE_NAME), nonce_hash)
+    sealed = request.cookies.get(_ledger_cookie_name(nonce_hash))
+    grant = open_stage(key, sealed, nonce_hash)
     if grant is None or grant.org != ledger_org:
         return ''
     return seal_grant(key, grant)

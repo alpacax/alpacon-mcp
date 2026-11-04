@@ -6,9 +6,13 @@ import pytest
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
-from tests.oauth._support import OAUTH_ENV, TEST_NONCE, MockMCPServer
+from tests.oauth._support import (
+    OAUTH_ENV,
+    TEST_NONCE,
+    TEST_NONCE_COOKIE,
+    MockMCPServer,
+)
 from utils.oauth import register_oauth_routes
-from utils.oauth._sealing import _NONCE_COOKIE_NAME
 
 
 @pytest.fixture(autouse=True)
@@ -28,7 +32,7 @@ def oauth_app():
     return TestClient(
         Starlette(routes=mock_server.routes),
         raise_server_exceptions=False,
-        cookies={_NONCE_COOKIE_NAME: TEST_NONCE},
+        cookies={TEST_NONCE_COOKIE: TEST_NONCE},
     )
 
 
