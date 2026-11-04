@@ -241,7 +241,8 @@ def _client_device_id(scope: str) -> str | None:
 
 
 def _strip_device_scopes(scope: str) -> str:
-    """The scope without any `device:` token, so a client's cannot outrank ours."""
+    """The scope without any `device:` token, so one the client sent cannot outrank
+    the device id this server adds."""
     return ' '.join(s for s in scope.split() if not s.startswith(_DEVICE_SCOPE_PREFIX))
 
 
