@@ -438,9 +438,10 @@ Install the MCP extension and add to settings:
 ### 🔧 Remote operations
 
 #### Command API (requires ACL permission)
-- **execute_command**: Execute a command on a server and wait for the result
+- **execute_command**: Execute a command on a server and wait for the result, or with `wait=false` return its `command_id` at once
 - **execute_file**: Run a script on a server as a verified file, optionally writing it there first or reading its bytes from there in the same call
 - **list_commands**: List recent command history
+- **check_command_status**: Read one command's state and result by `command_id` without waiting
 - **execute_command_multi_server**: Execute on multiple servers simultaneously
 - **state_command_purpose**: Answer the verification gate's purpose demand on a held command, then wait for the re-judgment
 
