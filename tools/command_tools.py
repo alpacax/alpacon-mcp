@@ -28,7 +28,6 @@ from utils.common import (
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import MfaStepUpRequired, validate_file_path
 from utils.host_transfer import (
-    COMMAND_NEVER_RAN,
     CommandHidden,
     Failed,
     Refused,
@@ -129,6 +128,22 @@ _PURPOSE_COMMAND_ID_DESCRIPTION = (
 _TIMEOUT_DESCRIPTION = (
     'Seconds to wait for the result, default 300 (5 minutes). The timeout resets '
     'while the command is actively running.'
+)
+
+_WAIT_DESCRIPTION = (
+    'False submits the command and returns its command_id at once, without '
+    'waiting for the result; read it later with check_command_status. A purpose '
+    'demand is never opened, so state the purpose up front. Default true.'
+)
+
+_CHECK_COMMAND_ID_DESCRIPTION = (
+    'ID of the command, from the command_id of an execute_command result or '
+    'timeout error, or from an execute_command_multi_server entry.'
+)
+
+_CHECK_AGAIN = (
+    'call check_command_status with command_id to read the result. '
+    f'{DO_NOT_RESUBMIT}: a resubmission runs it again.'
 )
 
 _FILE_TIMEOUT_DESCRIPTION = 'Seconds to wait for the result, default 300 (5 minutes).'
@@ -667,7 +682,7 @@ def _purpose_required_response(
                 f'call returns the outcome. If no purpose arrives {deadline}, '
                 'the command is judged again without one: it runs, waits for a '
                 'human approver (who is notified then), or is refused. Read the '
-                'result with list_commands; do not resubmit.'
+                'result with check_command_status; do not resubmit.'
             ),
             # Only the rules that bind the next call. The worked examples and
             # the manipulation paragraph live in the tool descriptions, which
@@ -713,7 +728,7 @@ def _remaining_purpose_window(expires_at: JsonValue) -> int | None:
 
 
 @mcp_tool_handler(
-    description="List recent command execution history with status, output, and timestamps. Filterable by server ID. An entry whose output is a sudo denial also carries sudo_hint and, when a human can clear it, a structured sudo_denial block. When to use: reviewing past commands, retrieving the result of a command whose execute_command call timed out, or reading the results of an execute_command_multi_server batch. An entry the server refused because its line carries a script body (rejection_cause use_file_execution) also carries error_code use_file_execution and a next_action: rerun that script with execute_file (write_file=true) on that entry's server and account only. A rejected entry also carries rejection_hint, saying whom to ask; do not resubmit it. Related: execute_command (run a command and wait), execute_file.",
+    description="List recent command execution history with status, output, and timestamps. Filterable by server ID. An entry whose output is a sudo denial also carries sudo_hint and, when a human can clear it, a structured sudo_denial block. When to use: reviewing past commands, finding a command whose id you do not have, such as after a lost submission (for a known command_id use check_command_status), or browsing the results of an execute_command_multi_server batch. An entry the server refused because its line carries a script body (rejection_cause use_file_execution) also carries error_code use_file_execution and a next_action: rerun that script with execute_file (write_file=true) on that entry's server and account only. A rejected entry also carries rejection_hint, saying whom to ask; do not resubmit it. Related: check_command_status (one command by id), execute_command (run a command and wait), execute_file.",
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'command history list recent'},
 )
@@ -765,7 +780,7 @@ async def list_commands(
 
 
 @mcp_tool_handler(
-    description='Run a shell command on a server and wait for the result (up to 5 minutes by default). Returns stdout, stderr, and exit code in a single call. Requires ACL permission. Unless a Work Session sudo policy already covers the command, a sudo invocation either routes to human-in-the-loop approval and blocks until a human acts, or is denied outright with no request anyone can approve. Check sudo_denial.category before waiting; a sudo_hint with no sudo_denial is a hard denial that creates no request, so do not wait on it. Supports dependency chains (run_after), scheduled execution (scheduled_at), and stdin data. The assessor judges the command with its purpose in hand, and a command that would otherwise queue for a human may clear on its own. If you omit purpose the gate may hold the command and ask—a status of purpose_required, which you answer with state_command_purpose within about a minute. For a script, a heredoc, or any "bash /path/to/file" line, use execute_file instead: with write_file=true when you have the script\'s text, so one call writes it to the host and runs it as a verified file, or with read_from_server=true when the script already exists on the host, so one call reads its exact bytes from there and submits them. A verified file an approver has marked standing is re-run unchanged without paging a human, which a shell line never is. A line that carries a script body can be refused after verification when the workspace approval policy blocks script bodies, with error_code use_file_execution; it did not run, and next_action names the execute_file call. A command a gate refused before it ran fails with rejection_cause, rejection_gate and rejection_hint: follow the hint and do not resubmit it, since the same command gets the same answer. When to use: the recommended way to run a one-off command on a server. Related: execute_file (write and run a script whose bytes are reviewed and hashed), execute_command_multi_server (run on multiple servers), state_command_purpose (answer a held command\'s purpose demand), list_commands (browse history), work_session_create (create a Work Session).',
+    description="Run a shell command on a server and wait for the result (up to 5 minutes by default). Returns stdout, stderr, and exit code in a single call. Requires ACL permission. Unless a Work Session sudo policy already covers the command, a sudo invocation either routes to human-in-the-loop approval and blocks until a human acts, or is denied outright with no request anyone can approve. Check sudo_denial.category before waiting; a sudo_hint with no sudo_denial is a hard denial that creates no request, so do not wait on it. Supports dependency chains (run_after), scheduled execution (scheduled_at), and stdin data. The assessor judges the command with its purpose in hand, and a command that would otherwise queue for a human may clear on its own. If you omit purpose the gate may hold the command and ask—a status of purpose_required, which you answer with state_command_purpose within about a minute. For a script, a heredoc, or any \"bash /path/to/file\" line, use execute_file instead: with write_file=true when you have the script's text, so one call writes it to the host and runs it as a verified file, or with read_from_server=true when the script already exists on the host, so one call reads its exact bytes from there and submits them. A verified file an approver has marked standing is re-run unchanged without paging a human, which a shell line never is. A line that carries a script body can be refused after verification when the workspace approval policy blocks script bodies, with error_code use_file_execution; it did not run, and next_action names the execute_file call. A command a gate refused before it ran fails with rejection_cause, rejection_gate and rejection_hint: follow the hint and do not resubmit it, since the same command gets the same answer. For a long-running command pass wait=false: it returns the command_id at once, and check_command_status reads the result later without waiting. When to use: the recommended way to run a one-off command on a server. Related: execute_file (write and run a script whose bytes are reviewed and hashed), execute_command_multi_server (run on multiple servers), check_command_status (read a command's result by id), state_command_purpose (answer a held command's purpose demand), list_commands (browse history), work_session_create (create a Work Session).",
     annotations=ADDITIVE,
     meta={
         'anthropic/alwaysLoad': True,
@@ -787,6 +802,7 @@ async def execute_command(
     work_session_id: WorkSessionId = None,
     purpose: Annotated[str | None, Field(description=_PURPOSE_DESCRIPTION)] = None,
     region: str = '',
+    wait: Annotated[bool, Field(description=_WAIT_DESCRIPTION)] = True,
     **kwargs: str,
 ) -> ToolResponse:
     """Run a command on a server and wait for the result (needs ACL permission)."""
@@ -816,7 +832,8 @@ async def execute_command(
         # out. Declaring support there opens a demand nobody is left to answer,
         # which parks the command for the full deadline and then drops it into
         # the human queue: exactly the cost the fleet tool declines to pay.
-        purpose_demand_supported=not scheduled_at and not run_after,
+        # wait=False likewise: nobody is left to answer (ADR 0052).
+        purpose_demand_supported=wait and not scheduled_at and not run_after,
         region=region,
         token=token,
     )
@@ -832,6 +849,7 @@ async def execute_command(
         region=region,
         token=token,
         stdin_fed=bool(data),
+        wait=wait,
     )
     # The suggested run must keep the held command's account and Work Session,
     # or following it would submit a run other than the one held. The values
@@ -877,6 +895,56 @@ def _submission_error(
     return response
 
 
+def _submitted_response(
+    submitted: JsonValue,
+    *,
+    command_id: str,
+    server_id: str,
+    command: str,
+    shell: str,
+    workspace: str,
+    region: str,
+    stdin_fed: bool,
+) -> ToolResponse:
+    """A refusal stamped at creation (an ACL denial), else the handle to read it with."""
+    echo = _echo(server_id, command, shell)
+    if (
+        isinstance(submitted, dict)
+        and (
+            settled := _settled_response(
+                submitted,
+                command_id=command_id,
+                region=region,
+                workspace=workspace,
+                echo=echo,
+                stdin_fed=stdin_fed,
+            )
+        )
+        is not None
+    ):
+        return settled
+    return success_response(
+        message=(
+            'Submitted without waiting. Call check_command_status with command_id '
+            f'to read the result. {DO_NOT_RESUBMIT}: a resubmission runs it again.'
+        ),
+        data=submitted,
+        next_action=_CHECK_AGAIN,
+        command_id=command_id,
+        region=region,
+        workspace=workspace,
+        **echo,
+    )
+
+
+def _submitted_entry(result: JsonValue) -> dict[str, JsonValue]:
+    entry: dict[str, JsonValue] = {'status': 'success', 'data': result}
+    row = result[0] if isinstance(result, list) and result else result
+    if isinstance(row, dict) and isinstance(command_id := row.get('id'), str):
+        entry['command_id'] = command_id
+    return entry
+
+
 async def _settle_submission(
     exec_data: JsonValue,
     *,
@@ -889,9 +957,10 @@ async def _settle_submission(
     command: str = '',
     shell: str = '',
     stdin_fed: bool = False,
+    wait: bool = True,
 ) -> ToolResponse:
     """Turn a submit response into the tool's answer (refusal, id, then the
-    wait); shared by the shell and file lanes (ADR 0053)."""
+    wait, or the handle when wait is False); shared by both lanes (ADR 0053)."""
     if err := _submission_error(
         exec_data, server_id=server_id, region=region, workspace=workspace
     ):
@@ -922,17 +991,29 @@ async def _settle_submission(
             details=exec_data,
         )
 
-    response = await _poll_command_result(
-        command_id=command_id,
-        server_id=server_id,
-        command=command,
-        workspace=workspace,
-        shell=shell,
-        timeout=timeout,
-        region=region,
-        token=token,
-        stdin_fed=stdin_fed,
-    )
+    if wait:
+        response = await _poll_command_result(
+            command_id=command_id,
+            server_id=server_id,
+            command=command,
+            workspace=workspace,
+            shell=shell,
+            timeout=timeout,
+            region=region,
+            token=token,
+            stdin_fed=stdin_fed,
+        )
+    else:
+        response = _submitted_response(
+            submitted,
+            command_id=command_id,
+            server_id=server_id,
+            command=command,
+            shell=shell,
+            workspace=workspace,
+            region=region,
+            stdin_fed=stdin_fed,
+        )
     if _purpose_was_truncated(purpose):
         response['purpose_truncated'] = True
     return response
@@ -1538,6 +1619,129 @@ def _attach_file_execution_suggestion(
     response['execute_file_suggestion'] = call
 
 
+def _echo(server_id: str, command: str, shell: str) -> dict[str, str]:
+    """The known submit-side fields; an empty one is left out, not echoed as a value."""
+    return {
+        key: value
+        for key, value in (
+            ('server_id', server_id),
+            ('command', command),
+            ('shell', shell),
+        )
+        if value
+    }
+
+
+#: Statuses of a command still advancing; only these extend the wait.
+_COMMAND_IN_PROGRESS = frozenset(
+    {'running', 'verifying', 'delivered', 'queued', 'scheduled'}
+)
+#: Not 'stuck': the server shows it after 10 minutes without a report, yet the
+#: command may still finish, so reading it as a failure invites a rerun.
+_COMMAND_REFUSED = frozenset({'denied', 'rejected'})
+
+
+def _settled_response(
+    result: _CommandRecord,
+    *,
+    command_id: str,
+    region: str,
+    workspace: str,
+    echo: Mapping[str, str],
+    stdin_fed: bool,
+) -> ToolResponse | None:
+    """The tool answer for a command row, or None while it has nothing to report yet."""
+    status = result.get('status', '')
+
+    # Checked ahead of the status match so the refusal keeps its own
+    # error_code instead of reading as a bare 'rejected'.
+    if refusal := _use_file_execution_refusal(result, stdin_fed):
+        response = error_response(
+            refusal['message'],
+            error_code=refusal['error_code'],
+            next_action=refusal['next_action'],
+            command_id=command_id,
+            region=region,
+            workspace=workspace,
+            details=result,
+            **echo,
+        )
+        attach_rejection(response, result)  # message already says it
+        return response
+
+    # handled_at is set once the agent reports the result (status then
+    # becomes 'success'/'failed'); the Command API has no 'finished_at'.
+    if result.get('handled_at') is not None:
+        response = success_response(
+            data=result,
+            command_id=command_id,
+            region=region,
+            workspace=workspace,
+            **echo,
+        )
+        _attach_sudo_denial(response, result)
+        _attach_file_phase_hint(response, result)
+        return response
+
+    match status:
+        # Parked for its purpose (ADR 0052). No approval request exists
+        # and none will until the re-judgment says so, so this returns
+        # rather than polling: the demand is answered by this agent, and
+        # the window is short enough that burning it on sleep wastes the
+        # one chance the command gets.
+        case 'awaiting_purpose':
+            return _purpose_required_response(
+                command_id=command_id,
+                region=region,
+                workspace=workspace,
+                expires_at=result.get('purpose_expires_at'),
+                **echo,
+            )
+
+        # HITL verification gate: a human must approve out-of-band
+        # (ADR 0015); polling would only burn the timeout window.
+        case 'awaiting_approval':
+            response = pending_approval_response(
+                'Command is awaiting human approval. A human must '
+                'approve it out-of-band (Alpacon web console or Slack); '
+                'it then runs automatically. Wait, then retrieve the '
+                f'result with check_command_status. {DO_NOT_RESUBMIT}: a '
+                'resubmission needs its own approval and may '
+                'double-execute the command.',
+                category='COMMAND_AWAITING_APPROVAL',
+                command_id=command_id,
+                region=region,
+                workspace=workspace,
+                **echo,
+            )
+            _attach_file_execution_suggestion(
+                response,
+                result,
+                server_id=echo.get('server_id', ''),
+                workspace=workspace,
+                region=region,
+                shell_lane='command' in echo,
+                stdin_fed=stdin_fed,
+            )
+            return response
+
+        # Refused commands never run, so fail fast instead of polling.
+        case str() if status in _COMMAND_REFUSED:
+            response = error_response(
+                f'Command failed with status: {status}',
+                command_id=command_id,
+                region=region,
+                workspace=workspace,
+                details=result,
+                **echo,
+            )
+            if hint := attach_rejection(response, result):
+                response['message'] += f'. {hint}'
+            return response
+
+    return None
+
+
 async def _poll_command_result(
     command_id: str,
     workspace: str,
@@ -1555,19 +1759,7 @@ async def _poll_command_result(
 ) -> ToolResponse:
     """Wait for a submitted command to reach a reportable state; shared by
     execute_command and state_command_purpose."""
-    # A caller that did not submit the command—state_command_purpose—knows
-    # neither the server nor the line. Echo only what is known: the polled row
-    # carries both anyway, and an empty string reads as a real value where an
-    # absent key reads as "not supplied".
-    echo = {
-        key: value
-        for key, value in (
-            ('server_id', server_id),
-            ('command', command),
-            ('shell', shell),
-        )
-        if value
-    }
+    echo = _echo(server_id, command, shell)
 
     # Poll for command completion with progress-based timeout reset
     # Hard cap at 3x timeout to prevent indefinite waiting
@@ -1593,113 +1785,31 @@ async def _poll_command_result(
             )
 
         if isinstance(result, dict):
-            status = result.get('status', '')
-
-            # Checked ahead of the status match so the refusal keeps its own
-            # error_code instead of reading as a bare 'rejected'.
-            if refusal := _use_file_execution_refusal(result, stdin_fed):
-                response = error_response(
-                    refusal['message'],
-                    error_code=refusal['error_code'],
-                    next_action=refusal['next_action'],
+            if (
+                settled := _settled_response(
+                    result,
                     command_id=command_id,
                     region=region,
                     workspace=workspace,
-                    details=result,
-                    **echo,
+                    echo=echo,
+                    stdin_fed=stdin_fed,
                 )
-                attach_rejection(response, result)  # message already says it
-                return response
+            ) is not None:
+                return settled
 
-            # handled_at is set once the agent reports the result (status then
-            # becomes 'success'/'failed'); the Command API has no 'finished_at'.
-            if result.get('handled_at') is not None:
-                response = success_response(
-                    data=result,
-                    command_id=command_id,
-                    region=region,
-                    workspace=workspace,
-                    **echo,
-                )
-                _attach_sudo_denial(response, result)
-                _attach_file_phase_hint(response, result)
-                return response
-
-            match status:
-                # Parked for its purpose (ADR 0052). No approval request exists
-                # and none will until the re-judgment says so, so this returns
-                # rather than polling: the demand is answered by this agent, and
-                # the window is short enough that burning it on sleep wastes the
-                # one chance the command gets.
-                case 'awaiting_purpose':
-                    return _purpose_required_response(
-                        command_id=command_id,
-                        region=region,
-                        workspace=workspace,
-                        expires_at=result.get('purpose_expires_at'),
-                        **echo,
-                    )
-
-                # HITL verification gate: a human must approve out-of-band
-                # (ADR 0015); polling would only burn the timeout window.
-                case 'awaiting_approval':
-                    response = pending_approval_response(
-                        'Command is awaiting human approval. A human must '
-                        'approve it out-of-band (Alpacon web console or Slack); '
-                        'it then runs automatically. Wait, then retrieve the '
-                        f'result via list_commands. {DO_NOT_RESUBMIT}: a '
-                        'resubmission needs its own approval and may '
-                        'double-execute the command.',
-                        category='COMMAND_AWAITING_APPROVAL',
-                        command_id=command_id,
-                        region=region,
-                        workspace=workspace,
-                        **echo,
-                    )
-                    _attach_file_execution_suggestion(
-                        response,
-                        result,
-                        server_id=server_id,
-                        workspace=workspace,
-                        region=region,
-                        shell_lane=bool(command),
-                        stdin_fed=stdin_fed,
-                    )
-                    return response
-
-                # Terminal non-approval statuses: the command will not produce a
-                # result (denied/rejected never run; stuck gave up), so fail
-                # fast instead of polling until timeout. ('error' is omitted:
-                # the server's compute_status never emits it given the
-                # scheduled_at default, so it is unreachable here.)
-                case str() if status in COMMAND_NEVER_RAN:
-                    response = error_response(
-                        f'Command failed with status: {status}',
-                        command_id=command_id,
-                        region=region,
-                        workspace=workspace,
-                        details=result,
-                        **echo,
-                    )
-                    if hint := attach_rejection(response, result):
-                        response['message'] += f'. {hint}'
-                    return response
-
-                # Command still in progress—reset deadline (within hard cap) so
-                # a slow AI verification or delayed delivery does not time out a
-                # command that is still advancing. Covers both pre-execution
-                # states (queued/scheduled/delivered/verifying) and execution
-                # (running). 'acked' is intentionally absent: compute_status
-                # returns 'running' once acked_at is set, so it is never
-                # emitted.
-                case 'running' | 'verifying' | 'delivered' | 'queued' | 'scheduled':
-                    deadline = min(loop.time() + timeout, hard_deadline)
+            # Still advancing—reset deadline (within hard cap) so a slow AI
+            # verification or delayed delivery does not time out a command
+            # that is moving. An unrecognized status neither returns nor resets.
+            status = result.get('status')
+            if isinstance(status, str) and status in _COMMAND_IN_PROGRESS:
+                deadline = min(loop.time() + timeout, hard_deadline)
 
         await asyncio.sleep(1)
 
     return error_response(
         f'Command execution timed out after {timeout} seconds',
         error_type='timeout',
+        next_action=_CHECK_AGAIN,
         command_id=command_id,
         region=region,
         workspace=workspace,
@@ -1748,7 +1858,7 @@ async def state_command_purpose(
             'The purpose was not accepted. Either the demand already expired and '
             'the command moved on, it was already answered, or this credential '
             f'did not submit the command. {DO_NOT_RESUBMIT}: check its state '
-            'with list_commands.'
+            'with check_command_status.'
         ),
         command_id=command_id,
         region=region,
@@ -1776,7 +1886,85 @@ async def state_command_purpose(
 
 
 @mcp_tool_handler(
-    description="Run the same shell command on multiple servers simultaneously or sequentially. Returns per-server results with success/failure status. Requires ACL permission. Unless a Work Session sudo policy already covers the command, a sudo invocation either routes to human-in-the-loop approval and stalls that server's command until a human acts—once per server—or is denied outright with no request anyone can approve. The denial surfaces on that server's list_commands entry: check sudo_denial.category there before waiting; a sudo_hint with no sudo_denial is a hard denial that creates no request, so do not wait on it. Unlike execute_command this tool never waits, so it is never asked for a purpose after the fact—stating purpose up front is the only chance. When to use: batch operations like deploying configs, checking status, or running diagnostics across a fleet. A line that carries a script body (a heredoc, a multi-line -c or -e body, a decoded payload piped into a shell or interpreter) can be refused per server after verification when the workspace approval policy blocks script bodies, so only some targets may be refused: their list_commands entries carry error_code use_file_execution. Rerun the script with execute_file (write_file=true) on the refused servers only, with the same account; resubmitting the original target set can fail with file_exec_unsupported_agent on a server whose agent lacks the file lane. Related: execute_command (single server), execute_file, work_session_create (create a Work Session). This submits commands without waiting for results—use list_commands to check status.",
+    description="Read one command's current state and result by command_id, in a single call that never waits. Returns the result once the command has finished, or the same status results execute_command gives: pending_approval while a human must approve it, purpose_required while the gate asks what it is for, an error when it was refused, and otherwise a success whose message says it has not finished, with a next_action to check again. A stuck status means the agent has not reported for over 10 minutes; the command may still finish, so it is not a failure. When to use: after execute_command with wait=false, after an execute_command call that timed out, for a command id from an execute_command_multi_server result, or to follow a command held for approval. This only reads: it does not resubmit, cancel or approve anything, and a resubmission runs the command again. Related: execute_command (submit; wait=false returns the id at once), execute_command_multi_server (each accepted server entry carries command_id), list_commands (browse history when no id is known), state_command_purpose (answer a purpose demand).",
+    annotations=READ_ONLY,
+    meta={
+        'anthropic/searchHint': 'command status result check poll command_id detached'
+    },
+)
+async def check_command_status(
+    command_id: Annotated[str, Field(description=_CHECK_COMMAND_ID_DESCRIPTION)],
+    workspace: str,
+    region: str = '',
+    **kwargs: str,
+) -> ToolResponse:
+    """Read one command's state and result without waiting."""
+    token = kwargs.get('token')
+
+    result = await _get_command_result(
+        command_id=command_id,
+        region=region,
+        workspace=workspace,
+        token=token,
+    )
+
+    if err := unwrap_http_result(
+        result,
+        default_message='Failed to check command status',
+        command_id=command_id,
+        region=region,
+        workspace=workspace,
+    ):
+        return err
+
+    if not isinstance(result, dict):
+        return error_response(
+            f'Unexpected response format: {type(result).__name__}',
+            command_id=command_id,
+            region=region,
+            workspace=workspace,
+        )
+
+    # The caller knows neither the server nor the line, and cannot say whether
+    # it fed stdin, so this reads the row as state_command_purpose does.
+    if (
+        settled := _settled_response(
+            result,
+            command_id=command_id,
+            region=region,
+            workspace=workspace,
+            echo={},
+            stdin_fed=False,
+        )
+    ) is not None:
+        return settled
+
+    status = result.get('status')
+    if status == 'stuck':
+        message = (
+            'The agent has not reported this command for over 10 minutes; it may '
+            f'still finish. Check again later. {DO_NOT_RESUBMIT}: a resubmission '
+            'runs it again.'
+        )
+    elif isinstance(status, str) and status in _COMMAND_IN_PROGRESS:
+        message = f'Command still {status}; check again shortly.'
+    else:
+        message = (
+            f'Command status {status!r} is not one this tool recognizes, and the '
+            'command has reported no result yet; check again shortly.'
+        )
+    return success_response(
+        message=message,
+        data=result,
+        next_action=_CHECK_AGAIN,
+        command_id=command_id,
+        region=region,
+        workspace=workspace,
+    )
+
+
+@mcp_tool_handler(
+    description="Run the same shell command on multiple servers simultaneously or sequentially. Returns per-server results with success/failure status. Requires ACL permission. Unless a Work Session sudo policy already covers the command, a sudo invocation either routes to human-in-the-loop approval and stalls that server's command until a human acts—once per server—or is denied outright with no request anyone can approve. The denial surfaces when that server's command is read with check_command_status or list_commands: check sudo_denial.category there before waiting; a sudo_hint with no sudo_denial is a hard denial that creates no request, so do not wait on it. Unlike execute_command this tool never waits, so it is never asked for a purpose after the fact—stating purpose up front is the only chance. When to use: batch operations like deploying configs, checking status, or running diagnostics across a fleet. A line that carries a script body (a heredoc, a multi-line -c or -e body, a decoded payload piped into a shell or interpreter) can be refused per server after verification when the workspace approval policy blocks script bodies, so only some targets may be refused: reading their commands with check_command_status or list_commands shows error_code use_file_execution. Rerun the script with execute_file (write_file=true) on the refused servers only, with the same account; resubmitting the original target set can fail with file_exec_unsupported_agent on a server whose agent lacks the file lane. Related: execute_command (single server), execute_file, check_command_status, work_session_create (create a Work Session). This submits commands without waiting for results—read each server's result with check_command_status and the command_id in its entry, or browse with list_commands.",
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'command multi server batch deploy fleet parallel'},
 )
@@ -1797,7 +1985,7 @@ async def execute_command_multi_server(
     **kwargs: str,
 ) -> ToolResponse:
     """Submit a command to many servers without waiting; read results via
-    list_commands (needs ACL permission)."""
+    check_command_status or list_commands (needs ACL permission)."""
     token = kwargs.get('token')
 
     if not server_ids:
@@ -1843,7 +2031,7 @@ async def execute_command_multi_server(
                 deploy_results[sid] = err
                 failed_count += 1
             else:
-                deploy_results[sid] = {'status': 'success', 'data': result}
+                deploy_results[sid] = _submitted_entry(result)
                 successful_count += 1
     else:
         for sid in server_ids:
@@ -1855,7 +2043,7 @@ async def execute_command_multi_server(
                     deploy_results[sid] = err
                     failed_count += 1
                 else:
-                    deploy_results[sid] = {'status': 'success', 'data': result}
+                    deploy_results[sid] = _submitted_entry(result)
                     successful_count += 1
             except Exception as e:
                 deploy_results[sid] = _failed_entry(e)
