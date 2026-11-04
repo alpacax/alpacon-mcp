@@ -193,7 +193,9 @@ async def _complete_ledger_stage(
     )
     _refresh_nonce_cookie(request, response, state.nonce_hash)
     _set_ledger_cookie(
-        response, seal_stage(key, staged, state.nonce_hash), state.nonce_hash
+        response,
+        seal_stage(key, staged, state.nonce_hash),
+        nonce_hash=state.nonce_hash,
     )
     logger.info(
         'Ledger stage complete (token obtained: %s); redirecting to the '
@@ -212,15 +214,19 @@ def _forward_auth0_error(
         escape_for_log(error),
         escape_for_log(error_description),
     )
+    response: Response
     if state.client_redirect_uri:
         params = {'error': error, 'error_description': error_description}
         if state.original_state:
             params['state'] = state.original_state
-        return RedirectResponse(
+        response = RedirectResponse(
             url=_build_redirect_url(state.client_redirect_uri, params),
             status_code=HTTPStatus.FOUND,
         )
-    return _oauth_error_response(error, error_description)
+    else:
+        response = _oauth_error_response(error, error_description)
+    _clear_flow_cookies(response, state)
+    return response
 
 
 async def _complete_mfa_stage(
@@ -351,7 +357,15 @@ def _deliver_code(request: Request, state: _CallbackState, code: str) -> Respons
         )
     else:
         response = JSONResponse(params)
+    _clear_flow_cookies(response, state)
+    return response
+
+
+def _clear_flow_cookies(response: Response, state: _CallbackState) -> None:
+    """Spend the flow's cookies once its outcome reaches the client; a callback
+    without a verified state names no flow."""
+    if not state.nonce_hash:
+        return
     _clear_nonce_cookie(response, state.nonce_hash)
     if state.ledger_org:
         _clear_ledger_cookie(response, state.nonce_hash)
-    return response

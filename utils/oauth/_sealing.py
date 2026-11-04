@@ -69,7 +69,7 @@ _NONCE_COOKIE_PREFIX = '__Host-alpacon_oauth_nonce'
 _FLOW_SUFFIX_CHARS = 16
 
 
-class _NonceCookieAttrs(TypedDict):
+class _FlowCookieAttrs(TypedDict):
     path: Literal['/']
     secure: Literal[True]
     httponly: bool
@@ -78,7 +78,7 @@ class _NonceCookieAttrs(TypedDict):
 
 # Shared by set and delete: a delete without Path or Secure misses a __Host- cookie,
 # which then survives. Lax, since Strict drops it on the top-level return from Auth0.
-_NONCE_COOKIE_ATTRS: _NonceCookieAttrs = {
+_FLOW_COOKIE_ATTRS: _FlowCookieAttrs = {
     'path': '/',
     'secure': True,
     'httponly': True,
@@ -224,7 +224,7 @@ def _set_nonce_cookie(response: Response, nonce: str) -> None:
         _nonce_cookie_name(_hash_nonce(nonce)),
         nonce,
         max_age=_STATE_TTL_SECONDS,
-        **_NONCE_COOKIE_ATTRS,
+        **_FLOW_COOKIE_ATTRS,
     )
 
 
@@ -237,7 +237,7 @@ def _refresh_nonce_cookie(
 
 
 def _clear_nonce_cookie(response: Response, nonce_hash: str) -> None:
-    response.delete_cookie(_nonce_cookie_name(nonce_hash), **_NONCE_COOKIE_ATTRS)
+    response.delete_cookie(_nonce_cookie_name(nonce_hash), **_FLOW_COOKIE_ATTRS)
 
 
 def _nonce_cookie_matches(request: Request, state_data: dict[str, object]) -> bool:

@@ -30,7 +30,7 @@ from utils.oauth._http import (
 )
 from utils.oauth._sealing import (
     _DEVICE_SCOPE_PREFIX,
-    _NONCE_COOKIE_ATTRS,
+    _FLOW_COOKIE_ATTRS,
     _STATE_TTL_SECONDS,
     _flow_cookie_name,
     ledger_grant_key,
@@ -39,7 +39,7 @@ from utils.oauth._sealing import (
 _LEDGER_SCOPE_PREFIX = 'ledger:'
 
 # Holds the encrypted ledger token from the ledger callback to the final one,
-# so it never rides a URL to Auth0. Same attributes and per-flow name as the nonce cookie.
+# so it never rides a URL to Auth0. Named and set like the nonce cookie.
 _LEDGER_COOKIE_PREFIX = '__Host-alpacon_ledger_grant'
 
 
@@ -140,17 +140,17 @@ def _ledger_cookie_name(nonce_hash: str) -> str:
     return _flow_cookie_name(_LEDGER_COOKIE_PREFIX, nonce_hash)
 
 
-def _set_ledger_cookie(response: Response, sealed: str, nonce_hash: str) -> None:
+def _set_ledger_cookie(response: Response, sealed: str, *, nonce_hash: str) -> None:
     response.set_cookie(
         _ledger_cookie_name(nonce_hash),
         sealed,
         max_age=_STATE_TTL_SECONDS,
-        **_NONCE_COOKIE_ATTRS,
+        **_FLOW_COOKIE_ATTRS,
     )
 
 
 def _clear_ledger_cookie(response: Response, nonce_hash: str) -> None:
-    response.delete_cookie(_ledger_cookie_name(nonce_hash), **_NONCE_COOKIE_ATTRS)
+    response.delete_cookie(_ledger_cookie_name(nonce_hash), **_FLOW_COOKIE_ATTRS)
 
 
 def _staged_ledger_grant(request: Request, ledger_org: str, nonce_hash: str) -> str:

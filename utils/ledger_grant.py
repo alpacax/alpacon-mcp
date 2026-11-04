@@ -263,12 +263,12 @@ def open_grant(key: bytes, blob: object) -> LedgerGrant | None:
 
 
 def seal_stage(key: bytes, grant: LedgerGrant, nonce_hash: str) -> str:
-    """The grant between the ledger callback and the final one, bound to a browser."""
+    """The grant between the ledger callback and the final one, bound to one sign-in flow."""
     return encrypt(key, PURPOSE_STAGE, {'g': grant.to_json(), 'n': nonce_hash})
 
 
 def open_stage(key: bytes, blob: object, nonce_hash: str) -> LedgerGrant | None:
-    """The staged grant, only for the browser whose nonce hash sealed it."""
+    """The staged grant, only for the flow whose nonce hash sealed it."""
     payload = decrypt(key, PURPOSE_STAGE, blob)
     if payload is None or not nonce_hash or payload.get('n') != nonce_hash:
         return None
