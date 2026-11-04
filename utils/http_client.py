@@ -13,7 +13,7 @@ import httpx
 from utils import mfa_step_up, request_signal
 from utils.common import MCP_USER_AGENT, is_auth_enabled
 from utils.declared_agent import declared_agent_headers
-from utils.error_handler import UpstreamAuthError
+from utils.error_handler import MfaStepUpRequired, UpstreamAuthError
 from utils.logger import get_logger, redact_for_log
 from utils.types import JsonValue, QueryParams, RequestBody
 
@@ -364,7 +364,7 @@ class AlpaconHTTPClient:
                     logger.error('Network error after all retries: %s', error_response)
                 return error_response
 
-            except mfa_step_up.MfaStepUpRequired:
+            except MfaStepUpRequired:
                 raise  # raised before the request was sent
 
             except Exception as e:
@@ -528,7 +528,7 @@ class AlpaconHTTPClient:
             # No request_signal entry here: any entry there replaces the response
             # with a re-auth challenge.
             mfa_step_up.record(source)
-            raise mfa_step_up.MfaStepUpRequired(source)
+            raise MfaStepUpRequired(source)
 
         if signals:
             request_signal.signal_upstream_auth_error(

@@ -5,15 +5,14 @@ retry echoed is bound for the tool.
 
 import logging
 from collections.abc import Mapping
-from types import SimpleNamespace
-from typing import cast
 
 import pytest
-from mcp.server.apps import EXTENSION_ID
+from mcp.server.apps import APP_MIME_TYPE, EXTENSION_ID
 from mcp.server.context import ServerRequestContext
 from mcp.types import ClientCapabilities, ElicitResult
 
 import server as server_module
+from tests.conftest import request_context
 from utils.client_surfaces import (
     ClientSurfaces,
     ToolCallRound,
@@ -48,10 +47,25 @@ class TestClientSurfaces:
 
         assert client_surfaces(caps).url_elicitation == 'absent'
 
-    def test_apps_extension_is_declared(self):
-        caps = _capabilities(extensions={EXTENSION_ID: {'mimeTypes': []}})
+    def test_apps_extension_with_the_app_mime_type_is_declared(self):
+        caps = _capabilities(extensions={EXTENSION_ID: {'mimeTypes': [APP_MIME_TYPE]}})
 
         assert client_surfaces(caps) == ClientSurfaces('absent', 'declared')
+
+    @pytest.mark.parametrize(
+        'settings',
+        [
+            {},
+            {'mimeTypes': []},
+            {'mimeTypes': ['text/html']},
+            {'mimeTypes': APP_MIME_TYPE},
+        ],
+        ids=['no-mime-types', 'empty', 'other-type', 'not-a-list'],
+    )
+    def test_apps_extension_that_cannot_render_our_type_is_absent(self, settings):
+        caps = _capabilities(extensions={EXTENSION_ID: settings})
+
+        assert client_surfaces(caps).apps == 'absent'
 
     def test_other_extensions_do_not_declare_apps(self):
         caps = _capabilities(extensions={'io.example/other': {}})
@@ -60,15 +74,7 @@ class TestClientSurfaces:
 
 
 def _ctx(method: str, capabilities: ClientCapabilities | None) -> _Context:
-    return cast(
-        _Context,
-        SimpleNamespace(
-            method=method,
-            protocol_version='2026-07-28',
-            session=SimpleNamespace(client_capabilities=capabilities),
-            params={'name': 'list_servers'},
-        ),
-    )
+    return request_context(method, capabilities, {'name': 'list_servers'})
 
 
 async def _call(ctx: _Context) -> object:
@@ -136,16 +142,7 @@ async def _round_inside(
     async def call_next(_: object) -> None:
         seen.append(current_round())
 
-    ctx = cast(
-        _Context,
-        SimpleNamespace(
-            method=method,
-            protocol_version='2026-07-28',
-            session=SimpleNamespace(client_capabilities=None),
-            params=params,
-        ),
-    )
-    await bind_tool_call_round(ctx, call_next)
+    await bind_tool_call_round(request_context(method, None, params), call_next)
     return seen[0]
 
 

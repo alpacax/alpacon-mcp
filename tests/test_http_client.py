@@ -19,9 +19,8 @@ from mcp.types import (
 
 from tests.conftest import HTTP_VERBS
 from utils import mfa_step_up, request_signal
-from utils.error_handler import UpstreamAuthError
+from utils.error_handler import MfaStepUpRequired, UpstreamAuthError
 from utils.http_client import AlpaconHTTPClient, http_client
-from utils.mfa_step_up import MfaStepUpRequired
 from utils.recovery_hints import _detect_error_domain, enrich_error_response
 
 SERVER_ID = '550e8400-e29b-41d4-a716-446655440123'

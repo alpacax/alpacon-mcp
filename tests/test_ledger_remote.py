@@ -21,6 +21,13 @@ from starlette.testclient import TestClient
 
 import server
 from tests.conftest import http_client_fixture
+from tests.oauth._support import (
+    OAUTH_ENV,
+    PKCE_PARAMS,
+    TEST_NONCE,
+    MockMCPServer,
+    _mock_auth0_response,
+)
 from tests.test_ledger_tools import (
     AI_ENV,
     ENTRY_ID,
@@ -29,13 +36,6 @@ from tests.test_ledger_tools import (
     UNAUTHORIZED_ENVELOPE,
     answer_entry_reads,
     changes,
-)
-from tests.test_oauth import (
-    OAUTH_ENV,
-    PKCE_PARAMS,
-    TEST_NONCE,
-    MockMCPServer,
-    _mock_auth0_response,
 )
 from tools import resources as res
 from tools.ledger_tools import (
@@ -66,18 +66,16 @@ from utils.ledger_grant import (
     unwrap_access_token,
     wrap_access_token,
 )
-from utils.oauth import (
-    _LEDGER_COOKIE_NAME,
+from utils.oauth import ledger_grant_key, register_oauth_routes
+from utils.oauth._ledger import _LEDGER_COOKIE_NAME, _ledger_org
+from utils.oauth._sealing import (
     _NONCE_COOKIE_NAME,
     _build_state,
     _hash_nonce,
-    _ledger_org,
     _open_seal,
     _seal_code,
     _seal_refresh_token,
     _verify_state,
-    ledger_grant_key,
-    register_oauth_routes,
 )
 
 KEY = b'k' * 32
@@ -412,7 +410,7 @@ class TestCallback:
     def test_ledger_stage_keeps_the_token_in_a_cookie_and_goes_on(self, oauth):
         token = _jwt(ALICE, int(time.time()) + 600)
         auth0 = _mock_auth0_response(json_data={'access_token': token})
-        with patch('utils.oauth.httpx.AsyncClient', return_value=auth0):
+        with patch('utils.oauth._ledger.httpx.AsyncClient', return_value=auth0):
             response = oauth.get(
                 '/oauth/callback',
                 params={
@@ -454,7 +452,7 @@ class TestCallback:
         auth0 = _mock_auth0_response(
             status_code=HTTPStatus.FORBIDDEN, json_data={'error': 'access_denied'}
         )
-        with patch('utils.oauth.httpx.AsyncClient', return_value=auth0):
+        with patch('utils.oauth._ledger.httpx.AsyncClient', return_value=auth0):
             response = oauth.get(
                 '/oauth/callback',
                 params={
@@ -467,7 +465,7 @@ class TestCallback:
 
     def test_an_auth0_error_on_the_ledger_stage_still_signs_the_person_in(self, oauth):
         auth0 = _mock_auth0_response()
-        with patch('utils.oauth.httpx.AsyncClient', return_value=auth0):
+        with patch('utils.oauth._ledger.httpx.AsyncClient', return_value=auth0):
             response = oauth.get(
                 '/oauth/callback',
                 params={
@@ -482,7 +480,8 @@ class TestCallback:
 
     def test_mfa_stage_hands_over_to_the_ledger_stage(self, oauth):
         with patch(
-            'utils.oauth.httpx.AsyncClient', return_value=_mock_auth0_response()
+            'utils.oauth._callback.httpx.AsyncClient',
+            return_value=_mock_auth0_response(),
         ):
             response = oauth.get(
                 '/oauth/callback',
@@ -569,7 +568,7 @@ class TestCallback:
 class TestTokenEndpoint:
     def test_a_refresh_never_forwards_the_pseudo_scopes(self, oauth):
         auth0 = _mock_auth0_response(json_data={'access_token': 'a'})
-        with patch('utils.oauth.httpx.AsyncClient', return_value=auth0):
+        with patch('utils.oauth._token.httpx.AsyncClient', return_value=auth0):
             oauth.post(
                 '/oauth/token',
                 data={
@@ -605,7 +604,7 @@ class TestTokenEndpoint:
                 'grant_type': grant_type,
                 'refresh_token': _seal_refresh_token('r', DEVICE_ID, ledger),
             }
-        with patch('utils.oauth.httpx.AsyncClient', return_value=auth0):
+        with patch('utils.oauth._token.httpx.AsyncClient', return_value=auth0):
             response = oauth.post('/oauth/token', data=data)
         assert response.status_code == HTTPStatus.OK
         return response.json()

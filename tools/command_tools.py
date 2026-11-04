@@ -9,7 +9,6 @@ from typing import Annotated, TypedDict
 import httpx
 from pydantic import Field, Strict, TypeAdapter
 
-from utils import mfa_step_up
 from utils.command_rejection import attach_rejection
 from utils.common import (
     FILE_EXEC_INLINE_CREDENTIAL_HINT,
@@ -27,7 +26,7 @@ from utils.common import (
     validate_response,
 )
 from utils.decorators import mcp_tool_handler
-from utils.error_handler import validate_file_path
+from utils.error_handler import MfaStepUpRequired, validate_file_path
 from utils.host_transfer import (
     COMMAND_NEVER_RAN,
     CommandHidden,
@@ -850,7 +849,7 @@ async def execute_command(
 
 def _failed_entry(exc: Exception) -> dict[str, JsonValue]:
     """A per-server entry for an exception; an MFA step-up stays distinguishable."""
-    if isinstance(exc, mfa_step_up.MfaStepUpRequired):
+    if isinstance(exc, MfaStepUpRequired):
         return {'status': 'mfa_required', 'message': str(exc)}
     return {'status': 'error', 'message': str(exc)}
 

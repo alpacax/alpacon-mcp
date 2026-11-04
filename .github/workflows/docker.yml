@@ -88,9 +88,9 @@ jobs:
       # cannot resolve `uses: alpacax/shared-ci/...`. Mirror the wrapper
       # logic here (App token + workflow-dispatch).
       #
-      # The dev deployment (mcp.dev.alpacon.io) runs on the staging cluster,
-      # so the dev build bumps that cluster's staging values. The target
-      # workflow takes service, tag and env only.
+      # The dev deployment (mcp.dev.alpacon.io) runs on the staging cluster.
+      # The bump workflow takes service, tag and env only, and maps env=dev to
+      # that cluster's staging values.
       - name: Generate App token
         id: app-token
         uses: actions/create-github-app-token@v3
@@ -98,17 +98,17 @@ jobs:
           client-id: ${{ secrets.DEPLOY_DISPATCHER_APP_CLIENT_ID }}
           private-key: ${{ secrets.DEPLOY_DISPATCHER_PRIVATE_KEY }}
           owner: alpacax
-          repositories: iac-dc-kr
+          repositories: alpacon-gitops
           permission-actions: write
 
       - name: Trigger dev deployment
         uses: benc-uk/workflow-dispatch@v1.3.1
         with:
-          workflow: image-tag-update-pr.yaml
-          repo: alpacax/iac-dc-kr
+          workflow: image-tag-bump.yaml
+          repo: alpacax/alpacon-gitops
           ref: main
           token: ${{ steps.app-token.outputs.token }}
-          inputs: '{"tag": "${{ github.event.workflow_run.head_sha }}", "service": "alpacon-mcp", "env": "staging"}'
+          inputs: '{"tag": "${{ github.event.workflow_run.head_sha }}", "service": "alpacon-mcp", "env": "dev"}'
 
   deploy-prod:
     needs: build-and-push
@@ -126,11 +126,13 @@ jobs:
           repositories: alpacon-gitops
           permission-actions: write
 
+      # The same bump workflow as dev; env=prod maps a release tag (vX.Y.Z) to
+      # the us1 values.
       - name: Trigger prod deployment
         uses: benc-uk/workflow-dispatch@v1.3.1
         with:
-          workflow: image-tag-update-pr.yaml
+          workflow: image-tag-bump.yaml
           repo: alpacax/alpacon-gitops
           ref: main
           token: ${{ steps.app-token.outputs.token }}
-          inputs: '{"tag": "${{ github.ref_name }}", "service": "alpacon-mcp", "env": "prod", "job": "update_image_tag"}'
+          inputs: '{"tag": "${{ github.ref_name }}", "service": "alpacon-mcp", "env": "prod"}'

@@ -7,28 +7,31 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
-from mcp.server.mcpserver.exceptions import ToolError
-
-from utils.error_handler import UpstreamAuthError
-from utils.logger import get_logger
+from utils.error_handler import MfaStepUpRequired
+from utils.mfa_link import (
+    MFAAlreadyDone,
+    MFALink,
+    MFALinkOutcome,
+    MFALinkRaised,
+    fetch_mfa_link,
+)
 from utils.types import JsonValue
 
 if TYPE_CHECKING:  # http_client imports this module
     from utils.http_client import AlpaconHTTPClient
 
-logger = get_logger('mfa_step_up')
-
-_LINK_ENDPOINT = '/api/auth0/mfa/'
-
-_LEAD_LINK = (
-    'Alpacon needs a fresh MFA for this action. Show the mfa_url link to the person '
-    'and wait until they finish MFA in the browser, '
+_NEEDS_MFA = 'Alpacon needs a fresh MFA for this action'
+_WAIT = 'and wait until they finish MFA in the browser, '
+_LEAD_LINK = f'{_NEEDS_MFA}. Show the mfa_url link to the person {_WAIT}'
+_LEAD_SHOW_MFA = (
+    f'{_NEEDS_MFA}. Call show_mfa with the same workspace and region so the person '
+    f'gets an Authenticate button, or show them the mfa_url link if no panel appears, '
+    f'{_WAIT}'
 )
 _LEAD_ALREADY_DONE = 'Alpacon reports MFA already completed; '
 _LEAD_NO_LINK = (
-    'Alpacon needs a fresh MFA for this action, but no link could be fetched. MFA done '
-    'in the web console does not count for this connection, so wait for the service '
-    'to recover, '
+    f'{_NEEDS_MFA}, but no link could be fetched. MFA done in the web console does '
+    'not count for this connection, so wait for the service to recover, '
 )
 _RETRY_WHOLE = 'then retry the same call once with the same arguments.'
 _RETRY_PARTIAL = 'then retry only the refused parts, never the whole call.'
@@ -44,18 +47,21 @@ _SENT_PREFIX = (
     'so a whole retry would repeat them. '
 )
 
+
+def lead(outcome: MFALinkOutcome, *, names_show_mfa: bool) -> str:
+    """The message's opening for a link fetch outcome; it ends ready for a retry clause."""
+    match outcome:
+        case MFALink():
+            return _LEAD_SHOW_MFA if names_show_mfa else _LEAD_LINK
+        case MFAAlreadyDone():
+            return _LEAD_ALREADY_DONE
+        case _:
+            return _LEAD_NO_LINK
+
+
 # whole: nothing ran or the tool is read-only; sent: writes went through before the
 # refusal ended the call; partial: the tool caught the refusal and returned.
 Retry = Literal['whole', 'sent', 'partial']
-
-
-class MfaStepUpRequired(ToolError):  # noqa: N818  # a signal, named for the state
-    """Alpacon refused with ``auth_mfa_required``. Not an UpstreamAuthError, which comes
-    with a request_signal entry and so a re-auth challenge in place of the result."""
-
-    def __init__(self, source: str = '') -> None:
-        self.source = source
-        super().__init__('MFA step-up required')
 
 
 @dataclass
@@ -118,47 +124,27 @@ async def step_up_result(
     source: str,
     retry: Retry,
     already_sent: list[str],
+    apps_declared: bool,
     partial_result: JsonValue = None,
 ) -> dict[str, JsonValue]:
     """The ``mfa_required`` result. An UpstreamAuthError from the link fetch propagates; any
     other failure leaves ``mfa_url`` None. partial_result is kept only for a partial retry."""
-    mfa_url: str | None = None
-    lead = _LEAD_NO_LINK
     try:
-        body = await client.get(
-            region,
-            workspace,
-            _LINK_ENDPOINT,
-            token=token,
-            # TODO(#427 step 3): location=mcp once Alpacon accepts it
-            params={'location': 'cli', 'workspace': workspace},
+        outcome = await fetch_mfa_link(
+            client, region=region, workspace=workspace, token=token
         )
-    except UpstreamAuthError:
-        raise
-    except Exception as exc:
-        logger.warning('MFA link fetch for %s.%s raised %s', workspace, region, exc)
-    else:
-        url = body.get('mfa_url') if isinstance(body, dict) else None
-        if isinstance(url, str) and url:
-            mfa_url, lead = url, _LEAD_LINK
-        elif isinstance(body, dict) and set(body) == {'detail'}:
-            # Alpacon's answer when the token's MFA is still fresh; detail may be translated
-            lead = _LEAD_ALREADY_DONE
-        else:
-            logger.warning(
-                'MFA link fetch for %s.%s returned no link (keys: %s)',
-                workspace,
-                region,
-                sorted(body) if isinstance(body, dict) else type(body).__name__,
-            )
+    except MfaStepUpRequired:  # the link endpoint itself wants MFA: no link to give
+        outcome = MFALinkRaised()
+    mfa_url = outcome.url if isinstance(outcome, MFALink) else None
+    opening = lead(outcome, names_show_mfa=apps_declared)
 
     match retry:
         case 'whole':
-            message = lead + _RETRY_WHOLE
+            message = opening + _RETRY_WHOLE
         case 'sent':
-            message = _SENT_PREFIX + lead + _RETRY_SENT
+            message = _SENT_PREFIX + opening + _RETRY_SENT
         case 'partial':
-            message = _PARTIAL_PREFIX + lead + _RETRY_PARTIAL
+            message = _PARTIAL_PREFIX + opening + _RETRY_PARTIAL
 
     result: dict[str, JsonValue] = {
         'status': 'mfa_required',

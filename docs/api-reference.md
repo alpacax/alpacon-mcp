@@ -65,6 +65,8 @@ Show `mfa_url` to the person, wait until they finish MFA in the browser, then re
 
 A client on protocol 2026-07-28 that declares the `elicitation.url` capability gets the whole-retry result as a URL-mode elicitation instead: the `tools/call` answers with `resultType: "input_required"` and one `elicitation/create` request, keyed `alpacon_mfa`, whose `url` is the `mfa_url` above. `accept` only means the user agreed to open the page, so on the retry the server polls `/api/auth0/mfa/completion/` for up to 10 seconds before it calls Alpacon again. If MFA is still not done, it asks again with a newly fetched link, up to three elicitations in all, and then returns the `mfa_required` result. A retry holds its `tools/call` open for up to 10 seconds, so a proxy in front of the server must allow at least that long. `decline` or `cancel` returns the `mfa_required` result at once. A result with `mfa_url: null`, `partial_result` or `already_sent`, and every other client, including any client on an earlier protocol version, gets the `mfa_required` result directly.
 
+When the client declared it renders MCP Apps (the `io.modelcontextprotocol/ui` extension with `text/html;profile=mcp-app` in `mimeTypes`), an `mfa_required` result that carries a link has a message telling the agent to call `show_mfa` with the same workspace and region, which shows the person an Authenticate button; `mfa_url` stays in the result for a client that shows no panel. See [MFA tools](#-mfa-tools).
+
 ## 🖥️ Server management tools
 
 ### `list_servers`
@@ -1055,6 +1057,15 @@ The list and issue tools, and `grant_ledger_admin`, name the workspace's id to t
 - `list_ledger_admins`: `workspace`, `page`, `page_size`, `region` (`ap1` or `us1`, optional)
 - `grant_ledger_admin`: `workspace`, `subject` (the person's Auth0 user id), `email` (optional), `region` (`ap1` or `us1`, optional). A machine principal is refused
 - `revoke_ledger_admin`: `workspace`, `admin_id`. The last admin of a workspace cannot be removed. Refused unless the admin grant belongs to `workspace`
+
+---
+
+## 🔑 MFA tools
+
+Remote mode (`ALPACON_MCP_AUTH_ENABLED=true`) only: Alpacon serves the MFA link and its completion to an Auth0 JWT alone, so a server without that setting never registers these tools. Both are bound to the `ui://alpacon/mfa` MCP App (`_meta.ui.resourceUri`), a self-contained HTML panel served as a `text/html;profile=mcp-app` resource, and the server advertises the `io.modelcontextprotocol/ui` extension. `tools/list` leaves them out for a client whose capabilities, sent at the handshake or with a 2026-07-28 request, lack that extension with `text/html;profile=mcp-app` in `mimeTypes`. Only a pre-2026-07-28 request that reaches the server without capabilities, as on a stateless server, has unknown support and sees both.
+
+- `show_mfa`: `workspace`, `region` (`ap1` or `us1`, optional). Call it after an `mfa_required` result whose message names it. Each call mints a single-use MFA link. On a client that renders MCP Apps it returns `status: "mfa_link_shown"` with `message`, `region` and `workspace`; the link rides only in the result's `_meta["alpacon/mfa"].mfa_url`, which the panel reads and the model does not, and pressing Authenticate opens it; when the host cannot open it, the panel shows the link for the person to copy. Elsewhere it returns `status: "mfa_required"` with `mfa_url`, `message`, `region` and `workspace`; when the client's support is unknown, the link also rides in `_meta["alpacon/mfa"].mfa_url`, since its host may still render the panel. When Alpacon reports MFA already fresh it returns `status: "success"` with `completed: true`, and the refused call can be retried at once. When no link comes back it returns the error envelope
+- `get_mfa_completion`: `workspace`, `region` (`ap1` or `us1`, optional). App-only (`_meta.ui.visibility: ["app"]`): the panel polls it while the person completes MFA, and a host hides it from the model. Returns `status: "success"` with `data.completed` (`true` once the browser MFA is credited to this sign-in)
 
 ---
 

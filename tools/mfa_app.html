@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Alpacon MFA</title>
+<style>
+  /* Alpacon web DESIGN.md: Tile card, L0/L3/L5 text ramp, btn-primary, slate surfaces;
+     primary 600-800 under white button text and light-mode status tones kept at 4.5:1. */
+  :root {
+    color-scheme: light dark;
+    --heading: light-dark(#0f172a, #ffffff); --body: light-dark(#334155, #cbd5e1); --muted: light-dark(#64748b, #94a3b8);
+    --card: light-dark(#ffffff, #1e293b); --border: light-dark(#e2e8f0, #334155);
+    --primary: #117db8; --primary-hover: #0f6495; --primary-active: #0d4f75;
+    --success: light-dark(#047857, #10b981); --warning: light-dark(#b45309, #fbbf24); --danger: light-dark(#dc2626, #f87171);
+  }
+  :root[data-theme="light"] { color-scheme: light; }
+  :root[data-theme="dark"] { color-scheme: dark; }
+  body { margin: 0; background: transparent; color: var(--body); font: 0.875rem/1.25rem "Inter Variable", Inter, "Pretendard Variable", Pretendard, system-ui, sans-serif; }
+  .card { border: 1px solid var(--border); border-radius: 0.75rem; background: var(--card); padding: 1rem; }
+  @media (min-width: 480px) { .card { padding: 1.25rem; } }
+  .eyebrow { margin: 0; font-size: 0.6875rem; line-height: 0.875rem; font-weight: 600; letter-spacing: 0.025em; text-transform: uppercase; color: var(--muted); }
+  h1 { margin: 0.25rem 0 0; font-size: 1rem; line-height: 1.5rem; font-weight: 600; color: var(--heading); }
+  #status { margin: 0.375rem 0 0.75rem; color: var(--muted); }
+  #status[data-tone="success"] { color: var(--success); }
+  #status[data-tone="warning"] { color: var(--warning); }
+  #status[data-tone="danger"] { color: var(--danger); }
+  button {
+    display: inline-flex; align-items: center; justify-content: center; height: 2.25rem; padding: 0.375rem 0.875rem;
+    border: 0; border-radius: 0.375rem; background: var(--primary); color: #ffffff; font: inherit; font-weight: 500;
+    white-space: nowrap; box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); cursor: pointer; transition: background-color 150ms;
+  }
+  button:hover:not(:disabled) { background: var(--primary-hover); }
+  button:active:not(:disabled) { background: var(--primary-active); }
+  button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  #link { margin: 0 0 0.75rem; padding: 0.5rem 0.625rem; border: 1px solid var(--border); border-radius: 0.375rem; color: var(--heading); font: 0.75rem/1rem ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; user-select: all; }
+  #link[hidden] { display: none; }
+</style>
+</head>
+<body>
+<main class="card">
+  <p class="eyebrow">Alpacon</p>
+  <h1>MFA required</h1>
+  <p id="status" role="status" aria-live="polite">Preparing the MFA link…</p>
+  <p id="link" hidden></p>
+  <button id="authenticate" type="button" disabled>Authenticate</button>
+</main>
+<script>
+(() => {
+  const POLL_MS = 3000;
+  const POLL_LIMIT_MS = 5 * 60 * 1000;
+  const POLL_REQUEST_MS = 15000;
+  const POLL_FAILURE_LIMIT = 3;
+  const statusEl = document.getElementById('status');
+  const linkEl = document.getElementById('link');
+  const button = document.getElementById('authenticate');
+  const pending = new Map();
+  let nextId = 1;
+  let mfaUrl = null;
+  let args = {};
+  let hostCaps = {};
+  let polling = false;
+
+  const show = (text, tone) => {
+    statusEl.textContent = text;
+    if (tone) statusEl.dataset.tone = tone; else delete statusEl.dataset.tone;
+  };
+
+  function applyTheme(context) {
+    const theme = context && context.theme;
+    if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+  }
+
+  function request(method, params, timeoutMs) {
+    const id = nextId++;
+    window.parent.postMessage({ jsonrpc: '2.0', id, method, params }, '*');
+    return new Promise((resolve, reject) => {
+      pending.set(id, { resolve, reject });
+      if (timeoutMs) setTimeout(() => { if (pending.delete(id)) reject(new Error(method + ' timed out')); }, timeoutMs);
+    });
+  }
+
+  function respond(id, result, error) {
+    window.parent.postMessage(error ? { jsonrpc: '2.0', id, error } : { jsonrpc: '2.0', id, result }, '*');
+  }
+
+  function notify(method, params) {
+    window.parent.postMessage({ jsonrpc: '2.0', method, params }, '*');
+  }
+
+  function payloadOf(result) {
+    if (result && result.structuredContent) return result.structuredContent;
+    const text = textOf(result);
+    try { return text ? JSON.parse(text) : {}; } catch { return {}; }
+  }
+
+  function takeArgs(source) {
+    if (!source) return;
+    if (source.workspace) args.workspace = source.workspace;
+    if (source.region) args.region = source.region;
+  }
+
+  function showLink() {  // the person copies it when the host cannot open it
+    linkEl.textContent = mfaUrl;
+    linkEl.hidden = false;
+  }
+
+  function textOf(result) {
+    return (result && result.content && result.content[0] && result.content[0].text) || '';
+  }
+
+  function onToolResult(result) {
+    const payload = payloadOf(result);
+    takeArgs(payload);
+    const link = result && result._meta && result._meta['alpacon/mfa'];
+    mfaUrl = link && typeof link.mfa_url === 'string' && link.mfa_url.startsWith('https://') ? link.mfa_url : null;
+    if (polling) return;
+    if (mfaUrl && !hostCaps.openLinks) {
+      button.disabled = true;
+      show('This host cannot open links from the panel. Copy this link into your browser to finish MFA, then ask the assistant to retry.', 'warning');
+      showLink();
+    } else if (mfaUrl) {
+      button.disabled = false;
+      show('Press Authenticate to finish MFA in your browser.');
+    } else {
+      button.disabled = true;
+      show(payload.message || 'No MFA link was returned.', payload.completed ? 'success' : 'danger');
+    }
+  }
+
+  const pollFailed = (why) => show('Could not check MFA completion: ' + why + '. Finish MFA in your browser, then ask the assistant to retry.', 'danger');
+
+  async function poll() {
+    polling = true;
+    try { await pollUntilDone(); } finally { polling = false; }
+  }
+
+  async function pollUntilDone() {
+    const deadline = Date.now() + POLL_LIMIT_MS;
+    let failures = 0;
+    show('Waiting for MFA…');
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, POLL_MS));
+      try {
+        const result = await request('tools/call', { name: 'get_mfa_completion', arguments: args }, POLL_REQUEST_MS);
+        if (result && result.isError) { pollFailed(textOf(result) || 'the host reported an error'); return; }
+        const payload = payloadOf(result);
+        if (payload.data && payload.data.completed === true) { show('MFA complete. Ask the assistant to retry.', 'success'); return; }
+        if (payload.status === 'error') { pollFailed(payload.message || 'unknown error'); return; }
+        failures = 0;
+      } catch (e) {
+        if (++failures >= POLL_FAILURE_LIMIT) { pollFailed((e && e.message) || 'unknown error'); return; }
+      }
+    }
+    show('MFA timed out. Ask the assistant to run show_mfa again; each link works once.', 'warning');
+  }
+
+  button.addEventListener('click', async () => {
+    if (!mfaUrl) return;
+    button.disabled = true;
+    try {
+      const opened = await request('ui/open-link', { url: mfaUrl });
+      if (opened && opened.isError) throw new Error('the host declined to open it');
+    } catch (e) {
+      show('Could not open the MFA page: ' + ((e && e.message) || 'unknown error') + '. Copy this link into your browser instead.', 'danger');
+      showLink();
+      button.disabled = false;
+      return;
+    }
+    if (hostCaps.serverTools) poll();
+    else show('Finish MFA in your browser, then ask the assistant to retry.');
+  });
+
+  window.addEventListener('message', (event) => {
+    if (event.source !== window.parent) return;
+    const msg = event.data;
+    if (!msg || msg.jsonrpc !== '2.0') return;
+    if (msg.id !== undefined && pending.has(msg.id) && !msg.method) {
+      const { resolve, reject } = pending.get(msg.id);
+      pending.delete(msg.id);
+      if (msg.error) reject(msg.error); else resolve(msg.result);
+      return;
+    }
+    if (msg.method && msg.id !== undefined) {
+      if (msg.method === 'ping' || msg.method === 'ui/resource-teardown') respond(msg.id, {});
+      else respond(msg.id, null, { code: -32601, message: 'Method not found' });
+      return;
+    }
+    if (msg.method === 'ui/notifications/tool-input') takeArgs(msg.params && msg.params.arguments);
+    else if (msg.method === 'ui/notifications/tool-result') onToolResult(msg.params);
+    else if (msg.method === 'ui/notifications/host-context-changed') applyTheme(msg.params);
+  });
+
+  request('ui/initialize', {
+    appInfo: { name: 'alpacon-mfa', version: '1' },
+    appCapabilities: {},
+    protocolVersion: '2026-01-26',
+  }).then((result) => {
+    hostCaps = (result && result.hostCapabilities) || {};
+    applyTheme(result && result.hostContext);
+    notify('ui/notifications/initialized', {});
+  })
+    .catch((e) => show('The host refused the MFA panel: ' + ((e && e.message) || 'unknown error'), 'danger'));
+})();
+</script>
+</body>
+</html>
