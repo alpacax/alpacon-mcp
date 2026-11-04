@@ -91,6 +91,10 @@ jobs:
       # The dev deployment (mcp.dev.alpacon.io) runs on the staging cluster,
       # so the dev build bumps that cluster's staging values. The target
       # workflow takes service, tag and env only.
+      #
+      # While those values move between the two deploy repositories, the same
+      # tag goes to both so they stay on one tag; the first dispatch below goes
+      # once the move is done.
       - name: Generate App token
         id: app-token
         uses: actions/create-github-app-token@v3
@@ -98,7 +102,7 @@ jobs:
           client-id: ${{ secrets.DEPLOY_DISPATCHER_APP_CLIENT_ID }}
           private-key: ${{ secrets.DEPLOY_DISPATCHER_PRIVATE_KEY }}
           owner: alpacax
-          repositories: iac-dc-kr
+          repositories: iac-dc-kr,alpacon-gitops
           permission-actions: write
 
       - name: Trigger dev deployment
@@ -109,6 +113,17 @@ jobs:
           ref: main
           token: ${{ steps.app-token.outputs.token }}
           inputs: '{"tag": "${{ github.event.workflow_run.head_sha }}", "service": "alpacon-mcp", "env": "staging"}'
+
+      # The receiving repository maps env=dev to the staging values.
+      - name: Trigger dev deployment through the bump workflow
+        if: ${{ !cancelled() }}
+        uses: benc-uk/workflow-dispatch@v1.3.1
+        with:
+          workflow: image-tag-bump.yaml
+          repo: alpacax/alpacon-gitops
+          ref: main
+          token: ${{ steps.app-token.outputs.token }}
+          inputs: '{"tag": "${{ github.event.workflow_run.head_sha }}", "service": "alpacon-mcp", "env": "dev"}'
 
   deploy-prod:
     needs: build-and-push
