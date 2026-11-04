@@ -45,6 +45,7 @@ from utils.oauth._sealing import (
     _STAGE_REGULAR,
     _build_state,
     _clear_nonce_cookie,
+    _cookie_header_fits,
     _is_device_id,
     _nonce_cookie_matches,
     _refresh_nonce_cookie,
@@ -186,17 +187,17 @@ async def _complete_ledger_stage(
         grant = await _exchange_ledger_code(config, server_url, code, state.ledger_org)
     # A failure record stops the ledger tool from asking again at once.
     staged = grant or LedgerGrant.failed(state.ledger_org)
+    sealed = seal_stage(key, staged, state.nonce_hash)
+    if not _cookie_header_fits(request, len(sealed)):
+        logger.warning('Ledger stage dropped its token: no room for the cookie')
+        sealed = seal_stage(key, LedgerGrant.failed(state.ledger_org), state.nonce_hash)
 
     response = RedirectResponse(
         url=_final_stage_url(config, server_url, state),
         status_code=HTTPStatus.FOUND,
     )
     _refresh_nonce_cookie(request, response, state.nonce_hash)
-    _set_ledger_cookie(
-        response,
-        seal_stage(key, staged, state.nonce_hash),
-        nonce_hash=state.nonce_hash,
-    )
+    _set_ledger_cookie(response, sealed, nonce_hash=state.nonce_hash)
     logger.info(
         'Ledger stage complete (token obtained: %s); redirecting to the '
         'regular audience',

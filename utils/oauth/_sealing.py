@@ -68,6 +68,12 @@ _NONCE_COOKIE_PREFIX = '__Host-alpacon_oauth_nonce'
 # Long enough that two flows in one browser never share a cookie name.
 _FLOW_SUFFIX_CHARS = 16
 
+_MAX_LIVE_FLOWS = 8
+# Under nginx's default 8 KB header line, so a callback still reaches this server.
+_COOKIE_HEADER_LIMIT = 8000
+# One nonce cookie plus a ledger cookie at the browser's 4 KB cookie cap.
+_NEW_FLOW_COOKIE_BYTES = 4200
+
 
 class _FlowCookieAttrs(TypedDict):
     path: Literal['/']
@@ -238,6 +244,21 @@ def _refresh_nonce_cookie(
 
 def _clear_nonce_cookie(response: Response, nonce_hash: str) -> None:
     response.delete_cookie(_nonce_cookie_name(nonce_hash), **_FLOW_COOKIE_ATTRS)
+
+
+def _cookie_header_fits(request: Request, added_bytes: int) -> bool:
+    size = len(request.headers.get('cookie', ''))
+    return size + added_bytes <= _COOKIE_HEADER_LIMIT
+
+
+def _has_room_for_a_flow(request: Request) -> bool:
+    """Live flows keep their cookies, so a full browser is refused a new flow until
+    one finishes or expires."""
+    prefix = f'{_NONCE_COOKIE_PREFIX}_'
+    live = sum(name.startswith(prefix) for name in request.cookies)
+    return live < _MAX_LIVE_FLOWS and _cookie_header_fits(
+        request, _NEW_FLOW_COOKIE_BYTES
+    )
 
 
 def _nonce_cookie_matches(request: Request, state_data: dict[str, object]) -> bool:

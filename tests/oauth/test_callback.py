@@ -28,6 +28,7 @@ from utils.oauth._http import (
     _RESPONSE_TYPE_CODE,
 )
 from utils.oauth._sealing import (
+    _MAX_LIVE_FLOWS,
     _NONCE_COOKIE_PREFIX,
     _SEAL_KIND_CODE,
     _STAGE_MFA,
@@ -615,6 +616,59 @@ def _start_flow(browser, client_state):
     )
     assert response.status_code == HTTPStatus.FOUND
     return parse_qs(urlparse(response.headers['location']).query)['state'][0]
+
+
+class TestLiveFlowLimit:
+    """A browser's cookies stay small enough for its callbacks to reach the server."""
+
+    def test_authorize_past_the_limit_is_refused_and_keeps_earlier_flows(self, browser):
+        states = [_start_flow(browser, str(i)) for i in range(_MAX_LIVE_FLOWS)]
+        held = dict(browser.cookies)
+
+        refused = browser.get(
+            _AUTHORIZE_PATH,
+            params={'redirect_uri': 'http://localhost:52048/callback', **PKCE_PARAMS},
+            follow_redirects=False,
+        )
+
+        assert refused.status_code == HTTPStatus.TOO_MANY_REQUESTS
+        assert refused.json()['error'] == 'temporarily_unavailable'
+        assert 'location' not in refused.headers
+        assert 'set-cookie' not in refused.headers
+        assert dict(browser.cookies) == held
+        finished = browser.get(
+            _CALLBACK_PATH,
+            params={'code': 'auth-code', 'state': states[0]},
+            follow_redirects=False,
+        )
+        assert finished.status_code == HTTPStatus.FOUND
+
+    def test_finishing_a_flow_frees_room_for_a_new_one(self, browser):
+        states = [_start_flow(browser, str(i)) for i in range(_MAX_LIVE_FLOWS)]
+        browser.get(
+            _CALLBACK_PATH,
+            params={'code': 'auth-code', 'state': states[0]},
+            follow_redirects=False,
+        )
+
+        _start_flow(browser, 'next')
+
+    @pytest.mark.parametrize(
+        ('padding', 'expected'),
+        [(3000, HTTPStatus.FOUND), (4000, HTTPStatus.TOO_MANY_REQUESTS)],
+    )
+    def test_authorize_leaves_room_for_a_ledger_cookie(
+        self, oauth_app_no_cookie, padding, expected
+    ):
+        oauth_app_no_cookie.cookies.set('unrelated', 'x' * padding)
+
+        response = oauth_app_no_cookie.get(
+            _AUTHORIZE_PATH,
+            params={'redirect_uri': 'http://localhost:52048/callback', **PKCE_PARAMS},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == expected
 
 
 class TestOverlappingFlows:

@@ -445,6 +445,39 @@ class TestCallback:
         assert len(refreshed) == 1
         assert 'max-age=600' in refreshed[0].lower()
 
+    def test_a_token_with_no_cookie_room_is_staged_as_a_failure(self, oauth):
+        oauth.cookies.set('unrelated', 'x' * 7900)
+        token = _jwt(ALICE, int(time.time()) + 600)
+        auth0 = _mock_auth0_response(json_data={'access_token': token})
+        with patch('utils.oauth._ledger.httpx.AsyncClient', return_value=auth0):
+            response = oauth.get(
+                '/oauth/callback',
+                params={
+                    'code': 'ledger-code',
+                    'state': _state(stage='ledger', ledger_org=WORKSPACE),
+                },
+                follow_redirects=False,
+            )
+        self._assert_failure_staged(response)
+
+    def test_a_relayed_auth0_error_clears_both_flow_cookies(self, oauth):
+        response = oauth.get(
+            '/oauth/callback',
+            params={
+                'error': 'access_denied',
+                'state': _state(stage='regular', ledger_org=WORKSPACE),
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == HTTPStatus.FOUND
+        assert _query(response)['error'] == 'access_denied'
+        cleared = response.headers.get_list('set-cookie')
+        assert sorted(c.split('=', 1)[0] for c in cleared) == sorted(
+            [TEST_NONCE_COOKIE, LEDGER_COOKIE]
+        )
+        assert all('max-age=0' in c.lower() for c in cleared)
+
     def _assert_failure_staged(self, response):
         assert response.status_code == HTTPStatus.FOUND
         assert _query(response)['audience'] == OAUTH_ENV['AUTH0_ALPACON_USER_AUDIENCE']

@@ -10,6 +10,7 @@ from starlette.responses import RedirectResponse, Response
 from utils.logger import escape_for_log
 from utils.oauth._http import (
     _ERROR_INVALID_REQUEST,
+    _ERROR_TEMPORARILY_UNAVAILABLE,
     _MFA_SCOPE,
     _OFFLINE_ACCESS_SCOPE,
     _PKCE_CHALLENGE_METHOD,
@@ -40,6 +41,7 @@ from utils.oauth._sealing import (
     _STAGE_MFA,
     _build_state,
     _client_device_id,
+    _has_room_for_a_flow,
     _hash_nonce,
     _mint_device_id,
     _mint_nonce,
@@ -61,6 +63,16 @@ async def oauth_authorize(request: Request) -> Response:
         server_url = _get_server_url(request)
         _validate_authorize_request(authorize)
         _drop_unchecked_challenge_method(authorize.params)
+        if not _has_room_for_a_flow(request):
+            logger.warning('Authorize refused: this browser holds too many live flows')
+            raise _OAuthRequestError(
+                _oauth_error_response(
+                    _ERROR_TEMPORARILY_UNAVAILABLE,
+                    'Too many sign-ins in progress in this browser; '
+                    'try again in a few minutes',
+                    HTTPStatus.TOO_MANY_REQUESTS,
+                )
+            )
         nonce = _mint_nonce()
         auth0_url = _first_stage_url(config, server_url, authorize, _hash_nonce(nonce))
     except _OAuthRequestError as e:
