@@ -168,8 +168,8 @@ One id per grant means one MFA record per MCP client installation: a step-up in 
 | MFA panel | `tools/mfa_tools.py`, `tools/mfa_app.html` | `show_mfa` hands the link to the `ui://alpacon/mfa` panel, which polls `get_mfa_completion` |
 | URL elicitation | `utils/mfa_elicitation.py` | Builds the `InputRequiredResult` for a whole-retry `mfa_required`, polls completion on the retry, and bounds the asks |
 | Auth error middleware | `utils/auth_error_middleware.py` | Answers an MFA signal with 403 `insufficient_scope` and `mfa` in the scope |
-| OAuth proxy (authorize) | `utils/oauth.py` | Routes to MFA or regular audience based on scope |
-| OAuth proxy (callback) | `utils/oauth.py` | Handles two-stage callback (MFA → regular) |
+| OAuth proxy (authorize) | `utils/oauth/_authorize.py` | Routes to MFA or regular audience based on scope |
+| OAuth proxy (callback) | `utils/oauth/_callback.py` | Handles two-stage callback (MFA → regular) |
 
 ## Ledger stage
 
