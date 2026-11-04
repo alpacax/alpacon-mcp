@@ -6,8 +6,11 @@ from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
+from starlette.applications import Starlette
 from starlette.routing import Route
+from starlette.testclient import TestClient
 
+from utils.oauth import register_oauth_routes
 from utils.oauth._http import _PKCE_CHALLENGE_METHOD
 from utils.oauth._sealing import (
     _NONCE_COOKIE_PREFIX,
@@ -75,7 +78,7 @@ TEST_NONCE = 'test-nonce-value'
 TEST_NONCE_COOKIE = _nonce_cookie_name(_hash_nonce(TEST_NONCE))
 
 # Set-Cookie assertions lowercase the whole header, so the name must match in kind
-NONCE_COOKIE_PREFIX = f'{TEST_NONCE_COOKIE.lower()}='
+TEST_NONCE_SET_COOKIE = f'{TEST_NONCE_COOKIE.lower()}='
 
 
 class MockMCPServer:
@@ -90,6 +93,17 @@ class MockMCPServer:
             return func
 
         return decorator
+
+
+def _browser_client() -> TestClient:
+    """One cookie jar across requests, over https so it keeps __Host- cookies."""
+    mock_server = MockMCPServer()
+    register_oauth_routes(mock_server)
+    return TestClient(
+        Starlette(routes=mock_server.routes),
+        base_url='https://testserver',
+        raise_server_exceptions=False,
+    )
 
 
 def _forge_state_under_valid_signature():

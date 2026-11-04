@@ -4,6 +4,7 @@ import base64
 import hashlib
 import hmac
 import json
+import re
 import time
 from unittest.mock import patch
 
@@ -21,6 +22,7 @@ from tests.oauth._support import (
     _state_payload,
 )
 from utils.oauth import register_oauth_routes, request_state_key
+from utils.oauth._ledger import _ledger_cookie_name
 from utils.oauth._sealing import (
     _GRANT_SECRET_ENV,
     _GRANT_SECRET_INFO,
@@ -211,8 +213,15 @@ class TestNonceHelpers:
         expected = base64.urlsafe_b64encode(hashlib.sha256(b'abc').digest()).decode()
         assert _hash_nonce('abc') == expected
 
-    def test_nonce_cookie_name_carries_the_host_prefix(self):
-        assert _nonce_cookie_name(_hash_nonce('abc')).startswith('__Host-')
+    def test_nonce_cookie_name_is_a_host_cookie_named_for_its_flow(self):
+        name = _nonce_cookie_name(_hash_nonce('abc'))
+        assert re.fullmatch(r'__Host-alpacon_oauth_nonce_[0-9a-f]{16}', name)
+        assert name == _nonce_cookie_name(_hash_nonce('abc'))
+
+    def test_ledger_cookie_name_is_a_host_cookie_named_for_its_flow(self):
+        name = _ledger_cookie_name(_hash_nonce('abc'))
+        assert re.fullmatch(r'__Host-alpacon_ledger_grant_[0-9a-f]{16}', name)
+        assert name != _ledger_cookie_name(_hash_nonce('abd'))
 
     def test_nonce_cookie_name_differs_per_flow(self):
         assert _nonce_cookie_name(_hash_nonce('abc')) != _nonce_cookie_name(

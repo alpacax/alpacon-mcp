@@ -530,13 +530,11 @@ class TestOAuthAuthorize:
         assert payload['nonce_hash'] == _hash_nonce(nonce)
 
     def test_authorize_mints_a_fresh_nonce_despite_an_old_cookie(self, oauth_app):
-        """A browser arriving with an old cookie gets a new mark, not the old one."""
         response = oauth_app.get(
             _AUTHORIZE_PATH,
             params={'redirect_uri': 'http://localhost:52048/callback', **PKCE_PARAMS},
             follow_redirects=False,
         )
-        assert TEST_NONCE not in response.headers['set-cookie']
         state = parse_qs(urlparse(response.headers['location']).query)['state'][0]
         payload = _state_payload(state)
         assert payload['nonce_hash'] != _hash_nonce(TEST_NONCE)

@@ -27,6 +27,7 @@ from tests.oauth._support import (
     TEST_NONCE,
     TEST_NONCE_COOKIE,
     MockMCPServer,
+    _browser_client,
     _mock_auth0_response,
 )
 from tests.test_ledger_tools import (
@@ -79,7 +80,6 @@ from utils.oauth._sealing import (
 )
 
 KEY = b'k' * 32
-# The staged-grant cookie of TEST_NONCE's flow
 LEDGER_COOKIE = _ledger_cookie_name(_hash_nonce(TEST_NONCE))
 OTHER_KEY = b'o' * 32
 DEVICE_ID = 'a' * 32
@@ -437,6 +437,13 @@ class TestCallback:
         grant = open_stage(ledger_grant_key(), cookie, _hash_nonce(TEST_NONCE))
         assert grant is not None
         assert (grant.token, grant.subject, grant.org) == (token, ALICE, WORKSPACE)
+        refreshed = [
+            c
+            for c in response.headers.get_list('set-cookie')
+            if c.startswith(f'{TEST_NONCE_COOKIE}={TEST_NONCE};')
+        ]
+        assert len(refreshed) == 1
+        assert 'max-age=600' in refreshed[0].lower()
 
     def _assert_failure_staged(self, response):
         assert response.status_code == HTTPStatus.FOUND
@@ -1074,13 +1081,7 @@ class TestOverlappingLedgerFlows:
 
     @pytest.fixture
     def browser(self, remote_env):
-        mock_server = MockMCPServer()
-        register_oauth_routes(mock_server)
-        return TestClient(
-            Starlette(routes=mock_server.routes),
-            base_url='https://testserver',
-            raise_server_exceptions=False,
-        )
+        return _browser_client()
 
     def _ledger_leg(self, browser, token: str) -> str:
         """Authorize, then run the ledger callback; returns the final stage's state."""
@@ -1099,17 +1100,23 @@ class TestOverlappingLedgerFlows:
         first_token = _jwt(ALICE, int(time.time()) + 600)
         second_token = _jwt(ALICE, int(time.time()) + 900)
         first = self._ledger_leg(browser, first_token)
-        self._ledger_leg(browser, second_token)
+        second = self._ledger_leg(browser, second_token)
 
-        response = browser.get(
-            '/oauth/callback',
-            params={'code': 'final-code', 'state': first},
-            follow_redirects=False,
-        )
+        delivered = [
+            browser.get(
+                '/oauth/callback',
+                params={'code': 'final-code', 'state': state},
+                follow_redirects=False,
+            )
+            for state in (first, second)
+        ]
 
-        assert response.status_code == HTTPStatus.FOUND
-        opened = _open_seal('code', _query(response)['code'])
-        assert opened is not None
-        grant = open_grant(ledger_grant_key(), opened.ledger)
-        assert grant is not None
-        assert grant.token == first_token
+        assert [r.status_code for r in delivered] == [HTTPStatus.FOUND] * 2
+        tokens = []
+        for response in delivered:
+            opened = _open_seal('code', _query(response)['code'])
+            assert opened is not None
+            grant = open_grant(ledger_grant_key(), opened.ledger)
+            assert grant is not None
+            tokens.append(grant.token)
+        assert tokens == [first_token, second_token]
