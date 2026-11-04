@@ -74,13 +74,13 @@ UNAUTHORIZED_ENVELOPE = {
 }
 
 OTHER_WORKSPACE_ID = '99999999-8888-7777-6666-555555555555'
-_ENTRY_URL = re.compile(r'/api/acl/entries/(?P<id>[^/]+)/$')
+_ENTRY_URL = re.compile(r'/api/acl/(?:entries|admins)/(?P<id>[^/]+)/$')
 
 mock_http_client = http_client_fixture('tools.ledger_tools')
 
 
 def answer_entry_reads(owners: dict[str, str] | None = None):
-    """A `request` side effect that answers a read of one entry with that entry,
+    """A `request` side effect that answers a read of one entry or admin grant,
     owned by `owners[id]` (this workspace by default); any other call returns the
     mock's `return_value`."""
 
@@ -766,6 +766,7 @@ class TestEntriesOfAnotherWorkspace:
         )
 
         assert result['status'] == 'error'
+        assert 'did not say which workspace' in result['message']
         assert changes(client) == []
 
     @pytest.mark.asyncio
@@ -825,6 +826,46 @@ class TestEntriesOfAnotherWorkspace:
         assert SECOND_ENTRY_ID in result['message']
         assert 'nothing was revoked' in result['message'].lower()
         assert changes(client) == []
+
+    @pytest.mark.asyncio
+    async def test_bulk_revoke_with_one_failed_read_revokes_none(self, ledger):
+        client, _ = ledger
+        reads = answer_entry_reads()
+
+        def answer(method, url, **kwargs):
+            if url.endswith(f'entries/{SECOND_ENTRY_ID}/'):
+                return {
+                    'error': 'HTTP Error',
+                    'status_code': HTTPStatus.NOT_FOUND,
+                    'response': '{"detail": "Not found."}',
+                }
+            return reads(method, url, **kwargs)
+
+        client.request.side_effect = answer
+
+        result = await revoke_ledger_entries(
+            workspace='testworkspace',
+            region='ap1',
+            entry_ids=[ENTRY_ID, SECOND_ENTRY_ID],
+        )
+
+        assert result['status'] == 'error'
+        assert result['entry_id'] == SECOND_ENTRY_ID
+        assert changes(client) == []
+
+    @pytest.mark.asyncio
+    async def test_bulk_revoke_refuses_an_id_that_escapes_the_path(self, ledger):
+        client, _ = ledger
+
+        result = await revoke_ledger_entries(
+            workspace='testworkspace',
+            region='ap1',
+            entry_ids=[ENTRY_ID, '../admins/x'],
+        )
+
+        assert result['status'] == 'error'
+        assert 'entry_ids[1]' in json.dumps(result)
+        client.request.assert_not_called()
 
 
 class TestLedgerUrl:
@@ -889,6 +930,7 @@ class TestLedgerUrl:
 
         assert result['status'] == 'success'
         client.request.assert_called_once()
+        assert client.request.call_args.args[1].startswith(url.rstrip('/'))
 
 
 class TestAdmins:
@@ -948,8 +990,27 @@ class TestAdmins:
             workspace='testworkspace', region='ap1', admin_id=admin_id
         )
 
-        assert _request(client)[:2] == ('DELETE', f'{LEDGER}admins/{admin_id}/')
+        calls = [c.args[:2] for c in client.request.call_args_list]
+        assert calls == [
+            ('GET', f'{LEDGER}admins/{admin_id}/'),
+            ('DELETE', f'{LEDGER}admins/{admin_id}/'),
+        ]
         assert result['admin_id'] == admin_id
+
+    @pytest.mark.asyncio
+    async def test_revoke_refuses_an_admin_of_another_workspace(self, ledger):
+        client, _ = ledger
+        admin_id = SECOND_ENTRY_ID
+        client.request.side_effect = answer_entry_reads({admin_id: OTHER_WORKSPACE_ID})
+
+        result = await revoke_ledger_admin(
+            workspace='testworkspace', region='ap1', admin_id=admin_id
+        )
+
+        assert result['status'] == 'error'
+        assert 'another workspace' in result['message']
+        assert result['admin_id'] == admin_id
+        assert changes(client) == []
 
 
 class TestTransportAwarePointers:
