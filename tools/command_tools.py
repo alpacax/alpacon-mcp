@@ -938,7 +938,6 @@ def _submitted_response(
 
 
 def _submitted_entry(result: JsonValue) -> dict[str, JsonValue]:
-    """A fleet server's accepted submission, with its command_id lifted out of the row."""
     entry: dict[str, JsonValue] = {'status': 'success', 'data': result}
     row = result[0] if isinstance(result, list) and result else result
     if isinstance(row, dict) and isinstance(command_id := row.get('id'), str):
