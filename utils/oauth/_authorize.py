@@ -108,7 +108,7 @@ def _normalize_authorize_request(
     ledger_org = _ledger_org(scope)
     scope = _strip_ledger_scopes(scope)
 
-    # The re-auth 401 asks for scope "... mfa"; the pseudo-scope picks the MFA flow.
+    # The re-auth 403 asks for scope "... mfa"; the pseudo-scope picks the MFA flow.
     scope_parts = scope.split()
     mfa_requested = _MFA_SCOPE in scope_parts
     if mfa_requested:
@@ -126,7 +126,8 @@ def _normalize_authorize_request(
 
 
 def _validate_authorize_request(authorize: _AuthorizeRequest) -> None:
-    """Refuse an unlisted redirect_uri or a missing or malformed S256 challenge."""
+    """Validate redirect_uri and S256 PKCE; only exempt callbacks may omit
+    the challenge."""
     params = authorize.params
     client_redirect_uri = authorize.client_redirect_uri
     _log_authorize_client_profile(
