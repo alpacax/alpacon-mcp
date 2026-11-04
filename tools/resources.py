@@ -244,6 +244,11 @@ RESOURCES: list[tuple[str, str, str]] = [
         'alpacon://commands/{region}/{workspace}',
     ),
     (
+        'command_detail',
+        'command_tools.check_command_status',
+        'alpacon://commands/{region}/{workspace}/{command_id}',
+    ),
+    (
         'events_list',
         'events_tools.list_events',
         'alpacon://events/{region}/{workspace}',
