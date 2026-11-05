@@ -122,6 +122,8 @@ The first time your client connects, it opens a browser window for you to log in
 
 Because access is granted per login, you **do not** set `region`, `workspace`, or any API token in your client config. Instead, you name the **workspace** in your prompt (e.g. *"in the `production` workspace"*)—tools require it, and the AI passes it along. The **region** is resolved automatically from your authorized workspaces, so you rarely need to mention it.
 
+Desktop notifications are available only when the server runs locally over stdio.
+
 ### Add it to your AI client
 
 **Claude Code** (CLI):

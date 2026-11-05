@@ -14,15 +14,18 @@ from copy import deepcopy
 from html import escape
 from pathlib import Path
 from time import perf_counter
+from typing import get_args
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from mcp.server import MCPServer
 from mcp.types import CallToolResult, TextContent
 
 import server
+from tests.conftest import streamable_http_client
 from tools import command_tools
 from utils import local_signal, mfa_step_up
-from utils.common import unwrap_http_result
+from utils.common import WorkSessionGateCode, unwrap_http_result
 from utils.decorators import mcp_tool_handler, with_error_handling
 from utils.error_handler import MfaStepUpRequired
 from utils.http_client import http_client
@@ -464,7 +467,9 @@ def test_unknown_clauses_and_session_approval_text():
         local_signal.Signal('denied').text()[1]
         == 'Command was refused and did not run.'
     )
-    assert local_signal.Signal('approval_pending', session='Maintenance').text()[1] == (
+    assert local_signal.Signal(
+        'approval_pending', target='work_session', session='Maintenance'
+    ).text()[1] == (
         'Work Session Maintenance is waiting for approval. Open the approval or wait for an approver.'
     )
     assert local_signal.Signal('paused').text()[1].startswith('Work Session is paused')
@@ -633,7 +638,7 @@ def test_no_opt_out_or_tty_gate():
     }
     env_reads = set()
     for path, functions in sources.items():
-        tree = ast.parse(Path(path).read_text())
+        tree = ast.parse((Path(__file__).parent.parent / path).read_text())
         file_env_reads = set()
         for node in ast.walk(tree):
             if isinstance(node, ast.Call):
@@ -868,6 +873,7 @@ async def test_validated_arguments_and_http_refusal(
         'Alpacon: command denied',
         'sudo as root was refused by the risk gate and did not run. Session default-session.',
         '',
+        workspace_url='',
     )
 
 
@@ -937,6 +943,7 @@ async def test_command_context_already_in_result(desktop_notifications):
         'Alpacon: command denied',
         'sudo on web-1 as operator was refused by the risk gate and did not run. Session s1.',
         '',
+        workspace_url='',
     )
 
 
@@ -978,7 +985,7 @@ async def test_notifier_runs_off_loop_without_delaying_result(monkeypatch):
     thread_ids = []
     loop_thread = threading.get_ident()
 
-    def blocking_notifier(title, body, console_url=''):
+    def blocking_notifier(title, body, console_url='', *, workspace_url=''):
         thread_ids.append(threading.get_ident())
         started.set()
         release.wait(timeout=3)
@@ -1059,12 +1066,13 @@ def test_rate_state_expiration_key_cap_and_pruning(monkeypatch):
     now = [100_000.0]
     monkeypatch.setattr(local_signal, 'monotonic', lambda: now[0])
     limiter = local_signal.RateLimiter()
-    limiter._windows = {
-        ('old', 'denied', '', ''): (0, 0),
-        ('folded', 'denied', '', ''): (0, 2),
-        ('future', 'denied', '', ''): (now[0] + 100, 4),
-    }
-    assert limiter.take('future', 'denied') == 0
+    limiter._windows.update(
+        {
+            ('old', 'denied', '', ''): (0, 0),
+            ('folded', 'denied', '', ''): (0, 2),
+        }
+    )
+    assert limiter.take('new', 'denied') == 0
     assert ('old', 'denied', '', '') not in limiter._windows
     assert ('folded', 'denied', '', '') not in limiter._windows
     assert limiter.take('folded', 'denied') == 0
@@ -1073,7 +1081,6 @@ def test_rate_state_expiration_key_cap_and_pruning(monkeypatch):
     assert max(len(key[0]) for key in limiter._windows) <= 128
     now[0] += 24 * 60 * 60 + 1
     limiter.take('new', 'paused')
-    assert ('future', 'denied', '', '') not in limiter._windows
     assert ('folded', 'denied', '', '') not in limiter._windows
     assert ('s' * 128, 'denied', '', '') not in limiter._windows
     assert limiter.take('s' * 128, 'denied') == 0
@@ -1095,6 +1102,7 @@ async def test_denial_tool_allowlist_is_registered():
         importlib.import_module(f'{server.TOOLS_PACKAGE}.{module}')
     registered = {tool.name for tool in await server.mcp.list_tools()}
     assert local_signal.DENIAL_TOOLS <= registered
+    assert local_signal.SUDO_PENDING_TOOLS <= registered
 
 
 @pytest.mark.parametrize(
@@ -1154,17 +1162,7 @@ def test_denial_gate_allowlist(gate, shape):
         assert signal.gate == gate
 
 
-@pytest.mark.parametrize(
-    'code',
-    [
-        'work_session_required',
-        'work_session_not_usable',
-        'work_session_expired',
-        'work_session_scope_not_allowed',
-        'work_session_server_not_allowed',
-        'work_session_assignee_mismatch',
-    ],
-)
+@pytest.mark.parametrize('code', get_args(WorkSessionGateCode.__value__))
 def test_work_session_code_without_gate_is_denied(code):
     result = unwrap_http_result(
         {
@@ -1177,6 +1175,9 @@ def test_work_session_code_without_gate_is_denied(code):
     assert result is not None
     signal = local_signal._from_result(result, {}, 'execute_command')
     assert signal is not None
+    if code == 'work_session_not_active':
+        assert signal.kind == 'approval_pending'
+        return
     assert signal.kind == 'denied'
     assert signal.gate == 'work_session'
     assert local_signal._from_result(result, {}, 'list_servers') is None
@@ -1388,19 +1389,24 @@ def test_long_console_link_does_not_truncate_body():
 def test_invalid_console_url_is_dropped(monkeypatch, url):
     signal = local_signal._from_result(
         {'status': 'error', 'status_code': 403, 'gate': 'risk', 'console_url': url},
-        {},
+        {'workspace': 'example', 'region': 'ap1'},
         'execute_command',
     )
     assert signal is not None
     assert signal.console_url == ''
     assert url not in signal.text()[1]
-    assert local_signal.Signal('denied', console_url=url).console_url == ''
+    assert (
+        local_signal.Signal(
+            'denied', console_url=url, workspace_url=_CLOUD_WORKSPACE
+        ).console_url
+        == ''
+    )
 
     run = Mock()
     monkeypatch.setattr('utils.local_signal.sys.platform', 'win32')
     monkeypatch.setattr(local_signal, 'is_headless', lambda: False)
     monkeypatch.setattr('utils.local_signal.subprocess.run', run)
-    platform_notify('title', 'body', url)
+    platform_notify('title', 'body', url, workspace_url=_CLOUD_WORKSPACE)
     script = base64.b64decode(run.call_args.args[0][-1]).decode('utf-16-le')
     payload = re.search(r"FromBase64String\('([^']+)'\)", script)
     assert payload is not None
@@ -1602,7 +1608,7 @@ async def test_fail_open_result_bytes_match_no_signal(monkeypatch, capsys, failu
     baseline = json.dumps(await tool(), ensure_ascii=False).encode()
     baseline_output = capsys.readouterr()
 
-    def notifier(*args):
+    def notifier(*args, **kwargs):
         started.set()
         if failure == 'raise':
             raise OSError('unavailable')
@@ -1680,7 +1686,7 @@ async def test_pending_command_row_link_preserves_tool_response(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('tool_name', ['execute_command', 'state_command_purpose'])
+@pytest.mark.parametrize('tool_name', sorted(local_signal.SUDO_PENDING_TOOLS))
 async def test_completed_sudo_pending_row_preserves_result_and_rate_limit(
     monkeypatch, desktop_notifications, tool_name
 ):
@@ -1737,8 +1743,8 @@ async def test_completed_sudo_pending_row_preserves_result_and_rate_limit(
     with local_signal.stdio_transport():
         assert await tool() == baseline
     await drain_signals()
-    assert deliver.await_count == 2
-    assert deliver.call_args.args[1].endswith(' +1 more.')
+    deliver.assert_awaited_once()
+    assert ' more.' not in deliver.call_args.args[1]
     desktop_notifications.assert_not_called()
 
 
@@ -2026,3 +2032,240 @@ async def test_list_tools_never_signal(desktop_notifications, tool_name, result)
         local_signal.signal_result(result, {}, tool_name=tool_name)
     await drain_signals()
     desktop_notifications.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_explain_approval_decision_never_signals(desktop_notifications):
+    with local_signal.stdio_transport():
+        local_signal.signal_result(
+            {'status': 'pending_approval', 'category': 'APPROVAL_DECISION_HUMAN_ONLY'},
+            {},
+            tool_name='explain_approval_decision',
+        )
+    await drain_signals()
+    desktop_notifications.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    'tool_name, result, arguments, subject',
+    [
+        ('execute_file', {'status': 'pending_approval'}, {}, 'Command'),
+        (
+            'execute_command',
+            {'status': 'pending_approval'},
+            {'command': 'cu"rl" secret'},
+            'Command',
+        ),
+        (
+            'request_sudo_policy',
+            {'status': 'pending_approval', 'category': 'SUDO_POLICY_REQUEST_PENDING'},
+            {},
+            'Sudo policy request',
+        ),
+        (
+            'webftp_upload_content',
+            {'status': 'error', 'status_code': 403, 'gate': 'file_acl'},
+            {},
+            'File transfer',
+        ),
+    ],
+)
+def test_signal_target_comes_from_tool(tool_name, result, arguments, subject):
+    signal = local_signal._from_result(result, arguments, tool_name)
+    assert signal is not None
+    title, body = signal.text()
+    assert body.startswith(subject + ' ')
+    assert 'Work Session' not in body
+    if subject == 'File transfer':
+        assert title == 'Alpacon: file transfer denied'
+        assert 'was refused by the file_acl gate' in body
+    else:
+        assert 'is waiting for approval' in body
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'result, title',
+    [
+        (
+            {'status': 'error', 'status_code': 403, 'gate': 'risk'},
+            'Alpacon: command denied',
+        ),
+        (
+            {'status': 'success', 'sudo_denial': {'status': 'pending_approval'}},
+            'Alpacon: approval pending',
+        ),
+        (
+            {
+                'status': 'error',
+                'details': {'status': 'denied', 'rejection_gate': 'risk'},
+            },
+            'Alpacon: command denied',
+        ),
+    ],
+)
+async def test_check_command_status_refusals_notify(
+    desktop_notifications, result, title
+):
+    original = json.dumps(result).encode()
+    with local_signal.stdio_transport():
+        local_signal.signal_result(
+            result, {'command_id': 'cmd-1'}, tool_name='check_command_status'
+        )
+    await drain_signals()
+    desktop_notifications.assert_called_once()
+    assert desktop_notifications.call_args.args[0] == title
+    assert json.dumps(result).encode() == original
+
+
+@pytest.mark.asyncio
+async def test_pending_command_polling_notifies_once(
+    monkeypatch, desktop_notifications
+):
+    now = [0.0]
+    monkeypatch.setattr(local_signal, 'monotonic', lambda: now[0])
+    result = {'status': 'pending_approval', 'command_id': 'cmd-1'}
+    with local_signal.stdio_transport():
+        for seconds in range(0, 121, 10):
+            now[0] = seconds
+            local_signal.signal_result(result, {}, tool_name='check_command_status')
+        await drain_signals()
+        desktop_notifications.assert_called_once()
+        now[0] = 130
+        local_signal.signal_result(
+            {**result, 'command_id': 'cmd-2'}, {}, tool_name='check_command_status'
+        )
+    await drain_signals()
+    assert desktop_notifications.call_count == 2
+    assert all(
+        '+N more' not in call.args[1] and ' more.' not in call.args[1]
+        for call in desktop_notifications.call_args_list
+    )
+
+
+def test_fold_suffix_survives_body_limit():
+    signal = local_signal.Signal(
+        'approval_pending',
+        argv0='a' * 64,
+        server='s' * 64,
+        account='u' * 32,
+        session='i' * 64,
+    )
+    body = signal.text(123)[1]
+    assert len(body) == 256
+    assert body.endswith(' +123 more.')
+
+
+@pytest.mark.asyncio
+async def test_streamable_http_pending_tool_never_notifies(
+    authenticated_mcp: MCPServer[None], desktop_notifications: Mock
+) -> None:
+    payload = {'status': 'pending_approval', 'command_id': 'cmd-1'}
+
+    @authenticated_mcp.tool()
+    @with_error_handling
+    async def pending_signal() -> dict[str, str]:
+        return payload
+
+    async with streamable_http_client() as client:
+        response = await client.post(
+            '/mcp',
+            headers={'Accept': 'application/json, text/event-stream'},
+            json={
+                'jsonrpc': '2.0',
+                'id': 1,
+                'method': 'tools/call',
+                'params': {'name': 'pending_signal', 'arguments': {}},
+            },
+        )
+    assert response.status_code == 200, response.text
+    assert json.loads(response.json()['result']['content'][0]['text']) == payload
+    await drain_signals()
+    desktop_notifications.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'tool_name, result, arguments',
+    [
+        ('execute_file', {'status': 'pending_approval', 'command_id': 'item-1'}, {}),
+        (
+            'check_command_status',
+            {
+                'status': 'success',
+                'data': {'id': 'item-1'},
+                'sudo_denial': {'status': 'pending_approval'},
+            },
+            {},
+        ),
+        (
+            'state_command_purpose',
+            {'status': 'pending_approval'},
+            {'command_id': 'item-1'},
+        ),
+        (
+            'work_session_get',
+            {'status': 'pending_approval', 'data': {'id': 'item-1'}},
+            {},
+        ),
+        (
+            'request_sudo_policy',
+            {
+                'status': 'pending_approval',
+                'category': 'SUDO_POLICY_REQUEST_PENDING',
+                'data': {'id': 'item-1'},
+            },
+            {},
+        ),
+    ],
+)
+async def test_pending_item_identity_and_workspace_scope(
+    monkeypatch, desktop_notifications, tool_name, result, arguments
+):
+    now = [0.0]
+    monkeypatch.setattr(local_signal, 'monotonic', lambda: now[0])
+    original = json.dumps(result).encode()
+    with local_signal.stdio_transport():
+        for workspace, region in [('one', 'ap1'), ('two', 'ap1'), ('one', 'us1')]:
+            args = {**arguments, 'workspace': workspace, 'region': region}
+            local_signal.signal_result(result, args, tool_name=tool_name)
+            now[0] += 60
+            local_signal.signal_result(result, args, tool_name=tool_name)
+    await drain_signals()
+    assert desktop_notifications.call_count == 3
+    assert all(
+        ' more.' not in call.args[1] for call in desktop_notifications.call_args_list
+    )
+    assert json.dumps(result).encode() == original
+
+
+def test_pending_identity_cache_is_bounded_and_oldest_evicted(monkeypatch):
+    now = [0.0]
+    monkeypatch.setattr(local_signal, 'monotonic', lambda: now[0])
+    limiter = local_signal.RateLimiter()
+    for index in range(256):
+        assert limiter.take('', 'approval_pending', pending_id=str(index)) == 0
+        now[0] += 60
+    assert limiter.take('', 'approval_pending', pending_id='0') is None
+    assert limiter.take('', 'approval_pending', pending_id='256') == 0
+    now[0] += 60
+    assert limiter.take('', 'approval_pending', pending_id='0') == 0
+    assert limiter.take('', 'approval_pending', pending_id='256') is None
+    assert len(limiter._pending) == 256
+
+
+def test_duplicate_pending_item_does_not_fold_or_suppress_denials(monkeypatch):
+    now = [0.0]
+    monkeypatch.setattr(local_signal, 'monotonic', lambda: now[0])
+    limiter = local_signal.RateLimiter()
+    assert limiter.take('', 'approval_pending', pending_id='one') == 0
+    assert limiter.take('', 'approval_pending', pending_id='one') is None
+    assert limiter.take('', 'approval_pending', pending_id='two') is None
+    assert limiter.take('', 'denied', pending_id='one') == 0
+    assert limiter.take('', 'paused', pending_id='one') == 0
+    now[0] = 60
+    assert limiter.take('', 'approval_pending', pending_id='one') is None
+    assert limiter.take('', 'approval_pending', pending_id='two') is None
+    assert limiter.take('', 'approval_pending', pending_id='three') == 1
+    assert limiter.take('', 'denied', pending_id='one') == 0
+    assert limiter.take('', 'paused', pending_id='one') == 0

@@ -12,18 +12,19 @@ import shutil
 import subprocess
 import sys
 import unicodedata
+from collections import OrderedDict
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, fields
 from time import monotonic
-from typing import Literal, get_args
+from typing import Literal
 from urllib.parse import urlsplit, urlunsplit
 from xml.sax.saxutils import escape
 
 import httpx
 
-from utils.common import WorkSessionGateCode, resolve_work_session_id
+from utils.common import _is_work_session_gate_code, resolve_work_session_id
 from utils.http_client import http_client
 from utils.logger import get_logger
 from utils.notification_context import ConsoleLinks
@@ -31,16 +32,18 @@ from utils.notification_context import ConsoleLinks
 logger = get_logger('local_signal')
 
 type SignalKind = Literal['denied', 'approval_pending', 'paused']
+type SignalTarget = Literal['command', 'file_transfer', 'work_session', 'sudo_policy']
 
 _stdio: ContextVar[bool] = ContextVar('local_signal_stdio', default=False)
 _tasks: set[asyncio.Task[None]] = set()
 
-# Only tools that submit host commands or move files can report a denial.
+# Only tools that submit or read host commands, or move files, report denials.
 DENIAL_TOOLS = frozenset(
     {
         'execute_command',
         'execute_command_multi_server',
         'execute_file',
+        'check_command_status',
         'state_command_purpose',
         'webftp_upload_file',
         'webftp_upload_content',
@@ -57,6 +60,15 @@ DENIAL_TOOLS = frozenset(
         'remove_python_package',
     }
 )
+SUDO_PENDING_TOOLS = frozenset(
+    {
+        'execute_command',
+        'execute_command_multi_server',
+        'execute_file',
+        'state_command_purpose',
+        'check_command_status',
+    }
+)
 # alpacon-cli mirrors this allowlist; keep the two clients in sync.
 _REFUSAL_GATES = frozenset(
     {
@@ -71,7 +83,6 @@ _REFUSAL_GATES = frozenset(
         'block',
     }
 )
-_WORK_SESSION_GATE_CODES = frozenset(get_args(WorkSessionGateCode.__value__))
 _APPROVAL_LAPSES = frozenset({'approval_expired', 'approval_cancelled'})
 _ARGV0 = re.compile(r'[A-Za-z0-9._+-]{1,64}')
 _ACCOUNT = re.compile(r'[a-z_][a-z0-9_.-]{0,31}\$?')
@@ -79,6 +90,7 @@ _ASSIGNMENT = re.compile(r'[A-Za-z_][A-Za-z0-9_]*=')
 _SESSION_ID = re.compile(r'[A-Za-z0-9_-]{1,64}')
 _WORD_SPACE = ' \t\n\r'
 _MAX_BODY = 256
+# Cloud console links use the built-in domain, never an inferred API parent.
 _CLOUD_BASE_DOMAIN = 'alpacon.io'
 
 
@@ -225,6 +237,8 @@ def command_argv0(command: str) -> str:
 @dataclass(frozen=True)
 class Signal:
     kind: SignalKind
+    target: SignalTarget = 'command'
+    pending_id: str = ''
     argv0: str = ''
     server: str = ''
     account: str = ''
@@ -258,23 +272,40 @@ class Signal:
                 f'{subject} is paused after a critical denial. '
                 'The owner or an approver can resume or end it.'
             )
-        elif self.kind == 'approval_pending' and not self.argv0:
+        elif self.kind == 'approval_pending' and self.target in (
+            'work_session',
+            'sudo_policy',
+        ):
             title = 'Alpacon: approval pending'
-            subject = f'Work Session {self.session}' if self.session else 'Work Session'
+            if self.target == 'sudo_policy':
+                subject = 'Sudo policy request'
+            else:
+                subject = (
+                    f'Work Session {self.session}' if self.session else 'Work Session'
+                )
             body = (
                 f'{subject} is waiting for approval. '
                 'Open the approval or wait for an approver.'
             )
         else:
-            subject = self.argv0 or 'Command'
+            subject = (
+                'File transfer'
+                if self.target == 'file_transfer'
+                else self.argv0 or 'Command'
+            )
             if self.server:
                 subject += f' on {self.server}'
             if self.account:
                 subject += f' as {self.account}'
             if self.kind == 'denied':
-                title = 'Alpacon: command denied'
+                title = (
+                    'Alpacon: file transfer denied'
+                    if self.target == 'file_transfer'
+                    else 'Alpacon: command denied'
+                )
                 gate = f' by the {self.gate} gate' if self.gate else ''
-                body = f'{subject} was refused{gate} and did not run.'
+                action = 'proceed' if self.target == 'file_transfer' else 'run'
+                body = f'{subject} was refused{gate} and did not {action}.'
             else:
                 title = 'Alpacon: approval pending'
                 body = f'{subject} is waiting for approval.'
@@ -282,9 +313,8 @@ class Signal:
                 body += f' Session {self.session}.'
             if self.kind == 'approval_pending':
                 body += ' Open the approval or wait for an approver.'
-        if folded:
-            body += f' +{folded} more.'
-        body = body[:_MAX_BODY]
+        suffix = f' +{folded} more.' if folded else ''
+        body = body[: _MAX_BODY - len(suffix)] + suffix
         if self.console_url and len(body) + len(self.console_url) + 1 <= _MAX_BODY:
             body += f' {self.console_url}'
         return title, body
@@ -292,29 +322,46 @@ class Signal:
 
 class RateLimiter:
     def __init__(self) -> None:
-        self._windows: dict[tuple[str, SignalKind, str, str], tuple[float, int]] = {}
+        self._windows: OrderedDict[
+            tuple[str, SignalKind, str, str], tuple[float, int]
+        ] = OrderedDict()
+        self._pending: OrderedDict[tuple[SignalTarget, str, str, str], None] = (
+            OrderedDict()
+        )
 
     def take(
-        self, session_id: str, kind: SignalKind, workspace: str = '', region: str = ''
+        self,
+        session_id: str,
+        kind: SignalKind,
+        workspace: str = '',
+        region: str = '',
+        *,
+        target: SignalTarget = 'command',
+        pending_id: str = '',
     ) -> int | None:
+        if kind == 'approval_pending' and pending_id:
+            pending_key = (target, pending_id, workspace, region)
+            if pending_key in self._pending:
+                return None
+            self._pending[pending_key] = None
+            if len(self._pending) > 256:
+                self._pending.popitem(last=False)
         now = monotonic()
-        self._windows = {
-            key: value
-            for key, value in self._windows.items()
-            if now - value[0] <= 24 * 60 * 60
-        }
+        while (
+            self._windows and now - next(iter(self._windows.values()))[0] > 24 * 60 * 60
+        ):
+            self._windows.popitem(last=False)
         key = (session_id[:128], kind, workspace, region)
         previous = self._windows.get(key)
         if previous is not None:
             started, folded = previous
-            if 0 <= now - started < 60:
+            if now - started < 60:
                 self._windows[key] = (started, folded + 1)
                 return None
-            if started > now:
-                folded = 0
         else:
             folded = 0
         self._windows[key] = (now, 0)
+        self._windows.move_to_end(key)
         return folded
 
 
@@ -346,7 +393,7 @@ def _powershell_toast(title: str, body: str, console_url: str) -> list[str]:
             'utf-8'
         )
     ).decode('ascii')
-    # Only base64 enters script text; decoded values become XML text nodes.
+    # Only base64 enters script text; decoded values become XML text and attribute values.
     script = f"""$ErrorActionPreference = 'Stop'
 $data = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{payload}')) | ConvertFrom-Json
 [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null
@@ -455,7 +502,7 @@ def _from_result(
     tool_name: str,
     console_url: str = '',
 ) -> Signal | None:
-    if tool_name.startswith('list_'):
+    if tool_name.startswith('list_') or tool_name == 'explain_approval_decision':
         return None
     data = result.get('data')
     details = result.get('details')
@@ -469,7 +516,7 @@ def _from_result(
         or _string(result, 'rejection_gate')
         or _string(row, 'rejection_gate')
     )
-    if not gate and isinstance(code, str) and code in _WORK_SESSION_GATE_CODES:
+    if not gate and isinstance(code, str) and _is_work_session_gate_code(code):
         gate = 'work_session'
     cause = _string(result, 'rejection_cause') or _string(row, 'rejection_cause')
     missing = result.get('missing')
@@ -481,13 +528,7 @@ def _from_result(
     if status == 'error' and code == 'session_paused':
         kind: SignalKind = 'paused'
     elif status == 'pending_approval' or (
-        tool_name
-        in {
-            'execute_command',
-            'execute_command_multi_server',
-            'execute_file',
-            'state_command_purpose',
-        }
+        tool_name in SUDO_PENDING_TOOLS
         and isinstance(sudo_denial, dict)
         and sudo_denial.get('status') == 'pending_approval'
     ):
@@ -505,8 +546,8 @@ def _from_result(
         and (
             (status == 'error' and result.get('status_code') == 403)
             or status == 'rejected'
-            or row.get('status') == 'rejected'
-            # Polling also flattens a rejected row into an error result.
+            # Polling wraps a denied row in an error result without a 403 or cause.
+            or row.get('status') in ('rejected', 'denied')
             or (status == 'error' and bool(cause))
         )
     ):
@@ -524,6 +565,21 @@ def _from_result(
     session_id = session_id or resolve_work_session_id(None) or ''
     if tool_name.startswith('work_session_') and isinstance(data, dict):
         session_id = _raw_string(data, 'id') or session_id
+    target: SignalTarget = 'command'
+    if result.get('category') == 'SUDO_POLICY_REQUEST_PENDING':
+        target = 'sudo_policy'
+        pending_id = _raw_string(row, 'id') or _raw_string(result, 'request_id')
+    elif tool_name.startswith('work_session_'):
+        target = 'work_session'
+        pending_id = session_id
+    else:
+        if tool_name.startswith('webftp_'):
+            target = 'file_transfer'
+        pending_id = (
+            _raw_string(result, 'command_id')
+            or _raw_string(arguments, 'command_id')
+            or _raw_string(row, 'id')
+        )
     server = _string(result, 'server_name') or _string(row, 'server_name')
     server_object = row.get('server')
     if not server and isinstance(server_object, dict):
@@ -540,6 +596,8 @@ def _from_result(
         workspace_url = http_client.get_base_url(region, workspace)
     return Signal(
         kind=kind,
+        target=target,
+        pending_id=pending_id,
         argv0=command_argv0(command if isinstance(command, str) else ''),
         server=server,
         account=(
@@ -552,22 +610,18 @@ def _from_result(
         session_id=session_id,
         console_url=console_url,
         workspace_url=workspace_url,
-        # Cloud console links use the built-in domain, never an inferred API parent.
     )
 
 
 async def _deliver(title: str, body: str, signal: Signal) -> None:
     try:
-        if signal.console_url:
-            await asyncio.to_thread(
-                notify,
-                title,
-                body,
-                signal.console_url,
-                workspace_url=signal.workspace_url,
-            )
-        else:
-            await asyncio.to_thread(notify, title, body, '')
+        await asyncio.to_thread(
+            notify,
+            title,
+            body,
+            signal.console_url,
+            workspace_url=signal.workspace_url,
+        )
     except Exception:
         logger.debug('Desktop notification skipped: background notifier failed')
 
@@ -590,6 +644,8 @@ def signal_result(
                 signal.kind,
                 _string(arguments, 'workspace'),
                 _string(arguments, 'region'),
+                target=signal.target,
+                pending_id=signal.pending_id,
             )
             if folded is not None:
                 task = asyncio.create_task(_deliver(*signal.text(folded), signal))

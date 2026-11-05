@@ -320,27 +320,15 @@ A command that escalates privileges can come back as `status="pending_approval"`
 
 ### 5b. Local desktop notifications
 
-The local stdio server raises an OS notification when a gate refuses a call,
-a tool returns `pending_approval`, or a refusal reports `session_paused`.
-No banner is written to MCP stderr. The response remains unchanged; follow its
-approval or recovery instructions. A denial notification does not mean the
-session paused, and an approval notification does not mean a command was denied.
+The local stdio server raises an OS notification for a command or file-transfer refusal, a result awaiting human approval, or a refusal reporting `session_paused`. The response remains unchanged; follow its approval or recovery instructions. A denial notification does not mean the session paused, and an approval notification does not mean a command was denied. `explain_approval_decision` and history reads through `list_*` tools never notify. Refusal notifications cover only the [listed command and file-transfer tools](api-reference.md#local-desktop-signals) (`DENIAL_TOOLS`) and the gates `server_reach`, `command_preapproval`, `command_acl`, `file_acl`, `risk`, `approval`, `sudo`, `work_session`, and `block`; approval expiry or cancellation, authentication and MFA errors, and missing presence, role, token scope, or authentication are excluded.
 
-Notifications are limited to one per Work Session and kind per 60 seconds.
-Suppressed events appear as `+N more` on the next notification. Command arguments
-are omitted, as are server names the response does not already provide.
+Approval-pending notifications are counted once per command id, Work Session id for a Work Session wait, or sudo policy request id when available, scoped to workspace and region. Repeated reads neither notify nor count as folded events; the process remembers the latest 256 distinct pending identities and evicts the oldest first. Other events, and pending results without an item id, use the rate limit normally. The rate-limit key is `(session_id, kind, workspace, region)`, with a missing session id falling back to `ALPACON_WORK_SESSION`, then an empty id. Each key allows one notification per 60 seconds. Distinct events folded inside a window appear as `+N more` only when a later event arrives; no timer sends a summary.
 
-No notification appears over streamable-http. For every emitted local
-event under the rate limit, notification delivery is attempted even in CI, SSH
-shells, and sessions without a desktop. Only Windows services in session 0,
-reported by the OS, are skipped. On Linux, delivery uses `notify-send` from
-`/usr/bin` or `/bin`; on macOS, `/usr/bin/osascript`; on Windows, PowerShell from
-the OS-reported system directory and the Windows toast API. OS notification
-permissions and Focus/Do Not Disturb settings also control what appears.
-Delivery runs in the background with a two-second timeout and fails silently
-when the desktop cannot show it, with a debug log only. It cannot delay or change
-the tool result or stdout/stderr. MCP writes no banner. There is no local-signal
-opt-out setting.
+Notifications omit command arguments, Work Session titles, and server names the response does not already provide. A command whose first word cannot be safely shown still reads as a command, file transfers read as file transfers, and sudo policy requests read as sudo policy requests waiting for approval. Bodies can include a validated console link when it fits. Links must share the workspace API origin or, for a cloud workspace, use the built-in `alpacon.io` domain or its subdomains with the same scheme and default port; they must also be ASCII, at most 2048 characters, and free of whitespace, fragments, and userinfo. Links are validated and re-serialized on every platform; only the Windows toast renders a clickable launch target, while `osascript` and `notify-send` receive no separate link.
+
+The streamable-http server never raises desktop notifications. The hosted server, including access through `mcp-remote` or the `alpacon` plugin, never raises a notification: the notifier runs on the host the MCP server runs on. A stdio server in a container or launched over SSH attempts delivery on that host, not on the user's desktop.
+
+For every emitted local event under the rate limit, notification delivery is attempted even in CI, SSH shells, and sessions without a desktop. OS-reported Windows session 0, Linux without `notify-send` in `/usr/bin` or `/bin`, and unsupported platforms are skipped. On macOS, delivery uses `/usr/bin/osascript`; on Windows, PowerShell from the OS-reported system directory and the Windows toast API. OS notification permissions and Focus/Do Not Disturb settings also control what appears. Delivery runs in the background with a two-second timeout and fails silently when the desktop cannot show it, with a debug log only. It cannot delay or change the tool result or stdout/stderr. MCP writes no banner. There is no local-signal opt-out setting.
 
 ---
 

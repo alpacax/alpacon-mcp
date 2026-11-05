@@ -1293,36 +1293,19 @@ A server `hint` is appended to `message` and replaces every local hint: the per-
 
 ### Local desktop signals
 
-When the MCP server runs locally over stdio, a gate refusal raises an
-`Alpacon: command denied` desktop notification, a `pending_approval` tool result
-raises `Alpacon: approval pending`, and a refusal with code `session_paused`
-raises `Alpacon: session paused`. A denial alone does not indicate a paused
-session. Approvals and session recovery still require a human; the notification
-does not grant access or retry an operation.
+When the MCP server runs locally over stdio, a command or file-transfer refusal raises `Alpacon: command denied` or `Alpacon: file transfer denied`, a result awaiting human approval raises `Alpacon: approval pending`, and a refusal with code `session_paused` raises `Alpacon: session paused`. A denial alone does not indicate a paused session. Approvals and session recovery still require a human; the notification does not grant access or retry an operation. `explain_approval_decision` only explains how a human decides and never notifies. Sudo policy requests are described as sudo policy requests waiting for approval, rather than Work Session waits.
 
-Notifications contain only the command's first word with its path stripped, the
-server name when already available, the OS account, the gate, and the Work Session
-id or title. Unknown clauses are omitted, and command arguments are never shown.
-The account must match `[a-z_][a-z0-9_.-]{0,31}\$?`; a server-provided username
-takes precedence over the tool argument. A first word containing a quote or
-backslash is omitted.
-Console links must share the workspace API origin, or, for a workspace on a
-subdomain of the built-in cloud domain `alpacon.io`, use `alpacon.io` or one of
-its subdomains with the same scheme and its default port; all links must be
-ASCII, at most 2048 characters, and free of whitespace, fragments, and userinfo,
-and are re-serialized before display.
-Repeated events for the same session and kind are limited to one notification
-per 60 seconds; the next notification appends `+N more` for events folded during
-the previous window. Without a session id, the limit applies to the kind alone.
+Refusal notifications are limited to `execute_command`, `execute_command_multi_server`, `execute_file`, `check_command_status`, `state_command_purpose`, `webftp_upload_file`, `webftp_upload_content`, `webftp_download_file`, `webftp_bulk_upload`, `webftp_bulk_download`, `restart_agent`, `upgrade_agent`, `install_pam`, `update_information`, `install_system_package`, `remove_system_package`, `install_python_package`, and `remove_python_package` (`DENIAL_TOOLS` in `utils/local_signal.py`), and the gates `server_reach`, `command_preapproval`, `command_acl`, `file_acl`, `risk`, `approval`, `sudo`, `work_session`, and `block`. Approval expiry or cancellation, authentication and MFA errors, and missing presence, role, token scope, or authentication do not raise refusal notifications. Reading history through a `list_*` tool never notifies, including entries with sudo approval guidance. A pending `sudo_denial` read through `check_command_status`, `execute_command`, `execute_command_multi_server`, `execute_file`, or `state_command_purpose` does notify.
 
-The streamable-http server never raises desktop notifications. For every emitted
-local event under the rate limit, the operating system's notification tool is
-attempted, including in CI, SSH shells, and sessions without a desktop. Only
-Windows session 0, reported by the OS, is skipped. There is no new dependency or
-opt-out setting. Delivery runs in the background with a two-second timeout and
-fails silently when the desktop cannot show it, with a debug log only. Windows
-PowerShell is located using the system directory reported by the OS. Tool results
-and stdout/stderr are unchanged; MCP writes no banner.
+Notifications contain only the event kind, command's first word with its path stripped, server name when already available, OS account, gate, Work Session id, approval or recovery guidance, folded-event count, and validated console link when it fits. The Work Session title and command arguments are never shown. The account must match `[a-z_][a-z0-9_.-]{0,31}\$?`; a server-provided username takes precedence over the tool argument. A first word containing a quote or backslash is omitted; the notification still identifies a command or file transfer correctly.
+
+Console links must share the workspace API origin, or, for a workspace on a subdomain of the built-in cloud domain `alpacon.io`, use `alpacon.io` or one of its subdomains with the same scheme and its default port. All links must be ASCII, at most 2048 characters, and free of whitespace, fragments, and userinfo, and are re-serialized before display. Validation applies on every platform. A validated link can appear in the body; only the Windows toast renders it as a clickable launch target, while `osascript` and `notify-send` receive no separate link.
+
+An approval-pending event is counted once per command id, Work Session id for a Work Session wait, or sudo policy request id when available, scoped to workspace and region. Repeated reads of the same pending item neither notify nor count as folded events. The process remembers up to 256 pending item identities, evicting the oldest first; restarting the server clears them. Other events, and pending results without an item id, use the rate limit normally. The rate-limit key is `(session_id, kind, workspace, region)`; a missing session id falls back to `ALPACON_WORK_SESSION`, then to an empty id. Each key allows one notification per 60 seconds, and a later notification appends `+N more` for distinct events folded during the previous window. Folded events surface only when a later event arrives; no timer sends a summary.
+
+The streamable-http server never raises desktop notifications. The hosted server, including access through `mcp-remote` or the `alpacon` plugin, never raises a notification: the notifier runs on the host the MCP server runs on. A stdio server in a container or launched over SSH attempts delivery on that host, not on the user's desktop.
+
+For every emitted local event under the rate limit, the operating system's notification tool is attempted, including in CI, SSH shells, and sessions without a desktop. Delivery is skipped for OS-reported Windows session 0, Linux without `notify-send` in `/usr/bin` or `/bin`, and unsupported platforms. There is no new dependency or opt-out setting. Delivery runs in the background with a two-second timeout and fails silently when the desktop cannot show it, with a debug log only. Windows PowerShell is located using the system directory reported by the OS. Tool results and stdout/stderr are unchanged; MCP writes no banner.
 
 ### Plan-limit refusals (402)
 

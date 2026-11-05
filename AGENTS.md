@@ -141,6 +141,13 @@ Things the code will not tell you at a glance:
   `Auth0TokenVerifier` unwraps it before verifying, so `AccessToken.token` is
   always the bare JWT. That credential is the only place a remote ledger token
   lives; never cache one in the process.
+- **Desktop notifications fire only inside `server.run()`'s stdio run.**
+  `utils/local_signal.py` runs the OS notifier on the MCP server's own host,
+  so streamable-http and the hosted `mcp.alpacon.io` (including through
+  `mcp-remote` or the `alpacon` plugin) never notify. A stdio server in a
+  container or launched over SSH attempts delivery on that host, not on the
+  user's desktop. Never enable `stdio_transport()` outside that run; a
+  remote equivalent belongs in a client-side hook.
 - **Transport settings live at the entry point, not on the constructor.** SDK 2.x
   takes `host`, `json_response` and `stateless_http` on
   `mcp.streamable_http_app()`, so `create_streamable_http_app(host=...)` carries
