@@ -1,8 +1,8 @@
 # Alpacon MCP Server
 
-> 🚀 **Zero-trust server access for AI agents**: Let Claude, Cursor, and other AI tools operate your own and your customers' infrastructure through Alpacon—no VPN, no SSH keys
+> **Let AI agents operate your infrastructure under your control.** Claude, Cursor, and other AI tools run commands and transfer files on your own and your customers' servers through Alpacon. Alpacon checks each command at runtime, holds risky ones for human approval, and records every action routed through it for audit.
 
-An MCP (Model Context Protocol) server that extends Alpacon's browser-based, zero-trust infrastructure access to AI assistants. Execute commands, transfer files, monitor metrics, and manage servers across your own and customer environments using natural language.
+An MCP (Model Context Protocol) server that connects AI assistants to Alpacon. Execute commands, transfer files, monitor metrics, and manage servers across your own and customer environments using natural language.
 
 [![Python Version](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://python.org)
 [![MCP Compatible](https://img.shields.io/badge/MCP-Compatible-green.svg)](https://modelcontextprotocol.io)
@@ -10,11 +10,12 @@ An MCP (Model Context Protocol) server that extends Alpacon's browser-based, zer
 
 ## ✨ What is Alpacon MCP server?
 
-[Alpacon](https://www.alpacax.com/alpacon/) provides browser-based server access with zero-trust security built in—no SSH keys, no VPNs. The Alpacon MCP Server brings that same secure access to AI assistants, so you can operate your own and your customers' infrastructure through natural language while every action is authenticated, authorized, and recorded.
+[Alpacon](https://www.alpacax.com/alpacon/) gives people and AI agents one identity for every server. The Alpacon MCP server puts an agent's work under the same controls that govern a person's work. Alpacon checks each command at runtime and runs it, refuses it, or holds it until a human approves it in the web console or Slack. A Work Session ties commands and file transfers to a stated reason, a set of servers, and an expiry. Alpacon records every action that goes through it for audit. Agents reach servers over Alpacon's outbound-only tunnels, with no VPN to join and no SSH keys to hand out.
 
 ### 🎯 Key benefits
 
-- **Zero-trust access for AI**: AI agents authenticate through Alpacon's identity layer—same RBAC, audit trails, and session recording as human users
+- **Real-time command validation**: Alpacon checks each command an agent runs and holds risky ones until a human approves them in the web console or Slack
+- **Same controls as your team**: AI agents sign in through Alpacon's identity layer and get the same RBAC, audit trails, and session recording as people
 - **No credential management**: No SSH keys or VPN configs to distribute—one identity, every server
 - **Natural language operations**: "Show me CPU usage for all web servers in production"
 - **AI-powered troubleshooting**: "Investigate why server-web-01 is slow and suggest fixes"
@@ -23,7 +24,8 @@ An MCP (Model Context Protocol) server that extends Alpacon's browser-based, zer
 
 ## 🌟 Core features
 
-### 🔐 **Zero-trust infrastructure access**
+### 🔐 **Session-scoped control**
+- Work Sessions that scope commands and file transfers to an approved, auditable window for OAuth and browser callers (static API and service tokens bypass the gate)
 - Authenticate once, access every authorized server
 - Role-based access control (RBAC) with time-limited permissions
 - Full audit trail for every AI operation
@@ -32,7 +34,6 @@ An MCP (Model Context Protocol) server that extends Alpacon's browser-based, zer
 ### 🔧 **Secure remote operations**
 - Command execution on one server or many, gated by the token's ACL
 - File upload/download via WebFTP with S3 presigned URLs
-- Work Sessions that scope every action to an approved, auditable window
 - Structured denials that tell the agent how to get authorized instead of failing blind
 
 ### 📊 **Real-time monitoring**

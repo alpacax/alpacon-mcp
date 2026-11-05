@@ -1,6 +1,6 @@
 # Alpacon MCP Server documentation
 
-Welcome to the Alpacon MCP Server documentation. Alpacon provides browser-based, zero-trust server access—no VPN, no SSH keys. This MCP server extends that secure access to AI assistants, letting them operate your infrastructure through natural language while every action is authenticated, authorized, and recorded.
+Welcome to the Alpacon MCP Server documentation. The Alpacon MCP server lets AI agents operate your infrastructure under your control. Alpacon checks each command an agent sends at runtime, holds risky ones for human approval, and records every action routed through Alpacon for audit. Agents reach your servers through Alpacon with no VPN and no SSH keys.
 
 ## 📖 Documentation structure
 
@@ -44,8 +44,9 @@ To run from a checkout instead:
 
 ## 🎯 What is Alpacon MCP?
 
-Alpacon MCP Server extends [Alpacon's](https://www.alpacax.com/alpacon/) zero-trust infrastructure access to AI assistants, enabling:
+Alpacon MCP Server connects AI assistants to [Alpacon](https://www.alpacax.com/alpacon/), which checks each command they run and records the work for audit. It provides:
 
+- **Real-time command validation**: Each command is checked at runtime, and risky ones wait for human approval
 - **Secure remote operations**: Command execution and WebFTP file transfer—no SSH keys or VPN required
 - **Real-time monitoring**: CPU, memory, disk, and network metrics with alerting
 - **System administration**: Hardware details, OS info, users, packages, and IAM

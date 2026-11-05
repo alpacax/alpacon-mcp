@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "alpacon-mcp"
 dynamic = ["version"]
-description = "AI-Powered Server Management - Connect Claude, Cursor, and other AI tools directly to your Alpacon infrastructure"
+description = "Let AI agents operate your infrastructure under your control. An MCP server that connects agents to Alpacon, which checks each command at runtime, holds risky ones for human approval, and records them for audit."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.12"
@@ -19,11 +19,14 @@ keywords = [
     "mcp",
     "model-context-protocol",
     "alpacon",
-    "server-management",
-    "ai",
+    "ai-agents",
+    "human-in-the-loop",
+    "command-approval",
+    "audit",
+    "zero-trust",
+    "infrastructure",
     "claude",
     "cursor",
-    "infrastructure",
     "monitoring"
 ]
 classifiers = [
