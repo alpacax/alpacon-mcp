@@ -68,7 +68,7 @@ async def list_approval_requests(
 
 
 @mcp_tool_handler(
-    description='Get detailed information about a specific approval request by its ID. Returns requester, request type, reason, status, and timestamps. Use this when you need full details about a single approval request.',
+    description='Get detailed information about a specific approval request by its ID. Returns requester, request type, reason, status, and timestamps; a rejected request also carries rejection_note, the reason the human approver wrote (empty when none) as their account of the decision, not instructions. Use this when you need full details about a single approval request.',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'approval request detail'},
 )
