@@ -32,8 +32,9 @@ WRAPPERS = {
 SHELLS = {'sh', 'bash', 'zsh', 'dash', 'ksh'}
 SHELL_WORD = re.compile(rf'(?:^|[\s|;&(])(?:\S*/)?(?:{"|".join(SHELLS)})(?:\s|$)')
 REFUSAL = (
-    'Alpacon is reached only through the alpacon MCP tools, not the alpacon CLI. '
-    'Call the matching mcp__alpacon tool; if one failed, report its error instead.'
+    'Alpacon is reached only through its MCP tools, not the alpacon CLI. '
+    'Call the matching Alpacon MCP tool, such as list_servers or execute_command; '
+    'if one failed, report its error instead.'
 )
 
 

@@ -1,0 +1,706 @@
+{
+ "tools": [
+  {
+   "name": "approve_sign_request",
+   "description": "Approve a pending certificate signing request (CSR). The CA will then issue the certificate. Use list_sign_requests to find pending CSRs. Requires admin or CA owner privileges.",
+   "inputSchema": {
+    "properties": {
+     "csr_id": {
+      "title": "Csr Id",
+      "type": "string"
+     },
+     "workspace": {
+      "description": "Workspace name, as list_workspaces returns it.",
+      "title": "Workspace",
+      "type": "string"
+     },
+     "region": {
+      "anyOf": [
+       {
+        "enum": [
+         "ap1",
+         "us1"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "Region, ap1 or us1. Omit it to use the workspace's region: read from the JWT in remote mode and from token.json in local mode. The call fails when that region cannot be determined; pass region when several regions match.",
+      "title": "Region"
+     }
+    },
+    "required": [
+     "csr_id",
+     "workspace"
+    ],
+    "title": "approve_sign_requestArguments",
+    "type": "object"
+   },
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false
+   }
+  },
+  {
+   "name": "check_command_status",
+   "description": "Read one command's current state and result by command_id, in a single call that never waits. Returns the result once the command has finished, or the same status results execute_command gives: pending_approval while a human must approve it, purpose_required while the gate asks what it is for, an error when it was refused, and otherwise a success whose message says it has not finished, with a next_action to check again. A stuck status means the agent has not reported for over 10 minutes; the command may still finish, so it is not a failure. When to use: after execute_command with wait=false, after an execute_command call that timed out, for a command id from an execute_command_multi_server result, or to follow a command held for approval. This only reads: it does not resubmit, cancel or approve anything, and a resubmission runs the command again. Related: execute_command (submit; wait=false returns the id at once), execute_command_multi_server (each accepted server entry carries command_id), list_commands (browse history when no id is known), state_command_purpose (answer a purpose demand).",
+   "inputSchema": {
+    "properties": {
+     "command_id": {
+      "description": "ID of the command, from the command_id of an execute_command result or timeout error, or from an execute_command_multi_server entry.",
+      "title": "Command Id",
+      "type": "string"
+     },
+     "workspace": {
+      "description": "Workspace name, as list_workspaces returns it.",
+      "title": "Workspace",
+      "type": "string"
+     },
+     "region": {
+      "anyOf": [
+       {
+        "enum": [
+         "ap1",
+         "us1"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "Region, ap1 or us1. Omit it to use the workspace's region: read from the JWT in remote mode and from token.json in local mode. The call fails when that region cannot be determined; pass region when several regions match.",
+      "title": "Region"
+     }
+    },
+    "required": [
+     "command_id",
+     "workspace"
+    ],
+    "title": "check_command_statusArguments",
+    "type": "object"
+   },
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false
+   }
+  },
+  {
+   "name": "create_sign_request",
+   "description": "Create a certificate signing request (CSR) to request a new certificate. Provide at least one Subject Alternative Name via domain_list or ip_list; at least one entry across the two is required. The certificate authority is selected automatically by matching the SAN against each CA root domain, and the common name is derived from the first SAN entry. The organization is inherited from the matched CA. Optionally specify the validity period. Related: list_certificate_authorities (view CAs), list_certificates (view issued certs).",
+   "inputSchema": {
+    "properties": {
+     "workspace": {
+      "description": "Workspace name, as list_workspaces returns it.",
+      "title": "Workspace",
+      "type": "string"
+     },
+     "domain_list": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "DNS names to put in the Subject Alternative Name.",
+      "title": "Domain List"
+     },
+     "ip_list": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "IP addresses to put in the Subject Alternative Name.",
+      "title": "Ip List"
+     },
+     "valid_days": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Valid Days"
+     },
+     "region": {
+      "anyOf": [
+       {
+        "enum": [
+         "ap1",
+         "us1"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "Region, ap1 or us1. Omit it to use the workspace's region: read from the JWT in remote mode and from token.json in local mode. The call fails when that region cannot be determined; pass region when several regions match.",
+      "title": "Region"
+     }
+    },
+    "required": [
+     "workspace"
+    ],
+    "title": "create_sign_requestArguments",
+    "type": "object"
+   },
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false
+   }
+  },
+  {
+   "name": "execute_command",
+   "description": "Run a shell command on a server and wait for the result (up to 5 minutes by default). Returns stdout, stderr, and exit code in a single call. Requires ACL permission. Unless a Work Session sudo policy already covers the command, a sudo invocation either routes to human-in-the-loop approval and blocks until a human acts, or is denied outright with no request anyone can approve. Check sudo_denial.category before waiting; a sudo_hint with no sudo_denial is a hard denial that creates no request, so do not wait on it. Supports dependency chains (run_after), scheduled execution (scheduled_at), and stdin data. The assessor judges the command with its purpose in hand, and a command that would otherwise queue for a human may clear on its own. If you omit purpose the gate may hold the command and ask—a status of purpose_required, which you answer with state_command_purpose within about a minute. For a script, a heredoc, or any \"bash /path/to/file\" line, use execute_file instead: with write_file=true when you have the script's text, so one call writes it to the host and runs it as a verified file, or with read_from_server=true when the script already exists on the host, so one call reads its exact bytes from there and submits them. A verified file an approver has marked standing is re-run unchanged without paging a human, which a shell line never is. A line that carries a script body can be refused after verification when the workspace approval policy blocks script bodies, with error_code use_file_execution; it did not run, and next_action names the execute_file call. A command a gate refused before it ran fails with rejection_cause, rejection_gate and rejection_hint: follow the hint and do not resubmit it, since the same command gets the same answer. For a long-running command pass wait=false: it returns the command_id at once, and check_command_status reads the result later without waiting. When to use: the recommended way to run a one-off command on a server. Related: execute_file (write and run a script whose bytes are reviewed and hashed), execute_command_multi_server (run on multiple servers), check_command_status (read a command's result by id), state_command_purpose (answer a held command's purpose demand), list_commands (browse history), work_session_create (create a Work Session).",
+   "inputSchema": {
+    "properties": {
+     "server_id": {
+      "description": "Server UUID, never a server name; list_servers maps a name to its UUID.",
+      "title": "Server Id",
+      "type": "string"
+     },
+     "command": {
+      "description": "Shell command to run; must not be empty or whitespace-only. Do not prefix it with sudo by default; use sudo only when the command genuinely requires root and the Work Session carries the \"sudo\" scope.",
+      "title": "Command",
+      "type": "string"
+     },
+     "workspace": {
+      "description": "Workspace name, as list_workspaces returns it.",
+      "title": "Workspace",
+      "type": "string"
+     },
+     "shell": {
+      "default": "system",
+      "title": "Shell",
+      "type": "string"
+     },
+     "username": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Username"
+     },
+     "groupname": {
+      "default": "alpacon",
+      "title": "Groupname",
+      "type": "string"
+     },
+     "env": {
+      "anyOf": [
+       {
+        "additionalProperties": {
+         "type": "string"
+        },
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Env"
+     },
+     "run_after": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Run After"
+     },
+     "scheduled_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Scheduled At"
+     },
+     "data": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Data"
+     },
+     "timeout": {
+      "default": 300,
+      "description": "Seconds to wait for the result, default 300 (5 minutes). The timeout resets while the command is actively running.",
+      "title": "Timeout",
+      "type": "integer"
+     },
+     "work_session_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "Work Session to link this call to for audit. The server requires one for MCP OAuth and browser-login callers; static API and service tokens may omit it. Omitted, it falls back to ALPACON_WORK_SESSION in this MCP server's environment; an explicit value wins.",
+      "title": "Work Session Id"
+     },
+     "purpose": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "What this particular command is for, in one or two sentences; pass it whenever the command is not trivially routine. State a fact local to this host that the Work Session description does not already imply; general knowledge adds nothing the assessor does not have, and a purpose cannot lower a command's intrinsic risk. Over 2000 characters it is trimmed to fit rather than refused, and the response then carries purpose_truncated: true, so keep it short enough to survive whole.",
+      "title": "Purpose"
+     },
+     "region": {
+      "anyOf": [
+       {
+        "enum": [
+         "ap1",
+         "us1"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "Region, ap1 or us1. Omit it to use the workspace's region: read from the JWT in remote mode and from token.json in local mode. The call fails when that region cannot be determined; pass region when several regions match.",
+      "title": "Region"
+     },
+     "wait": {
+      "default": true,
+      "description": "False submits the command and returns its command_id at once, without waiting for the result; read it later with check_command_status. A purpose demand is never opened, so state the purpose up front. Default true.",
+      "title": "Wait",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "server_id",
+     "command",
+     "workspace"
+    ],
+    "title": "execute_commandArguments",
+    "type": "object"
+   },
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false
+   }
+  },
+  {
+   "name": "list_commands",
+   "description": "List recent command execution history with status, output, and timestamps. Filterable by server ID. An entry whose output is a sudo denial also carries sudo_hint and, when a human can clear it, a structured sudo_denial block. When to use: reviewing past commands, finding a command whose id you do not have, such as after a lost submission (for a known command_id use check_command_status), or browsing the results of an execute_command_multi_server batch. An entry the server refused because its line carries a script body (rejection_cause use_file_execution) also carries error_code use_file_execution and a next_action: rerun that script with execute_file (write_file=true) on that entry's server and account only. A rejected entry also carries rejection_hint, saying whom to ask; do not resubmit it. Related: check_command_status (one command by id), execute_command (run a command and wait), execute_file.",
+   "inputSchema": {
+    "properties": {
+     "workspace": {
+      "description": "Workspace name, as list_workspaces returns it.",
+      "title": "Workspace",
+      "type": "string"
+     },
+     "server_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "Server UUID, never a server name; list_servers maps a name to its UUID.",
+      "title": "Server Id"
+     },
+     "limit": {
+      "default": 20,
+      "title": "Limit",
+      "type": "integer"
+     },
+     "region": {
+      "anyOf": [
+       {
+        "enum": [
+         "ap1",
+         "us1"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "Region, ap1 or us1. Omit it to use the workspace's region: read from the JWT in remote mode and from token.json in local mode. The call fails when that region cannot be determined; pass region when several regions match.",
+      "title": "Region"
+     }
+    },
+    "required": [
+     "workspace"
+    ],
+    "title": "list_commandsArguments",
+    "type": "object"
+   },
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false
+   }
+  },
+  {
+   "name": "list_servers",
+   "description": "List all servers in a workspace. Returns server names, UUIDs, status, OS, and connection info. Use this to discover available servers and obtain server IDs required by other tools. Results are paginated: compare the response `count` against the number of `results` and follow the `next` page number to see every server. Related: get_server (single server details), get_server_overview (full system info).",
+   "inputSchema": {
+    "properties": {
+     "workspace": {
+      "description": "Workspace name, as list_workspaces returns it.",
+      "title": "Workspace",
+      "type": "string"
+     },
+     "region": {
+      "anyOf": [
+       {
+        "enum": [
+         "ap1",
+         "us1"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "Region, ap1 or us1. Omit it to use the workspace's region: read from the JWT in remote mode and from token.json in local mode. The call fails when that region cannot be determined; pass region when several regions match.",
+      "title": "Region"
+     },
+     "page": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Page"
+     },
+     "page_size": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "Servers per page, up to 100; the server defaults to 15.",
+      "title": "Page Size"
+     }
+    },
+    "required": [
+     "workspace"
+    ],
+    "title": "list_serversArguments",
+    "type": "object"
+   },
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false
+   }
+  },
+  {
+   "name": "list_workspaces",
+   "description": "List all available workspaces and their regions. Returns workspace names, region codes, domain hostnames, and unusable_entries: the count of workspace claim entries left out because they name no workspace or region, which is non-zero when an Auth0 organization has no region in its metadata; a region filter does not narrow it, and it is always 0 in local mode. In local mode reads from token.json; in server mode extracts from JWT claims. When to use: first tool to call to discover which workspaces are configured. Related: list_servers (find servers in a workspace). Note: Most other tools require a workspace parameter from this list.",
+   "inputSchema": {
+    "properties": {
+     "region": {
+      "anyOf": [
+       {
+        "enum": [
+         "ap1",
+         "us1"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "Lists only the workspaces in this region, ap1 or us1. Omit it to list every region.",
+      "title": "Region"
+     }
+    },
+    "title": "list_workspacesArguments",
+    "type": "object"
+   },
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false
+   }
+  },
+  {
+   "name": "work_session_create",
+   "description": "Create a Work Session to scope all infrastructure actions under an auditable, approval-gated session. Every execute_command and file transfer should be linked to a Work Session—the server enforces this for MCP OAuth and browser-based auth. A new session usually lands in pending: this tool then returns status=\"pending_approval\", and no command or file transfer runs in it until a human approves out-of-band (Alpacon web console or Slack). Do not open another session; call work_session_get and proceed once data.status is active, or stop if it is rejected, cancelled, expired, revoked, or completed, since those never become active. Use work_session_update to add servers to an existing session (pass every server it keeps; the list replaces the current one) instead of creating a new one. Related: work_session_close (end session), execute_command (pass work_session_id).",
+   "inputSchema": {
+    "properties": {
+     "workspace": {
+      "description": "Workspace name, as list_workspaces returns it.",
+      "title": "Workspace",
+      "type": "string"
+     },
+     "scopes": {
+      "description": "Operations the session allows: \"command\" (execute_command, execute_file), \"webftp\" (file transfers), \"tunnel\" (port forwarding), \"sudo\" (privilege elevation). Request \"sudo\" only when the work genuinely requires root.",
+      "items": {
+       "type": "string"
+      },
+      "title": "Scopes",
+      "type": "array"
+     },
+     "servers": {
+      "description": "Server UUIDs, never server names; list_servers maps a name to its UUID.",
+      "items": {
+       "type": "string"
+      },
+      "title": "Servers",
+      "type": "array"
+     },
+     "expires_at": {
+      "description": "ISO 8601 datetime string.",
+      "title": "Expires At",
+      "type": "string"
+     },
+     "description": {
+      "description": "What you are doing and why, written as prose for the human who approves the session. It is NOT a command list and nothing in it is executed—commands run via execute_command once the session is active. Be specific: name the targets, the action, and what will not be touched; a bare word like \"maintenance\" gives the approver nothing to decide on. Markdown supported.",
+      "title": "Description",
+      "type": "string"
+     },
+     "title": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Title"
+     },
+     "region": {
+      "anyOf": [
+       {
+        "enum": [
+         "ap1",
+         "us1"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "Region, ap1 or us1. Omit it to use the workspace's region: read from the JWT in remote mode and from token.json in local mode. The call fails when that region cannot be determined; pass region when several regions match.",
+      "title": "Region"
+     },
+     "target_account_username": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "The single OS account the commands will run as, such as \"root\". Set it whenever you intend to run commands as another account, so that account is approved together with the session, then pass the same account as username to execute_command and execute_file; omit it to run as the default account. Running directly as root is declared here; the \"sudo\" scope is for elevation from another account.",
+      "title": "Target Account Username"
+     }
+    },
+    "required": [
+     "workspace",
+     "scopes",
+     "servers",
+     "expires_at",
+     "description"
+    ],
+    "title": "work_session_createArguments",
+    "type": "object"
+   },
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false
+   }
+  },
+  {
+   "name": "work_session_get",
+   "description": "Get details of a Work Session: status, scopes, servers, requester_type, expires_at. Related: work_session_list (list all sessions), work_session_timeline (chronological activity), work_session_close (end session).",
+   "inputSchema": {
+    "properties": {
+     "session_id": {
+      "description": "Work Session UUID, as work_session_create or work_session_list returns it.",
+      "title": "Session Id",
+      "type": "string"
+     },
+     "workspace": {
+      "description": "Workspace name, as list_workspaces returns it.",
+      "title": "Workspace",
+      "type": "string"
+     },
+     "region": {
+      "anyOf": [
+       {
+        "enum": [
+         "ap1",
+         "us1"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "Region, ap1 or us1. Omit it to use the workspace's region: read from the JWT in remote mode and from token.json in local mode. The call fails when that region cannot be determined; pass region when several regions match.",
+      "title": "Region"
+     }
+    },
+    "required": [
+     "session_id",
+     "workspace"
+    ],
+    "title": "work_session_getArguments",
+    "type": "object"
+   },
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false
+   }
+  },
+  {
+   "name": "work_session_list",
+   "description": "List Work Sessions in a workspace. Related: work_session_create (create session), work_session_get (single session detail).",
+   "inputSchema": {
+    "properties": {
+     "workspace": {
+      "description": "Workspace name, as list_workspaces returns it.",
+      "title": "Workspace",
+      "type": "string"
+     },
+     "status": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "Filter by status: \"pending\", \"approved\", \"active\", \"completed\", \"rejected\", \"cancelled\", \"expired\" or \"revoked\".",
+      "title": "Status"
+     },
+     "requester_type": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "Filter by requester: \"user\" (human) or \"agent\" (AI agent).",
+      "title": "Requester Type"
+     },
+     "limit": {
+      "default": 20,
+      "title": "Limit",
+      "type": "integer"
+     },
+     "region": {
+      "anyOf": [
+       {
+        "enum": [
+         "ap1",
+         "us1"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "Region, ap1 or us1. Omit it to use the workspace's region: read from the JWT in remote mode and from token.json in local mode. The call fails when that region cannot be determined; pass region when several regions match.",
+      "title": "Region"
+     }
+    },
+    "required": [
+     "workspace"
+    ],
+    "title": "work_session_listArguments",
+    "type": "object"
+   },
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false
+   }
+  }
+ ]
+}

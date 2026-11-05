@@ -1,0 +1,1 @@
+{"status": "success", "data": {"workspaces": [{"workspace": "acme", "region": "ap1", "auth0_id": "org_acme", "domain": "acme.ap1.alpacon.io"}], "unusable_entries": 0, "source": "jwt", "region": "all"}, "region": "all"}

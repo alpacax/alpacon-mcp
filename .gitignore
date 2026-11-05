@@ -81,3 +81,6 @@ mcp.json
 package-lock.json
 package.json
 test_result.md
+
+# claude plugin eval output
+plugins/alpacon/evals/results/

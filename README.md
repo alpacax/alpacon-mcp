@@ -175,7 +175,7 @@ On first use, Claude Code opens your browser to sign in. Verify with `claude mcp
 Claude Code, Codex, Copilot CLI, and Cursor can install the hosted server as a plugin instead of a bare URL. Besides the connection, the plugin carries the rules for using the tools, which a bare URL cannot:
 
 - `.mcp.json`: names `https://mcp.alpacon.io/mcp` over HTTP. The server stays hosted; nothing runs on your machine, and the first tool call opens the browser sign-in.
-- `using-alpacon` skill: teaches Claude that `server_id` is a UUID from `list_servers`, that commands run inside a Work Session, that a `pending_approval` result waits for a person, and that a write with `outcome_unknown: true` is checked before it is retried.
+- `using-alpacon` skill: teaches the agent that `server_id` is a UUID from `list_servers`, that commands run inside a Work Session, that a `pending_approval` result waits for a person (and that a held command runs on its own once approved), and that a write with `outcome_unknown: true` is checked before it is retried. Reference files it loads on demand hold the details.
 - A `PreToolUse` hook on Bash: refuses a command that runs the `alpacon` CLI, so Claude stays on the MCP tools when a call fails. It needs `python3` on the `PATH`.
 
 ```bash
