@@ -437,7 +437,7 @@ Execute a command on a server and wait for the result, or with `wait: false` ret
 
 **Parameters:**
 - `server_id` (string): Server UUID
-- `command` (string): Command to execute; must not be empty or whitespace-only. Do not prefix it with `sudo` by default; use `sudo` only when the command genuinely requires root and the Work Session carries the `sudo` scope. Unless a Work Session sudo policy already covers the command, a sudo invocation either routes to human approval and blocks until a human acts, or is denied outright with no request anyone can approve. Check `sudo_denial.category` before waiting—a `sudo_hint` with no `sudo_denial` is a hard denial that creates no request
+- `command` (string): Command to execute; must not be empty or whitespace-only. Do not prefix it with `sudo` by default; use `sudo` only when the command genuinely requires root and the Work Session carries the `sudo` scope. Unless a Work Session sudo policy already covers the command, a sudo invocation is denied at once and the command finishes with the denial in its result. A `sudo_denial` means a person can clear it, so read its `category`, surface it, and rerun the whole command after they act; a `sudo_hint` with no `sudo_denial` is a hard denial that creates no request
 - `workspace` (string): Workspace name
 - `shell` (string, default: "system"): Shell type
 - `username` (string, optional): Username for execution
@@ -584,7 +584,7 @@ so a file changed after the read fails closed.
 There is no `env`, `data`, or `shell`: composition (pipes, redirection, `&&`, variables) goes inside the
 script, where it is reviewed with it. A one-off composition around a file belongs on `execute_command`.
 
-**Response:** the same shape as `execute_command`—`awaiting_approval`, `purpose_required`, sudo
+**Response:** the same shape as `execute_command`—`pending_approval`, `purpose_required`, sudo
 denials, and the result all follow the same rules—plus a `file` object echoing `path`, `interpreter`,
 and `args` (never `content`). `command` and `shell` are not echoed; the polled command row carries the
 server-rendered line.
@@ -643,7 +643,7 @@ Execute a command on multiple servers simultaneously. The tool only submits: rea
 
 **Parameters:**
 - `server_ids` (array): List of server IDs
-- `command` (string): Command to execute; must not be empty or whitespace-only. The same sudo rule as `execute_command` applies, per server: a needless `sudo` prefix stalls that server's command on a human approver, or is denied outright with no request anyone can approve
+- `command` (string): Command to execute; must not be empty or whitespace-only. The same sudo rule as `execute_command` applies, per server: a needless `sudo` prefix is denied at once on that server, and either a person has to clear it before a rerun or no one can
 - `workspace` (string): Workspace name
 - `shell` (string, default: "system"): Shell type
 - `username` (string, optional): Username for execution
@@ -956,7 +956,7 @@ Send an email invitation to join the workspace (Auth0-enabled deployments). **Pa
 A Work Session is the unit of authorized work: a scope, a set of servers, an expiry, and an audit trail. OAuth/browser callers must have one active before executing commands or transferring files; static API tokens and service tokens bypass the gate.
 
 ### `work_session_create`
-Open a session. **Parameters:** `workspace`, `scopes` (array; agents may request `command` for `execute_command` and `execute_file`, `webftp` for file transfers, `tunnel` for port forwarding, and `sudo` for privilege elevation—request `sudo` only when the work genuinely requires root, since a sudo invocation no policy covers routes to human approval), `servers` (array of UUIDs), `expires_at` (ISO 8601), `description`, `title` (optional), `target_account_username` (optional; the OS account commands will run as, such as `root`—set it when you intend to run as another account so it is approved with the session, then pass the same account as `username` to `execute_command` and `execute_file`; running directly as `root` is declared here, while the `sudo` scope is for elevation from another account; sent only when given), `region` (`ap1` or `us1`, optional). Only `title`, `target_account_username` and `region` may be omitted—a session with no expiry or no stated reason is not a session anyone can approve.
+Open a session. **Parameters:** `workspace`, `scopes` (array; agents may request `command` for `execute_command` and `execute_file`, `webftp` for file transfers, `tunnel` for port forwarding, and `sudo` for privilege elevation—request `sudo` only when the work genuinely requires root, since a sudo invocation no policy covers is denied at once), `servers` (array of UUIDs), `expires_at` (ISO 8601), `description`, `title` (optional), `target_account_username` (optional; the OS account commands will run as, such as `root`—set it when you intend to run as another account so it is approved with the session, then pass the same account as `username` to `execute_command` and `execute_file`; running directly as `root` is declared here, while the `sudo` scope is for elevation from another account; sent only when given), `region` (`ap1` or `us1`, optional). Only `title`, `target_account_username` and `region` may be omitted—a session with no expiry or no stated reason is not a session anyone can approve.
 
 `description` is prose for the human who approves the session. It is not a command list and nothing in it is executed; commands run via `execute_command` once the session is active. Be specific: name the targets, the action, and what will not be touched, since a bare word like "maintenance" gives the approver nothing to decide on. Markdown is supported.
 

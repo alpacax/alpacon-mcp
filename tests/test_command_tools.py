@@ -1452,7 +1452,7 @@ class TestLostSubmissionIsNotResubmitted:
 
 class TestSudoGuidanceInToolDescriptions:
     """MCP prompts are opt-in—clients that read only tool schemas (Codex) must
-    still learn that an unneeded sudo prefix blocks the session on a human.
+    still learn what a sudo inside a command does to it.
     """
 
     @pytest.mark.asyncio
@@ -1462,12 +1462,33 @@ class TestSudoGuidanceInToolDescriptions:
     async def test_description_states_the_sudo_cost(self, tool_name):
         descriptions = await tool_descriptions()
         text = descriptions[tool_name]
-        assert 'human-in-the-loop' in text
-        # The carve-out and the hard-denial path qualify the parameter's sudo rule;
-        # pin both on the tool so neither regresses.
+        # The carve-out and both denial paths qualify the parameter's sudo rule;
+        # pin them on the tool so neither regresses.
         assert 'sudo policy already covers' in text
-        assert 'denied outright' in text
-        assert 'sudo_denial.category' in text
+        assert 'denied at once' in text
+        assert 'sudo_denial' in text
+        assert 'with no sudo_denial' in text
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'tool_name',
+        ['execute_command', 'execute_command_multi_server', 'execute_file'],
+    )
+    async def test_description_does_not_promise_a_sudo_that_resumes(self, tool_name):
+        # A denied sudo is over when the command finishes, so the agent reruns.
+        text = (await tool_descriptions())[tool_name]
+
+        assert 'until a human acts' not in text
+        assert 'routes to human' not in text
+        assert 'rerun' in text.lower()
+
+    @pytest.mark.asyncio
+    async def test_execute_file_names_the_status_it_returns(self):
+        text = (await tool_descriptions())['execute_file']
+
+        assert 'awaiting_approval' not in text
+        assert 'status of pending_approval' in text
+        assert 'COMMAND_AWAITING_APPROVAL' in text
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(

@@ -21,8 +21,9 @@ must belong to an approved Work Session. Follow this order.
      commands. Nothing in it is executed; commands run via `execute_command` in step 3.
    - Valid scopes are `command`, `webftp`, `tunnel`, and `sudo`. As an agent (MCP channel)
      you can request `command`/`webftp`/`tunnel` directly; `sudo` is available but unless a
-     Work Session sudo policy already covers the command, a sudo invocation routes to human
-     approval (HITL)—and some are denied outright, leaving no request a human can unblock.
+     Work Session sudo policy already covers the command, a sudo invocation is denied at
+     once—a human can clear some denials before you rerun the command, and others leave
+     no request a human can unblock.
      Request `sudo` only when the work genuinely requires root. Interactive `websh`/`editor`
      access requires human presence (MFA) and is not available to you.
    - Scope to the specific target servers only—do not request workspace-wide access.
@@ -69,17 +70,19 @@ here is judged in real time and recorded. Follow this discipline.
    - File transfers: `webftp_download_file`. `webftp_upload_file` is local-mode only—in
      remote/OAuth mode it returns `remote_mode_unsupported`.
 
-3. Expect risk verdicts. Each action is scored. A HIGH-risk command routes to
-   human-in-the-loop, and so does any `sudo` invocation that no Work Session sudo policy
-   already covers. You cannot self-approve (an agent has no presence/MFA). When a result
-   is `pending_approval`, surface
-   it to a human and wait—but read the category first: a hard denial such as
-   `SUDO_RISK_DENIED` creates no request anyone can approve, so waiting on it never ends
-   (see step 4). So do not prefix commands with `sudo` by default—a needless `sudo` blocks
-   the whole session on a human. Use it only when the command genuinely requires root.
+3. Expect risk verdicts. Each action is scored. You cannot self-approve (an agent has no
+   presence/MFA). A HIGH-risk command is held: the result is `pending_approval`, so surface
+   it to a human and wait, and the command then runs by itself. A `sudo` inside a command
+   does not wait: unless a Work Session sudo policy already covers it, the server denies it
+   at once and the command finishes with the denial in its result. Surface a `sudo_denial`
+   to a human and rerun the command after they act. A `sudo_hint` with no `sudo_denial` is
+   a hard denial with no request behind it, so waiting on it never ends. So do not prefix
+   commands with `sudo` by default—a needless `sudo` costs you the whole command. Use it
+   only when the command genuinely requires root.
 
 4. On a denial, read the structured category and `next_action` and self-correct—the
-   field is `code` on an `error` result and `category` on a `pending_approval` one. Adjust
+   field is `code` on a Work Session gate refusal, `error_code` on any other `error` result,
+   and `category` on a `pending_approval` result or inside `sudo_denial`. Adjust
    the command, narrow the target, or escalate to a human. Never re-run the identical
    denied command in a loop. Some denials have a second path you can start yourself:
    `SUDO_INTENT_DEVIATION` means the command was judged off-purpose for the session, so
@@ -111,8 +114,8 @@ def incident_response(server_id: str = '', workspace: str = '') -> str:
    `command` scope, and wait for human approval.
 
 3. Execute remediation under the `guarded_execution` workflow. Risky remediation
-   (restarts, sudo, destructive commands) will route to human-in-the-loop—surface it
-   and wait; you cannot self-approve.
+   (restarts, destructive commands) is held for a human—surface it and wait, and treat
+   a denied `sudo` as that workflow says; you cannot self-approve.
 
 4. After the incident is resolved, `work_session_close` the session to mark it complete
    and trigger AI security analysis for the audit trail.

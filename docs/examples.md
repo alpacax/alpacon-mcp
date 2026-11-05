@@ -88,7 +88,7 @@ When you reach Alpacon through OAuth (the hosted server at `mcp.alpacon.io`, or 
 
 The create result's `next_action` names `work_session_update` and this session's ID: if more servers are needed mid-task, widen this session with the full server list instead of creating another one. A pending result still requires human approval before any command or file transfer runs.
 
-Ask for the narrowest scope that does the job: `command`, `webftp`, and `tunnel` are the scopes an agent may request. A session scoped to one server and one purpose is approved faster and audits cleanly.
+Ask for the narrowest scope that does the job: `command`, `webftp`, `tunnel`, and `sudo` are the scopes an agent may request. A session scoped to one server and one purpose is approved faster and audits cleanly.
 
 Setting `ALPACON_WORK_SESSION` supplies a default session id, so tools called without `work_session_id` still land inside it. An explicit argument always wins.
 
@@ -105,7 +105,7 @@ The gate answers in a structured way. Each code has one right move:
 | `work_session_expired` | Window closed | Open a new session with `work_session_create`; an expired session cannot be extended |
 | `work_session_assignee_mismatch` | Session belongs to someone else | Open your own |
 
-A sudo escalation can also come back as `status="pending_approval"` with `SUDO_APPROVAL_REQUIRED` or `SUDO_INTENT_DEVIATION`. An agent cannot approve its own request—`explain_approval_decision` states this and points at the human channel.
+A denied sudo escalation comes back on the finished command as `sudo_denial`, whose `category` can be `SUDO_APPROVAL_REQUIRED` or `SUDO_INTENT_DEVIATION`, and the command is rerun after a person acts. An agent cannot approve its own request—`explain_approval_decision` states this and points at the human channel.
 
 ### After the work: the audit trail
 
@@ -361,10 +361,10 @@ The `security_audit` prompt helps pick between these lenses when the question is
 2. `install_system_package(server_id, package_name="openssl", workspace)` to patch that one package
 3. For a full package upgrade across the fleet, open a Work Session with `scopes` including `sudo`
    (see "The shape of the flow" above) and run `sudo apt-get upgrade -y` through `execute_command`.
-   A sudo invocation not already covered by a Work Session sudo policy either queues for human
-   approval or is denied outright with no request anyone can approve—check `sudo_denial.category`
-   before waiting on it, and surface a queued approval to a human the same way as any other pending
-   request
+   A sudo invocation not already covered by a Work Session sudo policy is denied at once, and the
+   command finishes with the denial in its result. With `sudo_denial`, surface its `category` to a
+   human and rerun the command after they act; a `sudo_hint` with no `sudo_denial` is a hard denial
+   that no one can approve
 4. `sudo reboot` through `execute_command` in that same session if the upgrade needs a restart
 
 Python packages have the same trio: `list_python_packages`, `install_python_package`, `remove_python_package`.
