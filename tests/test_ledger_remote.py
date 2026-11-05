@@ -28,9 +28,22 @@ from tests.oauth._support import (
     MockMCPServer,
     _mock_auth0_response,
 )
-from tests.test_ledger_tools import AI_ENV, LEDGER, UNAUTHORIZED_ENVELOPE
+from tests.test_ledger_tools import (
+    AI_ENV,
+    ENTRY_ID,
+    LEDGER,
+    OTHER_WORKSPACE_ID,
+    UNAUTHORIZED_ENVELOPE,
+    answer_entry_reads,
+    changes,
+)
 from tools import resources as res
-from tools.ledger_tools import get_ledger_capability, list_ledger_entries
+from tools.ledger_tools import (
+    disable_ledger_entry,
+    get_ledger_capability,
+    list_ledger_entries,
+    revoke_ledger_entries,
+)
 from utils import declared_agent, request_signal
 from utils.auth import Auth0TokenVerifier
 from utils.auth_error_middleware import UpstreamAuthErrorMiddleware
@@ -806,7 +819,9 @@ mock_http_client = http_client_fixture('tools.ledger_tools')
 def remote(mock_http_client, remote_env):
     """A remote session on an `ai` workspace; the stdio cache must stay untouched."""
     mock_http_client.get.return_value = AI_ENV
-    mock_http_client.request = AsyncMock(return_value={'ok': True})
+    mock_http_client.request = AsyncMock(
+        return_value={'ok': True}, side_effect=answer_entry_reads()
+    )
     stdio_cache = MagicMock()
     stdio_cache.token_for = AsyncMock(side_effect=AssertionError('stdio cache read'))
     stdio_cache.has_token.side_effect = AssertionError('stdio cache read')
@@ -965,6 +980,53 @@ class TestRemoteTools:
             result = await list_ledger_entries(workspace=WORKSPACE, region='ap1')
         assert result['status'] == 'error'
         assert 'stdio MCP server' in result['message']
+        session.assert_not_called()
+        remote.request.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_an_entry_of_another_workspace_is_read_and_refused(self, remote):
+        remote.request.side_effect = answer_entry_reads({ENTRY_ID: OTHER_WORKSPACE_ID})
+        grant = _grant()
+
+        with _session(grant):
+            result = await disable_ledger_entry(
+                workspace=WORKSPACE, region='ap1', entry_id=ENTRY_ID
+            )
+
+        assert result['status'] == 'error'
+        assert 'another workspace' in result['message']
+        read = remote.request.call_args
+        assert read.args[:2] == ('GET', f'{LEDGER}entries/{ENTRY_ID}/')
+        assert read.kwargs['token'] == grant.token
+        assert changes(remote) == []
+
+    @pytest.mark.asyncio
+    async def test_bulk_revoke_of_entries_here_goes_through(self, remote):
+        remote.request.return_value = {'revoked': 1}
+
+        with _session(_grant()):
+            result = await revoke_ledger_entries(
+                workspace=WORKSPACE, region='ap1', entry_ids=[ENTRY_ID]
+            )
+
+        assert result['data'] == {'revoked': 1}
+        assert [c.args[0] for c in remote.request.call_args_list] == ['GET', 'POST']
+
+    @pytest.mark.asyncio
+    async def test_a_plain_http_ledger_is_refused_before_any_grant_is_read(
+        self, remote, monkeypatch
+    ):
+        monkeypatch.setenv('ALPACON_MCP_LEDGER_URL', 'http://ledger.example.com')
+        signal = request_signal.begin_request()
+        try:
+            with _session(_grant()) as session:
+                result = await list_ledger_entries(workspace=WORKSPACE, region='ap1')
+        finally:
+            request_signal.end_request()
+
+        assert result['status'] == 'error'
+        assert 'ALPACON_MCP_LEDGER_URL' in result['message']
+        assert signal == {}
         session.assert_not_called()
         remote.request.assert_not_called()
 
