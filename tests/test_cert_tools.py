@@ -2,7 +2,12 @@
 
 import pytest
 
-from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture, published_rule
+from tests.conftest import (
+    HTTP_ERROR_ENVELOPE,
+    http_client_fixture,
+    published_rule,
+    tool_descriptions,
+)
 from tools.cert_tools import (
     approve_revoke_request,
     approve_sign_request,
@@ -522,6 +527,13 @@ class TestSignRequestDetails:
             token='test-token',
             data={},
         )
+
+    @pytest.mark.asyncio
+    async def test_deny_description_states_the_status_the_api_requires(self):
+        text = (await tool_descriptions())['deny_sign_request']
+
+        assert 'any state' not in text
+        assert 'cert_request_in_progress' in text
 
     @pytest.mark.asyncio
     async def test_deny_sign_request_success(
