@@ -655,9 +655,9 @@ class TestLiveFlowLimit:
 
     @pytest.mark.parametrize(
         ('padding', 'expected'),
-        [(3000, HTTPStatus.FOUND), (4000, HTTPStatus.TOO_MANY_REQUESTS)],
+        [(7800, HTTPStatus.FOUND), (7900, HTTPStatus.TOO_MANY_REQUESTS)],
     )
-    def test_authorize_leaves_room_for_a_ledger_cookie(
+    def test_authorize_needs_room_for_its_nonce_cookie(
         self, oauth_app_no_cookie, padding, expected
     ):
         oauth_app_no_cookie.cookies.set('unrelated', 'x' * padding)

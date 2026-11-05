@@ -71,8 +71,10 @@ _FLOW_SUFFIX_CHARS = 16
 _MAX_LIVE_FLOWS = 8
 # Under nginx's default 8 KB header line, so a callback still reaches this server.
 _COOKIE_HEADER_LIMIT = 8000
-# One nonce cookie plus a ledger cookie at the browser's 4 KB cookie cap.
-_NEW_FLOW_COOKIE_BYTES = 4200
+# Bounds `; <nonce cookie name>=<nonce>`, a ledger flow's marked nonce included.
+_NONCE_COOKIE_BYTES = 100
+# Leads a ledger flow's nonce, so authorize can count the grants still to be staged.
+_LEDGER_NONCE_MARK = 'ledger.'
 
 
 class _FlowCookieAttrs(TypedDict):
@@ -204,9 +206,10 @@ def _state_str(state_data: dict[str, object], key: str) -> str:
     return value if isinstance(value, str) else ''
 
 
-def _mint_nonce() -> str:
+def _mint_nonce(*, ledger: bool = False) -> str:
     """Mint the per-flow value that proves a callback reached the same browser."""
-    return secrets.token_urlsafe(32)
+    nonce = secrets.token_urlsafe(32)
+    return f'{_LEDGER_NONCE_MARK}{nonce}' if ledger else nonce
 
 
 def _hash_nonce(nonce: str) -> str:
@@ -251,13 +254,13 @@ def _cookie_header_fits(request: Request, added_bytes: int) -> bool:
     return size + added_bytes <= _COOKIE_HEADER_LIMIT
 
 
-def _has_room_for_a_flow(request: Request) -> bool:
+def _has_room_for_a_flow(request: Request, reserved_bytes: int) -> bool:
     """Live flows keep their cookies, so a full browser is refused a new flow until
-    one finishes or expires."""
+    one finishes or expires; reserved_bytes keeps room for ledger cookies to come."""
     prefix = f'{_NONCE_COOKIE_PREFIX}_'
     live = sum(name.startswith(prefix) for name in request.cookies)
     return live < _MAX_LIVE_FLOWS and _cookie_header_fits(
-        request, _NEW_FLOW_COOKIE_BYTES
+        request, _NONCE_COOKIE_BYTES + reserved_bytes
     )
 
 

@@ -26,6 +26,7 @@ from utils.oauth._ledger import _ledger_cookie_name
 from utils.oauth._sealing import (
     _GRANT_SECRET_ENV,
     _GRANT_SECRET_INFO,
+    _NONCE_COOKIE_BYTES,
     _SEAL_KIND_CODE,
     _SEAL_KIND_REFRESH,
     _STAGE_MFA,
@@ -202,6 +203,14 @@ class TestNonceHelpers:
 
     def test_mint_nonce_is_long_enough_to_resist_guessing(self):
         assert len(_mint_nonce()) >= 32
+
+    @pytest.mark.parametrize('ledger', [False, True])
+    def test_a_nonce_cookie_fits_the_bytes_authorize_reserves_for_it(self, ledger):
+        nonce = _mint_nonce(ledger=ledger)
+
+        added = f'; {_nonce_cookie_name(_hash_nonce(nonce))}={nonce}'
+
+        assert len(added) <= _NONCE_COOKIE_BYTES
 
     def test_hash_nonce_is_stable_for_the_same_input(self):
         assert _hash_nonce('abc') == _hash_nonce('abc')

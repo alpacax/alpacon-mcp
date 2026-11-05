@@ -29,8 +29,13 @@ from utils.oauth._http import (
     logger,
 )
 from utils.oauth._sealing import (
+    _COOKIE_HEADER_LIMIT,
     _DEVICE_SCOPE_PREFIX,
     _FLOW_COOKIE_ATTRS,
+    _LEDGER_NONCE_MARK,
+    _MAX_LIVE_FLOWS,
+    _NONCE_COOKIE_BYTES,
+    _NONCE_COOKIE_PREFIX,
     _STATE_TTL_SECONDS,
     _cookie_header_fits,
     _flow_cookie_name,
@@ -42,6 +47,10 @@ _LEDGER_SCOPE_PREFIX = 'ledger:'
 # Holds the encrypted ledger token from the ledger callback to the final one,
 # so it never rides a URL to Auth0. Named and set like the nonce cookie.
 _LEDGER_COOKIE_PREFIX = '__Host-alpacon_ledger_grant'
+# Bounds `; <ledger cookie name>=<sealed>`: two fit beside a full set of nonce cookies.
+_LEDGER_COOKIE_BYTES = (
+    _COOKIE_HEADER_LIMIT - _MAX_LIVE_FLOWS * _NONCE_COOKIE_BYTES
+) // 2
 
 
 def _ledger_org(scope: str) -> str:
@@ -141,9 +150,27 @@ def _ledger_cookie_name(nonce_hash: str) -> str:
     return _flow_cookie_name(_LEDGER_COOKIE_PREFIX, nonce_hash)
 
 
+def _ledger_cookie_reservation(request: Request, ledger_org: str) -> int:
+    """Room for every ledger cookie still to come. Authorize holds it, because ledger
+    callbacks that run at once each see only the Cookie header they started with."""
+    nonce_prefix = f'{_NONCE_COOKIE_PREFIX}_'
+    ledger_prefix = f'{_LEDGER_COOKIE_PREFIX}_'
+    cookies = request.cookies
+    staged = {
+        n.removeprefix(ledger_prefix) for n in cookies if n.startswith(ledger_prefix)
+    }
+    pending = sum(
+        name.startswith(nonce_prefix)
+        and value.startswith(_LEDGER_NONCE_MARK)
+        and name.removeprefix(nonce_prefix) not in staged
+        for name, value in cookies.items()
+    )
+    return _LEDGER_COOKIE_BYTES * (pending + bool(ledger_org))
+
+
 def _ledger_cookie_fits(request: Request, sealed: str, nonce_hash: str) -> bool:
-    added = f'; {_ledger_cookie_name(nonce_hash)}={sealed}'
-    return _cookie_header_fits(request, len(added))
+    added = len(f'; {_ledger_cookie_name(nonce_hash)}={sealed}')
+    return added <= _LEDGER_COOKIE_BYTES and _cookie_header_fits(request, added)
 
 
 def _set_ledger_cookie(response: Response, sealed: str, *, nonce_hash: str) -> None:

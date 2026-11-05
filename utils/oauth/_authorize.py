@@ -26,6 +26,7 @@ from utils.oauth._http import (
     logger,
 )
 from utils.oauth._ledger import (
+    _ledger_cookie_reservation,
     _ledger_org,
     _ledger_stage_url,
     _ledger_state,
@@ -63,7 +64,8 @@ async def oauth_authorize(request: Request) -> Response:
         server_url = _get_server_url(request)
         _validate_authorize_request(authorize)
         _drop_unchecked_challenge_method(authorize.params)
-        if not _has_room_for_a_flow(request):
+        reserved = _ledger_cookie_reservation(request, authorize.ledger_org)
+        if not _has_room_for_a_flow(request, reserved):
             logger.warning('Authorize refused: this browser holds too many live flows')
             raise _OAuthRequestError(
                 _oauth_error_response(
@@ -73,7 +75,7 @@ async def oauth_authorize(request: Request) -> Response:
                     HTTPStatus.TOO_MANY_REQUESTS,
                 )
             )
-        nonce = _mint_nonce()
+        nonce = _mint_nonce(ledger=bool(authorize.ledger_org))
         auth0_url = _first_stage_url(config, server_url, authorize, _hash_nonce(nonce))
     except _OAuthRequestError as e:
         return e.response
