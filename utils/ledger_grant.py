@@ -3,11 +3,13 @@ no server-side store, any replica can read it, and no other connection holds it.
 
 import base64
 import binascii
+import ipaddress
 import json
 import os
 import time
 from dataclasses import dataclass
 from typing import Self, TypeGuard
+from urllib.parse import urlsplit
 
 import jwt
 from cryptography.exceptions import InvalidTag
@@ -28,6 +30,38 @@ def ledger_base_url() -> str:
     """The ledger API host, without a trailing slash."""
     url = os.getenv(LEDGER_URL_ENV, '').strip() or DEFAULT_LEDGER_URL
     return url.rstrip('/')
+
+
+def ledger_url_error(url: str) -> str | None:
+    """Why the ledger token must not be sent to `url`, or None. The token is a bearer
+    credential: https only, or plain http to a loopback host."""
+    not_a_url = f'{LEDGER_URL_ENV} is not a URL.'
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname
+        _ = parts.port  # urlsplit validates the port only when it is read
+    except ValueError:
+        return not_a_url
+    if not host:
+        return not_a_url
+    if parts.scheme == 'https':
+        return None
+    if parts.scheme == 'http' and _is_loopback(host):
+        return None
+    return (
+        f'{LEDGER_URL_ENV} must be an https URL; the ledger token is not sent '
+        f'over {parts.scheme or "a URL without a scheme"}. Plain http is allowed '
+        'only to a loopback host.'
+    )
+
+
+def _is_loopback(host: str) -> bool:
+    if host == 'localhost':
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 def ledger_audience() -> str:

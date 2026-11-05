@@ -254,7 +254,7 @@ export ALPACON_MCP_ENV=prod
 export ALPACON_WORK_SESSION="<work-session-uuid>"
 
 # Command pre-approval ledger host and audience (defaults shown)
-export ALPACON_MCP_LEDGER_URL="https://alpacon.ai"
+export ALPACON_MCP_LEDGER_URL="https://alpacon.ai"  # https, or http to a loopback host only
 export ALPACON_MCP_LEDGER_AUDIENCE="https://alpacon.ai/"  # Matched verbatim; keep the slash
 # A stdio ledger sign-in also sends device:<id>, a random per-installation id kept in
 # a device_id file beside token.json (created on first use; delete it to mint a new one)

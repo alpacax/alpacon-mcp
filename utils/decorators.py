@@ -280,7 +280,7 @@ def _resolve_region_local(workspace: str | None) -> tuple[str | None, str | None
     return None, 'No regions configured. Please run setup first.'
 
 
-def _validate_path_identifier(field: str, value: object) -> ToolErrorResponse | None:
+def validate_path_identifier(field: str, value: object) -> ToolErrorResponse | None:
     # A non-str never matches the pattern, but the f-string that builds the
     # endpoint stringifies it anyway, so its separators reach the path.
     # fullmatch, not match: '$' also matches before a trailing newline.
@@ -479,7 +479,7 @@ def with_token_validation[**P, R](
             # None is an omitted optional argument, not a bad type.
             if value is None:
                 continue
-            path_error = _validate_path_identifier(field, value)
+            path_error = validate_path_identifier(field, value)
             if path_error:
                 return path_error
 
