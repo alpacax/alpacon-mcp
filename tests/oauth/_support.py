@@ -129,7 +129,6 @@ def _mock_auth0_response(status_code=HTTPStatus.OK, json_data=None):
 
 
 def _issued_nonce(response: httpx.Response) -> str:
-    """The nonce authorize set, after checking its cookie is named for its own flow."""
     issued = {
         name: value
         for name, value in response.cookies.items()

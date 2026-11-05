@@ -1175,7 +1175,6 @@ class TestOverlappingLedgerFlows:
         return _browser_client()
 
     def _ledger_leg(self, browser, token: str) -> str:
-        """Authorize, then run the ledger callback; returns the final stage's state."""
         state = _query(_authorize(browser, f'openid profile ledger:{WORKSPACE}'))
         auth0 = _mock_auth0_response(json_data={'access_token': token})
         with patch('utils.oauth._ledger.httpx.AsyncClient', return_value=auth0):

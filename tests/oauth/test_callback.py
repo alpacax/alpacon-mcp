@@ -604,7 +604,6 @@ def browser():
 
 
 def _start_flow(browser, client_state):
-    """Run /oauth/authorize as a client would and return the state Auth0 echoes."""
     response = browser.get(
         _AUTHORIZE_PATH,
         params={
