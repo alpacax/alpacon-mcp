@@ -311,7 +311,7 @@ An OAuth/browser caller must run infrastructure actions inside an active Work Se
 - `work_session_not_active`: the session exists but awaits human approval. Someone approves it in the Alpacon web console or Slack; then retry
 - `work_session_required`: open one with `work_session_create`, requesting only the scopes you need (`command`, `webftp`, `tunnel`)
 - `work_session_scope_not_allowed` / `work_session_server_not_allowed`: the session's scope or server list doesn't cover this call—`work_session_update` it, or open a session that does
-- `work_session_expired`: extend it with `work_session_extend`, or open a new one
+- `work_session_expired`: open a new one with `work_session_create`; an expired session cannot be extended
 - Pass the session explicitly as `work_session_id`, or set `ALPACON_WORK_SESSION` so tools pick it up by default
 
 ### 5a. Sudo needs approval
