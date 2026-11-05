@@ -74,7 +74,8 @@ def test_hook_refuses_a_command_that_runs_the_alpacon_cli(command):
     result = run_hook(command)
 
     assert result.returncode == 2
-    assert 'mcp__alpacon' in result.stderr
+    assert 'Alpacon MCP tool' in result.stderr
+    assert 'mcp__' not in result.stderr  # prefix-neutral across clients
 
 
 @pytest.mark.parametrize(
@@ -129,7 +130,8 @@ def test_hook_refuses_the_alpacon_cli_in_a_cursor_shell_event():
     result = run_cursor_hook('cd /tmp && alpacon server ls')
 
     assert result.returncode == 2
-    assert 'mcp__alpacon' in result.stderr
+    assert 'Alpacon MCP tool' in result.stderr
+    assert 'mcp__' not in result.stderr  # prefix-neutral across clients
 
 
 def test_hook_passes_a_cursor_shell_event_that_only_mentions_alpacon():
