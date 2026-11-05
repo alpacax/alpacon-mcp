@@ -34,7 +34,6 @@ All MCP tools follow a consistent response structure:
   "data": {
     "error": "HTTP Error",
     "status_code": 403,  // Actual API error code
-    "message": "Client error '403 Forbidden'...",
     "response": "Access denied"
   },
   "server_id": "server-uuid",

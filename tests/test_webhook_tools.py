@@ -122,7 +122,7 @@ async def test_webhook_http_error_envelope_returns_error(
     result = await tool(**tool_kwargs)
 
     assert result['status'] == 'error'
-    assert result['message'] == HTTP_ERROR_ENVELOPE['message']
+    assert result['message'].startswith('Failed to ')
     assert result['status_code'] == HTTP_ERROR_ENVELOPE['status_code']
     assert result['region'] == 'ap1'
     assert result['workspace'] == 'testworkspace'

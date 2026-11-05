@@ -1809,20 +1809,22 @@ class TestPurposeDemand:
 
     @pytest.mark.asyncio
     async def test_state_purpose_refusal_does_not_tell_the_agent_to_resubmit(
-        self, mock_http_client, mock_token_manager
+        self, mock_http_client, mock_token_manager, make_client
     ):
         # A settled command and a bystander's answer share one error code, so
         # the guidance cannot claim which happened—and must not send the agent
         # into a resubmission, which needs its own approval and may run twice.
+        refused = httpx.Response(
+            HTTPStatus.BAD_REQUEST, json={'code': 'command_purpose_not_demanded'}
+        )
+        client = make_client(httpx.MockTransport(lambda _: refused))
         with (
             patch('tools.command_tools._answer_purpose_demand') as mock_answer,
             patch('tools.command_tools._get_command_result') as mock_poll,
         ):
-            mock_answer.return_value = {
-                'error': 'HTTP Error',
-                'status_code': HTTPStatus.BAD_REQUEST,
-                'response': '{"code":"command_purpose_not_demanded"}',
-            }
+            mock_answer.return_value = await client.request(
+                'POST', 'https://ws.ap1.alpacon.io/api/events/commands/cmd-508/purpose/'
+            )
 
             result = await state_command_purpose(
                 command_id='cmd-508',
@@ -1831,7 +1833,10 @@ class TestPurposeDemand:
             )
 
         assert result['status'] == 'error'
+        assert result['status_code'] == HTTPStatus.BAD_REQUEST
+        assert result['error_code'] == 'command_purpose_not_demanded'
         assert 'Do not resubmit' in result['message']
+        assert 'check_command_status' in result['message']
         mock_poll.assert_not_called()
 
     @pytest.mark.asyncio

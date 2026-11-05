@@ -124,7 +124,7 @@ class TestGetApprovalRequest:
 
         assert result['status'] == 'error'
         assert result['status_code'] == HTTPStatus.NOT_FOUND
-        assert result['message'] == 'Not found'
+        assert result['message'].startswith('Failed to ')
 
 
 class TestApprovalDecisionIsHumanOnly:
@@ -207,7 +207,7 @@ class TestSudoPolicies:
 
         assert result['status'] == 'error'
         assert result['status_code'] == HTTPStatus.NOT_FOUND
-        assert result['message'] == 'Not found'
+        assert result['message'].startswith('Failed to ')
 
     @pytest.mark.asyncio
     async def test_list_sudo_policies_forwards_user_and_server_filters(
