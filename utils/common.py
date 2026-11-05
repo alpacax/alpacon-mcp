@@ -846,7 +846,8 @@ def unwrap_http_result(
     if hint is None:
         hint = refusal_hint(refusal.get('gate'), refusal.get('missing'))
     if hint is not None:
-        message = f'{message} {hint}'
+        separator = ' ' if message.endswith('.') else '. '
+        message = f'{message}{separator}{hint}'
 
     return remember_console_link(error_response(message, **error_kwargs), body)
 

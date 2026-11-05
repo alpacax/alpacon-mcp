@@ -141,6 +141,8 @@ def _detect_error_domain(
     message: str,
     tool_name: str | None = None,
     endpoint: str | None = None,
+    *,
+    server_scoped: bool = False,
 ) -> str:
     msg_lower = message.lower()
     tool_lower = (tool_name or '').lower()
@@ -166,7 +168,7 @@ def _detect_error_domain(
     # 404 message names the server while the alert hints are the useful ones.
     if 'alert' in msg_lower or 'alert' in tool_lower:
         return 'alert'
-    if 'server' in msg_lower or 'server' in tool_lower:
+    if 'server' in msg_lower or 'server' in tool_lower or server_scoped:
         return 'server'
     if 'user' in msg_lower or 'iam' in tool_lower:
         return 'user'
@@ -218,6 +220,8 @@ def get_recovery_hints(
     message: str = '',
     tool_name: str | None = None,
     endpoint: str | None = None,
+    *,
+    server_scoped: bool = False,
 ) -> dict[str, list[str]]:
     """Hints and related tools for an error, picked by status code and domain; both
     lists are empty when none match."""
@@ -227,7 +231,9 @@ def get_recovery_hints(
     if code is None:
         return {'recovery_hints': [], 'related_tools': []}
 
-    domain = _detect_error_domain(code, message, tool_name, endpoint)
+    domain = _detect_error_domain(
+        code, message, tool_name, endpoint, server_scoped=server_scoped
+    )
 
     # Try domain-specific first, then general fallback
     hints = _HINT_REGISTRY.get((code, domain))
@@ -279,6 +285,7 @@ def enrich_error_response(
         message=message,
         tool_name=tool_name,
         endpoint=endpoint,
+        server_scoped=response.get('server_id') is not None,
     )
 
     if hints['recovery_hints']:

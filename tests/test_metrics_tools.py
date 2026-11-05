@@ -141,7 +141,7 @@ class TestGetCpuUsage:
 
         assert result['status'] == 'error'
         assert result['status_code'] == HTTPStatus.NOT_FOUND
-        assert result['message'] == 'Not found'
+        assert result['message'].startswith('Failed to ')
 
     @pytest.mark.asyncio
     async def test_cpu_usage_no_token(self, mock_http_client, mock_token_manager):
@@ -423,7 +423,7 @@ class TestGetDiskIo:
 
         assert result['status'] == 'error'
         assert result['status_code'] == HTTPStatus.NOT_FOUND
-        assert result['message'] == 'Not found'
+        assert result['message'].startswith('Failed to ')
 
     @pytest.mark.parametrize('device', [None, ''])
     @pytest.mark.asyncio
@@ -711,7 +711,7 @@ class TestGetAlertRules:
 
         assert result['status'] == 'error'
         assert result['status_code'] == HTTPStatus.NOT_FOUND
-        assert result['message'] == 'Not found'
+        assert result['message'].startswith('Failed to ')
 
     @pytest.mark.asyncio
     async def test_alert_rules_no_token(self, mock_http_client, mock_token_manager):
@@ -823,7 +823,28 @@ class TestGetServerMetricsSummary:
         for metric_key in ['cpu', 'memory', 'disk', 'network']:
             assert metrics[metric_key]['available'] is False
         assert metrics['disk']['error'].startswith('Partition lookup failed: ')
-        assert metrics['network']['error'] == 'Interface lookup failed: Not found'
+        assert metrics['network']['error'].startswith('Interface lookup failed: ')
+
+    @pytest.mark.asyncio
+    async def test_metrics_summary_names_a_coded_refusal_with_no_hint(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {
+            'error': 'HTTP Error',
+            'status_code': HTTPStatus.FORBIDDEN,
+            'response': '{"code":"some_refusal"}',
+        }
+
+        result = await get_server_metrics_summary(
+            server_id=SERVER_ID, workspace='testworkspace'
+        )
+
+        assert result['status'] == 'success'
+        cpu = result['data']['metrics']['cpu']
+        assert cpu['available'] is False
+        assert cpu['status_code'] == HTTPStatus.FORBIDDEN
+        assert cpu['error_code'] == 'some_refusal'
+        assert cpu['error'] == 'Request failed'
 
 
 class TestServerMetricsSummaryLookups:
@@ -1195,7 +1216,7 @@ class TestServerMetricsSummaryLookups:
         assert '/api/metrics/realtime/traffic/' not in sent
         network = result['data']['metrics']['network']
         assert network['available'] is False
-        assert network['error'] == 'Interface lookup failed: Not found'
+        assert network['error'].startswith('Interface lookup failed: Request failed')
 
     @pytest.mark.asyncio
     async def test_summary_finds_an_interface_that_is_only_on_the_second_page(
@@ -1249,7 +1270,7 @@ class TestServerMetricsSummaryLookups:
         assert '/api/metrics/realtime/traffic/' not in sent
         assert (
             result['data']['metrics']['network']['error']
-            == 'Interface lookup failed: Not found'
+            == 'Interface lookup failed: Request failed - {"detail":"Not found."}'
         )
 
     @pytest.mark.asyncio

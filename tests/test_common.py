@@ -204,6 +204,19 @@ class TestUnwrapHttpResultGate:
         assert 'env' in out['message']
         assert 'audit log' in out['message']
 
+    def test_hint_starts_its_own_sentence_after_a_default_message(self):
+        envelope = {
+            'error': 'HTTP Error',
+            'status_code': HTTPStatus.BAD_REQUEST,
+            'response': '{"code":"command_inline_credential"}',
+        }
+
+        out = unwrap_http_result(envelope, default_message='Command execution failed')
+
+        assert out is not None
+        assert out['status_code'] == HTTPStatus.BAD_REQUEST
+        assert out['message'].startswith('Command execution failed. ')
+
     def test_unhinted_code_has_no_hint_text_appended(self):
         out = _unwrap_error(
             self._envelope('some_other_error'), default_message='failed'
@@ -968,7 +981,7 @@ class TestUnwrapHttpResultRefusalFields:
 
         assert out['status'] == 'error'
         assert out['hint'] == server_hint
-        assert out['message'] == f'HTTP 405 {server_hint}'
+        assert out['message'] == f'HTTP 405. {server_hint}'
         assert COMMAND_ACL_MOVED_HINT not in out['message']
 
     def test_server_hint_outranks_the_stdio_code_hint(self, monkeypatch):
@@ -984,7 +997,7 @@ class TestUnwrapHttpResultRefusalFields:
         )
 
         assert out['status_code'] == HTTPStatus.METHOD_NOT_ALLOWED
-        assert out['message'] == 'HTTP 405 Ask.'
+        assert out['message'] == 'HTTP 405. Ask.'
         assert COMMAND_ACL_MOVED_STDIO_HINT not in out['message']
 
     def test_stdio_code_hint_outranks_the_gate_hint(self, monkeypatch):
@@ -1001,7 +1014,7 @@ class TestUnwrapHttpResultRefusalFields:
 
         assert out['status_code'] == HTTPStatus.METHOD_NOT_ALLOWED
         assert out['gate'] == 'command_acl'
-        assert out['message'] == f'HTTP 405 {COMMAND_ACL_MOVED_STDIO_HINT}'
+        assert out['message'] == f'HTTP 405. {COMMAND_ACL_MOVED_STDIO_HINT}'
 
     def test_server_hint_replaces_the_local_gate_hint(self):
         out = _unwrap_error(
@@ -1009,7 +1022,7 @@ class TestUnwrapHttpResultRefusalFields:
             default_message='failed',
         )
 
-        assert out['message'] == 'HTTP 403 Ask.'
+        assert out['message'] == 'HTTP 403. Ask.'
         assert REFUSAL_GATE_HINT['role'] not in out['message']
 
     def test_next_rides_the_result_as_sent(self):
@@ -1051,7 +1064,7 @@ class TestUnwrapHttpResultRefusalFields:
             'status': 'error',
             'status_code': HTTPStatus.BAD_REQUEST,
             'error_code': 'command_inline_credential',
-            'message': f'HTTP 400 {INLINE_CREDENTIAL_HINT}',
+            'message': f'HTTP 400. {INLINE_CREDENTIAL_HINT}',
         }
 
     def test_unknown_and_malformed_fields_are_ignored(self):

@@ -291,6 +291,9 @@ async def _realtime_usage(
     return success_response(data=parsed_data, region=region, workspace=workspace)
 
 
+_REQUEST_FAILED = 'Request failed'  # the summary's label for a 4xx with no message
+
+
 @mcp_tool_handler(
     description='Get CPU utilization metrics for a server over a time range. Returns current, average, min, max usage percentage with health status. When to use: investigating performance issues or checking server load. Related: get_memory_usage (pair with CPU for full picture), get_server_metrics_summary (quick overview of all metrics), get_top_servers (compare across servers). Note: Defaults to the last 12 hours if no date range is specified; the realtime endpoint returns at most the last 12 hours.',
     annotations=READ_ONLY,
@@ -1126,7 +1129,7 @@ async def get_server_metrics_summary(
                 if 'response' in result:
                     error_info = {
                         'available': False,
-                        'error': f'{result.get("message", "Error")} - {result.get("response", "")}',
+                        'error': f'{result.get("message", _REQUEST_FAILED)} - {result.get("response", "")}',
                     }
                 else:
                     error_info = {
@@ -1136,7 +1139,7 @@ async def get_server_metrics_summary(
                 status_code = result.get('status_code')
                 if status_code is not None:
                     error_info['status_code'] = status_code
-                unwrapped = unwrap_http_result(result, default_message='')
+                unwrapped = unwrap_http_result(result, default_message=_REQUEST_FAILED)
                 if unwrapped is not None and 'error_code' in unwrapped:
                     error_info['error_code'] = unwrapped['error_code']
                     error_info['error'] = unwrapped.get('message', error_info['error'])

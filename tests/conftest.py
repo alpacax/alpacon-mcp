@@ -40,7 +40,7 @@ HTTP_VERBS = ('get', 'post', 'put', 'patch', 'delete')
 HTTP_ERROR_ENVELOPE = {
     'error': 'HTTP Error',
     'status_code': HTTPStatus.NOT_FOUND,
-    'message': 'Not found',
+    'response': '{"detail":"Not found."}',
 }
 
 # Any well-formed UUID: a public tool's decorator rejects any other server_id.
