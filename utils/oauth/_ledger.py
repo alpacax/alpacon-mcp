@@ -150,7 +150,6 @@ def _ledger_cookie_name(nonce_hash: str) -> str:
 
 
 def _pending_ledger_flows(request: Request) -> set[str]:
-    """Flow suffixes of the ledger flows whose grant is not staged yet."""
     nonce_prefix = f'{_NONCE_COOKIE_PREFIX}_'
     ledger_prefix = f'{_LEDGER_COOKIE_PREFIX}_'
     cookies = request.cookies
@@ -175,8 +174,8 @@ def _ledger_cookie_reservation(request: Request, ledger_org: str) -> int:
 
 
 def _ledger_cookie_fits(request: Request, sealed: str, nonce_hash: str) -> bool:
-    """Within this flow's slot and its even share of the header room left: authorize
-    requests sent at once can each pass, but their ledger callbacks see every flow."""
+    """Within this flow's slot and its even share of the header room left, so ledger
+    callbacks that start from one Cookie header stay within the limit together."""
     name = _ledger_cookie_name(nonce_hash)
     pending = _pending_ledger_flows(request) | {
         name.removeprefix(f'{_LEDGER_COOKIE_PREFIX}_')
