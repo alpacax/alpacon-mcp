@@ -282,11 +282,12 @@ async def _realtime_usage(
     if err:
         return err
 
+    statistics = parse_usage_metrics(metric, _metric_rows(_USAGE_ROWS, result))
     parsed_data = {
         'server_id': server_id,
         'metric_type': f'{metric.name.lower()}_usage',
-        'statistics': parse_usage_metrics(metric, _metric_rows(_USAGE_ROWS, result)),
-        'raw_data_available': True,
+        'statistics': statistics,
+        'raw_data_available': statistics['available'],
     }
     return success_response(data=parsed_data, region=region, workspace=workspace)
 
@@ -526,13 +527,14 @@ async def get_disk_usage(
         return err
 
     # Parse metrics for better readability
+    statistics = parse_disk_metrics(_metric_rows(_DISK_USAGE_ROWS, result))
     parsed_data = {
         'server_id': server_id,
         'metric_type': 'disk_usage',
         'device': device,
         'partition': partition,
-        'statistics': parse_disk_metrics(_metric_rows(_DISK_USAGE_ROWS, result)),
-        'raw_data_available': True,
+        'statistics': statistics,
+        'raw_data_available': statistics['available'],
     }
 
     return success_response(data=parsed_data, region=region, workspace=workspace)
@@ -769,12 +771,13 @@ async def get_network_traffic(
         return err
 
     # Parse metrics for better readability
+    statistics = parse_network_metrics(_metric_rows(_TRAFFIC_ROWS, result))
     parsed_data = {
         'server_id': server_id,
         'metric_type': 'network_traffic',
         'interface': interface,
-        'statistics': parse_network_metrics(_metric_rows(_TRAFFIC_ROWS, result)),
-        'raw_data_available': True,
+        'statistics': statistics,
+        'raw_data_available': statistics['available'],
     }
 
     return success_response(data=parsed_data, region=region, workspace=workspace)
