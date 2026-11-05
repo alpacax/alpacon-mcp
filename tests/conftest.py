@@ -18,10 +18,19 @@ from mcp.types import ClientCapabilities
 
 import server as server_module
 from server import mcp
-from utils import request_signal
+from utils import local_signal, request_signal
 from utils.auth import Auth0TokenVerifier
 from utils.client_surfaces import bind_tool_call_round
 from utils.http_client import AlpaconHTTPClient
+
+
+@pytest.fixture(autouse=True)
+def desktop_notifications(monkeypatch):
+    notifier = MagicMock()
+    monkeypatch.setattr(local_signal, 'notify', notifier)
+    monkeypatch.setattr(local_signal, '_limiter', local_signal.RateLimiter())
+    return notifier
+
 
 # The AlpaconHTTPClient methods a tool calls.
 HTTP_VERBS = ('get', 'post', 'put', 'patch', 'delete')

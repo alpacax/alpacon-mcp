@@ -14,7 +14,7 @@ from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.types import CallToolResult, TextContent, ToolAnnotations
 from pydantic import Field
 
-from utils import mfa_elicitation, mfa_step_up, token_manager
+from utils import local_signal, mfa_elicitation, mfa_step_up, token_manager
 from utils.auth import (
     WorkspaceClaim,
     get_token_workspaces,
@@ -40,6 +40,7 @@ from utils.error_handler import (
 )
 from utils.http_client import AlpaconHTTPClient, http_client
 from utils.logger import describe_for_log, get_logger
+from utils.notification_context import ConsoleLinks, capture_console_links
 from utils.recovery_hints import enrich_error_response
 from utils.types import JsonValue, ToolErrorResponse, ToolResult
 from utils.workspace_resolver import resolve_workspace
@@ -600,10 +601,24 @@ def with_error_handling[**P, R](
                 str(arguments.get('workspace', 'unknown')),
             )
 
+        def signalled(
+            outcome: ToolResult[R], console_links: ConsoleLinks | None
+        ) -> ToolResult[R]:
+            if local_signal.is_stdio():
+                local_signal.signal_result(
+                    outcome,
+                    call_arguments(*args, **kwargs),
+                    tool_name=func_name,
+                    console_links=console_links,
+                )
+            return outcome
+
         result: ToolResult[R] | None = None
         with mfa_step_up.tool_call() as call:
             if call is None:
-                return await answer(*args, **kwargs)
+                with capture_console_links(local_signal.is_stdio()) as console_links:
+                    result = await answer(*args, **kwargs)
+                return signalled(result, console_links)
             previous = mfa_elicitation.resumed()
             region, workspace = target() if previous is not None else ('', '')
             retry: mfa_step_up.Retry = 'whole'
@@ -614,12 +629,13 @@ def with_error_handling[**P, R](
                 source = previous[0]['source']
             else:
                 raised = False
-                try:
-                    result = await answer(*args, **kwargs)
-                except MfaStepUpRequired:
-                    raised = True
+                with capture_console_links(local_signal.is_stdio()) as console_links:
+                    try:
+                        result = await answer(*args, **kwargs)
+                    except MfaStepUpRequired:
+                        raised = True
                 if not call.required:
-                    return cast(ToolResult[R], result)
+                    return signalled(cast(ToolResult[R], result), console_links)
                 source = call.source
                 logger.info('%s needs an MFA step-up (source=%s)', func_name, source)
                 region, workspace = target()

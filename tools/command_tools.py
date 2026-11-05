@@ -38,6 +38,7 @@ from utils.host_transfer import (
     deadline_after,
 )
 from utils.http_client import http_client
+from utils.notification_context import remember_console_link
 from utils.tool_annotations import ADDITIVE, READ_ONLY
 from utils.types import (
     JsonValue,
@@ -1723,7 +1724,7 @@ def _settled_response(
                 shell_lane='command' in echo,
                 stdin_fed=stdin_fed,
             )
-            return response
+            return remember_console_link(response, result)
 
         # Refused commands never run, so fail fast instead of polling.
         case str() if status in _COMMAND_REFUSED:
