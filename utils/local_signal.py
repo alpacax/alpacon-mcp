@@ -33,6 +33,7 @@ logger = get_logger('local_signal')
 
 type SignalKind = Literal['denied', 'approval_pending', 'paused']
 type SignalTarget = Literal['command', 'file_transfer', 'work_session', 'sudo_policy']
+type PendingKey = tuple[SignalTarget, str, str, str]
 
 _stdio: ContextVar[bool] = ContextVar('local_signal_stdio', default=False)
 _tasks: set[asyncio.Task[None]] = set()
@@ -90,6 +91,7 @@ _ASSIGNMENT = re.compile(r'[A-Za-z_][A-Za-z0-9_]*=')
 _SESSION_ID = re.compile(r'[A-Za-z0-9_-]{1,64}')
 _WORD_SPACE = ' \t\n\r'
 _MAX_BODY = 256
+_PENDING_TTL = 10 * 60
 # Cloud console links use the built-in domain, never an inferred API parent.
 _CLOUD_BASE_DOMAIN = 'alpacon.io'
 
@@ -323,11 +325,9 @@ class Signal:
 class RateLimiter:
     def __init__(self) -> None:
         self._windows: OrderedDict[
-            tuple[str, SignalKind, str, str], tuple[float, int]
+            tuple[str, SignalKind, str, str], tuple[float, int, set[PendingKey]]
         ] = OrderedDict()
-        self._pending: OrderedDict[tuple[SignalTarget, str, str, str], None] = (
-            OrderedDict()
-        )
+        self._pending: OrderedDict[PendingKey, float] = OrderedDict()
 
     def take(
         self,
@@ -339,14 +339,16 @@ class RateLimiter:
         target: SignalTarget = 'command',
         pending_id: str = '',
     ) -> int | None:
+        now = monotonic()
+        while (
+            self._pending and now - next(iter(self._pending.values())) >= _PENDING_TTL
+        ):
+            self._pending.popitem(last=False)
+        pending_key = None
         if kind == 'approval_pending' and pending_id:
             pending_key = (target, pending_id, workspace, region)
             if pending_key in self._pending:
                 return None
-            self._pending[pending_key] = None
-            if len(self._pending) > 256:
-                self._pending.popitem(last=False)
-        now = monotonic()
         while (
             self._windows and now - next(iter(self._windows.values()))[0] > 24 * 60 * 60
         ):
@@ -354,14 +356,22 @@ class RateLimiter:
         key = (session_id[:128], kind, workspace, region)
         previous = self._windows.get(key)
         if previous is not None:
-            started, folded = previous
+            started, folded, folded_pending = previous
             if now - started < 60:
-                self._windows[key] = (started, folded + 1)
+                if pending_key is not None:
+                    if pending_key in folded_pending:
+                        return None
+                    folded_pending.add(pending_key)
+                self._windows[key] = (started, folded + 1, folded_pending)
                 return None
         else:
             folded = 0
-        self._windows[key] = (now, 0)
+        self._windows[key] = (now, 0, set())
         self._windows.move_to_end(key)
+        if pending_key is not None:
+            self._pending[pending_key] = now
+            if len(self._pending) > 256:
+                self._pending.popitem(last=False)
         return folded
 
 
@@ -558,6 +568,9 @@ def _from_result(
     session_id = _raw_string(result, 'work_session_id') or _raw_string(
         result, 'session_id'
     )
+    work_session_wait = result.get('category') == 'WORK_SESSION_PENDING'
+    if work_session_wait:
+        session_id = session_id or _raw_string(row, 'work_session_id')
     session_id = session_id or _raw_string(arguments, 'work_session_id')
     session_id = session_id or _raw_string(row, 'work_session')
     if tool_name.startswith('work_session_'):
@@ -569,7 +582,7 @@ def _from_result(
     if result.get('category') == 'SUDO_POLICY_REQUEST_PENDING':
         target = 'sudo_policy'
         pending_id = _raw_string(row, 'id') or _raw_string(result, 'request_id')
-    elif tool_name.startswith('work_session_'):
+    elif work_session_wait or tool_name.startswith('work_session_'):
         target = 'work_session'
         pending_id = session_id
     else:

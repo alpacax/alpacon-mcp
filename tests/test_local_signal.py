@@ -25,7 +25,11 @@ import server
 from tests.conftest import streamable_http_client
 from tools import command_tools
 from utils import local_signal, mfa_step_up
-from utils.common import WorkSessionGateCode, unwrap_http_result
+from utils.common import (
+    WorkSessionGateCode,
+    unwrap_http_result,
+    work_session_gate_response,
+)
 from utils.decorators import mcp_tool_handler, with_error_handling
 from utils.error_handler import MfaStepUpRequired
 from utils.http_client import http_client
@@ -1068,8 +1072,8 @@ def test_rate_state_expiration_key_cap_and_pruning(monkeypatch):
     limiter = local_signal.RateLimiter()
     limiter._windows.update(
         {
-            ('old', 'denied', '', ''): (0, 0),
-            ('folded', 'denied', '', ''): (0, 2),
+            ('old', 'denied', '', ''): (0, 0, set()),
+            ('folded', 'denied', '', ''): (0, 2, set()),
         }
     )
     assert limiter.take('new', 'denied') == 0
@@ -2244,8 +2248,8 @@ def test_pending_identity_cache_is_bounded_and_oldest_evicted(monkeypatch):
     monkeypatch.setattr(local_signal, 'monotonic', lambda: now[0])
     limiter = local_signal.RateLimiter()
     for index in range(256):
-        assert limiter.take('', 'approval_pending', pending_id=str(index)) == 0
-        now[0] += 60
+        assert limiter.take(str(index), 'approval_pending', pending_id=str(index)) == 0
+        now[0] += 1
     assert limiter.take('', 'approval_pending', pending_id='0') is None
     assert limiter.take('', 'approval_pending', pending_id='256') == 0
     now[0] += 60
@@ -2265,7 +2269,129 @@ def test_duplicate_pending_item_does_not_fold_or_suppress_denials(monkeypatch):
     assert limiter.take('', 'paused', pending_id='one') == 0
     now[0] = 60
     assert limiter.take('', 'approval_pending', pending_id='one') is None
+    assert limiter.take('', 'approval_pending', pending_id='two') == 1
     assert limiter.take('', 'approval_pending', pending_id='two') is None
+    assert limiter.take('', 'approval_pending', pending_id='three') is None
+    now[0] = 120
     assert limiter.take('', 'approval_pending', pending_id='three') == 1
     assert limiter.take('', 'denied', pending_id='one') == 0
     assert limiter.take('', 'paused', pending_id='one') == 0
+
+
+@pytest.mark.asyncio
+async def test_folded_pending_item_notifies_on_later_read(
+    monkeypatch, desktop_notifications
+):
+    now = [0.0]
+    monkeypatch.setattr(local_signal, 'monotonic', lambda: now[0])
+    with local_signal.stdio_transport():
+        for seconds, command_id in [
+            (0, 'cmd-A'),
+            (10, 'cmd-B'),
+            (70, 'cmd-B'),
+            (130, 'cmd-B'),
+        ]:
+            now[0] = seconds
+            local_signal.signal_result(
+                {'status': 'pending_approval', 'command_id': command_id},
+                {},
+                tool_name='check_command_status',
+            )
+    await drain_signals()
+    assert desktop_notifications.call_count == 2
+    assert desktop_notifications.call_args_list[1].args[1].endswith(' +1 more.')
+
+
+@pytest.mark.asyncio
+async def test_repeated_folded_pending_item_counts_once(
+    monkeypatch, desktop_notifications
+):
+    now = [0.0]
+    monkeypatch.setattr(local_signal, 'monotonic', lambda: now[0])
+    with local_signal.stdio_transport():
+        for seconds, command_id in [
+            (0, 'cmd-A'),
+            *[(10 + i, 'cmd-B') for i in range(5)],
+            (70, 'cmd-C'),
+        ]:
+            now[0] = seconds
+            local_signal.signal_result(
+                {'status': 'pending_approval', 'command_id': command_id},
+                {},
+                tool_name='check_command_status',
+            )
+    await drain_signals()
+    assert desktop_notifications.call_count == 2
+    assert desktop_notifications.call_args_list[1].args[1].endswith(' +1 more.')
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('expiry', [600, 601])
+async def test_announced_work_session_notifies_after_ten_minutes(
+    monkeypatch, desktop_notifications, expiry
+):
+    now = [0.0]
+    monkeypatch.setattr(local_signal, 'monotonic', lambda: now[0])
+    result = {'status': 'pending_approval', 'data': {'id': 'session-1'}}
+    with local_signal.stdio_transport():
+        local_signal.signal_result(result, {}, tool_name='work_session_get')
+        await drain_signals()
+        desktop_notifications.assert_called_once()
+        now[0] = 300
+        local_signal.signal_result(result, {}, tool_name='work_session_get')
+        await drain_signals()
+        desktop_notifications.assert_called_once()
+        now[0] = expiry
+        local_signal.signal_result(result, {}, tool_name='work_session_get')
+        now[0] += 1
+        local_signal.signal_result(result, {}, tool_name='work_session_get')
+    await drain_signals()
+    assert desktop_notifications.call_count == 2
+    assert all(
+        ' more.' not in call.args[1] for call in desktop_notifications.call_args_list
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('first_tool', ['execute_command', 'webftp_upload_file'])
+@pytest.mark.parametrize('session_source', ['result', 'row', 'argument', 'environment'])
+async def test_work_session_pending_through_other_tools_uses_session_identity(
+    monkeypatch, desktop_notifications, first_tool, session_source
+):
+    now = [0.0]
+    monkeypatch.setattr(local_signal, 'monotonic', lambda: now[0])
+    monkeypatch.setenv(
+        'ALPACON_WORK_SESSION',
+        'session-1' if session_source == 'environment' else 'fallback',
+    )
+    result = work_session_gate_response('work_session_not_active')
+    arguments = {'command': 'ls', 'work_session_id': 'argument-session'}
+    if session_source == 'result':
+        result['work_session_id'] = 'session-1'
+    elif session_source == 'row':
+        result['data'] = {'work_session_id': 'session-1'}
+    elif session_source == 'argument':
+        arguments['work_session_id'] = 'session-1'
+    else:
+        arguments.pop('work_session_id')
+    with local_signal.stdio_transport():
+        for seconds, tool_name in [
+            (0, first_tool),
+            (
+                70,
+                'webftp_upload_file'
+                if first_tool == 'execute_command'
+                else 'execute_command',
+            ),
+        ]:
+            now[0] = seconds
+            result['command_id'] = f'cmd-{seconds}'
+            original = json.dumps(result).encode()
+            local_signal.signal_result(result, arguments, tool_name=tool_name)
+            assert json.dumps(result).encode() == original
+    await drain_signals()
+    desktop_notifications.assert_called_once()
+    title, body, *_ = desktop_notifications.call_args.args
+    assert title == 'Alpacon: approval pending'
+    assert body.startswith('Work Session session-1 is waiting for approval.')
+    assert ' more.' not in body
