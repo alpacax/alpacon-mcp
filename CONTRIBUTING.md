@@ -194,6 +194,10 @@ async def test_list_servers_success():
 3. **MCP Protocol Tests**: Test MCP tool functionality
 4. **End-to-End Tests**: Test complete workflows
 
+### Plugin skill evals
+
+`plugins/alpacon/evals/` holds `claude plugin eval` cases for the `using-alpacon` skill. Their mock answers are the real tools' results for canned HTTP answers: after changing a tool's result or schema, run `python -m tests.eval_mocks` to rewrite them, and `pytest tests/test_plugin_evals.py` fails until you do. A grader can only watch a tool its case offers, and a mock file is what offers one. To run the cases (each run is a paid model call): `claude plugin eval plugins/alpacon --ablation none --threshold 0.67`.
+
 ## 🔧 Adding new features
 
 ### Adding new tools

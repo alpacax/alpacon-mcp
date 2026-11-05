@@ -1,0 +1,1 @@
+{"status": "success", "data": {"common_name": "web-01.acme.internal", "domain_list": ["web-01.acme.internal"], "ip_list": [], "valid_days": 90}, "region": "ap1", "workspace": "acme", "csr_id": "3f2a1b0c-9d8e-4f7a-b6c5-d4e3f2a1b0c9"}
