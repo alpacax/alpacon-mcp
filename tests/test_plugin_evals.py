@@ -1,6 +1,7 @@
 """The plugin's eval mocks stay what the tools return, and every guarded tool is offered."""
 
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -50,6 +51,18 @@ async def test_tools_json_holds_the_published_schema_of_every_mocked_tool():
 
     # Then they match
     assert on_disk == rendered, f'_tools.json drifted from the tools; {REGENERATE}'
+
+
+async def test_tools_json_refuses_a_mock_named_after_no_published_tool():
+    # Given a mock whose file name is not a published tool
+    stray = Mock(f'{SHARED}/no_such_tool.md', {}, MOCKS[0].call)
+
+    # When the schemas are rendered, then the name is reported, not dropped
+    with (
+        patch('tests.eval_mocks.MOCKS', [*MOCKS, stray]),
+        pytest.raises(ValueError, match='no_such_tool'),
+    ):
+        await render_tools_json()
 
 
 def test_every_mock_file_is_generated_or_listed_as_hand_written():

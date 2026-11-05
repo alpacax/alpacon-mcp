@@ -380,25 +380,22 @@ async def render(mock: Mock) -> str:
 async def render_tools_json() -> str:
     """`_tools.json`: the published schema of every tool some mock answers for."""
     names = {Path(m.path).stem for m in MOCKS} | {Path(p).stem for p in HAND_WRITTEN}
+    published = {tool.name: tool for tool in await mcp.list_tools()}
+    if unpublished := names - published.keys():
+        raise ValueError(f'mocks name no published tool: {sorted(unpublished)}')
     tools = []
-    for tool in await mcp.list_tools():
-        if tool.name in names:
-            dumped = tool.model_dump(mode='json', exclude_none=True, by_alias=True)
-            tools.append(
-                {
-                    k: dumped[k]
-                    for k in ('name', 'description', 'inputSchema', 'annotations')
-                    if k in dumped
-                }
-            )
-    return (
-        json.dumps(
-            {'tools': sorted(tools, key=lambda t: t['name'])},
-            indent=1,
-            ensure_ascii=False,
+    for name in sorted(names):
+        dumped = published[name].model_dump(
+            mode='json', exclude_none=True, by_alias=True
         )
-        + '\n'
-    )
+        tools.append(
+            {
+                k: dumped[k]
+                for k in ('name', 'description', 'inputSchema', 'annotations')
+                if k in dumped
+            }
+        )
+    return json.dumps({'tools': tools}, indent=1, ensure_ascii=False) + '\n'
 
 
 async def _write_all() -> None:
