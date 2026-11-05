@@ -24,7 +24,7 @@ from xml.sax.saxutils import escape
 
 import httpx
 
-from utils.common import _is_work_session_gate_code, resolve_work_session_id
+from utils.common import is_work_session_gate_code, resolve_work_session_id
 from utils.http_client import http_client
 from utils.logger import get_logger
 from utils.notification_context import ConsoleLinks
@@ -33,7 +33,7 @@ logger = get_logger('local_signal')
 
 type SignalKind = Literal['denied', 'approval_pending', 'paused']
 type SignalTarget = Literal['command', 'file_transfer', 'work_session', 'sudo_policy']
-type PendingKey = tuple[SignalTarget, str, str, str]
+type PendingKey = tuple[SignalKind, SignalTarget, str, str, str]
 
 _stdio: ContextVar[bool] = ContextVar('local_signal_stdio', default=False)
 _tasks: set[asyncio.Task[None]] = set()
@@ -345,8 +345,8 @@ class RateLimiter:
         ):
             self._pending.popitem(last=False)
         pending_key = None
-        if kind == 'approval_pending' and pending_id:
-            pending_key = (target, pending_id, workspace, region)
+        if kind in ('approval_pending', 'denied') and pending_id:
+            pending_key = (kind, target, pending_id, workspace, region)
             if pending_key in self._pending:
                 return None
         while (
@@ -364,6 +364,8 @@ class RateLimiter:
                     folded_pending.add(pending_key)
                 self._windows[key] = (started, folded + 1, folded_pending)
                 return None
+            if pending_key in folded_pending:
+                folded -= 1
         else:
             folded = 0
         self._windows[key] = (now, 0, set())
@@ -526,7 +528,7 @@ def _from_result(
         or _string(result, 'rejection_gate')
         or _string(row, 'rejection_gate')
     )
-    if not gate and isinstance(code, str) and _is_work_session_gate_code(code):
+    if not gate and isinstance(code, str) and is_work_session_gate_code(code):
         gate = 'work_session'
     cause = _string(result, 'rejection_cause') or _string(row, 'rejection_cause')
     missing = result.get('missing')

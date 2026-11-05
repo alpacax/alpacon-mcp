@@ -2147,6 +2147,84 @@ async def test_pending_command_polling_notifies_once(
     )
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'tool_name, result, arguments',
+    [
+        (
+            'execute_command',
+            {'status': 'rejected', 'gate': 'risk', 'command_id': 'cmd-1'},
+            {},
+        ),
+        (
+            'check_command_status',
+            {
+                'status': 'error',
+                'details': {'status': 'denied', 'rejection_gate': 'risk'},
+            },
+            {'command_id': 'cmd-1'},
+        ),
+        (
+            'webftp_upload_file',
+            {'status': 'rejected', 'gate': 'file_acl', 'data': {'id': 'transfer-1'}},
+            {},
+        ),
+    ],
+)
+async def test_denied_item_polling_notifies_once_until_expiry(
+    monkeypatch, desktop_notifications, tool_name, result, arguments
+):
+    now = [0.0]
+    monkeypatch.setattr(local_signal, 'monotonic', lambda: now[0])
+    original = json.dumps(result).encode()
+    with local_signal.stdio_transport():
+        for seconds in [0, 10, 20, 70, 599]:
+            now[0] = seconds
+            local_signal.signal_result(result, arguments, tool_name=tool_name)
+        await drain_signals()
+        desktop_notifications.assert_called_once()
+        now[0] = 600
+        local_signal.signal_result(result, arguments, tool_name=tool_name)
+        now[0] = 610
+        local_signal.signal_result(result, arguments, tool_name=tool_name)
+    await drain_signals()
+    assert desktop_notifications.call_count == 2
+    assert all(
+        ' more.' not in call.args[1] for call in desktop_notifications.call_args_list
+    )
+    assert json.dumps(result).encode() == original
+
+
+@pytest.mark.asyncio
+async def test_pending_then_denied_command_announces_both(
+    monkeypatch, desktop_notifications
+):
+    now = [0.0]
+    monkeypatch.setattr(local_signal, 'monotonic', lambda: now[0])
+    with local_signal.stdio_transport():
+        for seconds, status in [
+            (0, 'pending_approval'),
+            (10, 'rejected'),
+            (20, 'rejected'),
+            (70, 'rejected'),
+        ]:
+            now[0] = seconds
+            local_signal.signal_result(
+                {'status': status, 'command_id': 'cmd-1', 'gate': 'risk'},
+                {},
+                tool_name='check_command_status',
+            )
+            await drain_signals()
+    await drain_signals()
+    assert [call.args[0] for call in desktop_notifications.call_args_list] == [
+        'Alpacon: approval pending',
+        'Alpacon: command denied',
+    ]
+    assert all(
+        ' more.' not in call.args[1] for call in desktop_notifications.call_args_list
+    )
+
+
 def test_fold_suffix_survives_body_limit():
     signal = local_signal.Signal(
         'approval_pending',
@@ -2243,18 +2321,19 @@ async def test_pending_item_identity_and_workspace_scope(
     assert json.dumps(result).encode() == original
 
 
-def test_pending_identity_cache_is_bounded_and_oldest_evicted(monkeypatch):
+@pytest.mark.parametrize('kind', ['approval_pending', 'denied'])
+def test_pending_identity_cache_is_bounded_and_oldest_evicted(monkeypatch, kind):
     now = [0.0]
     monkeypatch.setattr(local_signal, 'monotonic', lambda: now[0])
     limiter = local_signal.RateLimiter()
     for index in range(256):
-        assert limiter.take(str(index), 'approval_pending', pending_id=str(index)) == 0
+        assert limiter.take(str(index), kind, pending_id=str(index)) == 0
         now[0] += 1
-    assert limiter.take('', 'approval_pending', pending_id='0') is None
-    assert limiter.take('', 'approval_pending', pending_id='256') == 0
+    assert limiter.take('', kind, pending_id='0') is None
+    assert limiter.take('', kind, pending_id='256') == 0
     now[0] += 60
-    assert limiter.take('', 'approval_pending', pending_id='0') == 0
-    assert limiter.take('', 'approval_pending', pending_id='256') is None
+    assert limiter.take('', kind, pending_id='0') == 0
+    assert limiter.take('', kind, pending_id='256') is None
     assert len(limiter._pending) == 256
 
 
@@ -2269,12 +2348,12 @@ def test_duplicate_pending_item_does_not_fold_or_suppress_denials(monkeypatch):
     assert limiter.take('', 'paused', pending_id='one') == 0
     now[0] = 60
     assert limiter.take('', 'approval_pending', pending_id='one') is None
-    assert limiter.take('', 'approval_pending', pending_id='two') == 1
+    assert limiter.take('', 'approval_pending', pending_id='two') == 0
     assert limiter.take('', 'approval_pending', pending_id='two') is None
     assert limiter.take('', 'approval_pending', pending_id='three') is None
     now[0] = 120
-    assert limiter.take('', 'approval_pending', pending_id='three') == 1
-    assert limiter.take('', 'denied', pending_id='one') == 0
+    assert limiter.take('', 'approval_pending', pending_id='three') == 0
+    assert limiter.take('', 'denied', pending_id='one') is None
     assert limiter.take('', 'paused', pending_id='one') == 0
 
 
@@ -2299,12 +2378,15 @@ async def test_folded_pending_item_notifies_on_later_read(
             )
     await drain_signals()
     assert desktop_notifications.call_count == 2
-    assert desktop_notifications.call_args_list[1].args[1].endswith(' +1 more.')
+    assert all(
+        ' more.' not in call.args[1] for call in desktop_notifications.call_args_list
+    )
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('kind', ['approval_pending', 'denied'])
 async def test_repeated_folded_pending_item_counts_once(
-    monkeypatch, desktop_notifications
+    monkeypatch, desktop_notifications, kind
 ):
     now = [0.0]
     monkeypatch.setattr(local_signal, 'monotonic', lambda: now[0])
@@ -2316,7 +2398,13 @@ async def test_repeated_folded_pending_item_counts_once(
         ]:
             now[0] = seconds
             local_signal.signal_result(
-                {'status': 'pending_approval', 'command_id': command_id},
+                {
+                    'status': 'pending_approval'
+                    if kind == 'approval_pending'
+                    else 'rejected',
+                    'gate': 'risk',
+                    'command_id': command_id,
+                },
                 {},
                 tool_name='check_command_status',
             )

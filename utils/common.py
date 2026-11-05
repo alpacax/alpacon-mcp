@@ -151,7 +151,7 @@ _WORK_SESSION_GATE_CODES: frozenset[str] = frozenset(
 )
 
 
-def _is_work_session_gate_code(code: str) -> TypeGuard[WorkSessionGateCode]:
+def is_work_session_gate_code(code: str) -> TypeGuard[WorkSessionGateCode]:
     return code in _WORK_SESSION_GATE_CODES
 
 
@@ -814,7 +814,7 @@ def unwrap_http_result(
     error_kwargs.update(refusal)
 
     code = http_error_code(result)
-    if code is not None and _is_work_session_gate_code(code):
+    if code is not None and is_work_session_gate_code(code):
         return remember_console_link(
             work_session_gate_response(code, **error_kwargs), body
         )
