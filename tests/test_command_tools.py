@@ -5,7 +5,7 @@ from collections.abc import Awaitable, Iterator
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 from typing import Protocol
-from unittest.mock import patch
+from unittest.mock import ANY, MagicMock, patch
 
 import httpx
 import pytest
@@ -35,6 +35,7 @@ from tools.command_tools import (
     _submit_command,
     _submit_file_execution,
     _sudo_denial,
+    check_command_status,
     execute_command,
     execute_command_multi_server,
     execute_file,
@@ -717,6 +718,31 @@ class TestExecuteCommand:
             assert result['status'] == 'error'
             assert result['error_type'] == 'timeout'
             assert 'timed out' in result['message']
+            assert result['command_id'] == 'cmd-123'
+            assert 'check_command_status' in result['next_action']
+            assert 'resubmission runs it again' in result['next_action']
+
+    @pytest.mark.asyncio
+    async def test_a_stuck_command_times_out_instead_of_failing(
+        self, mock_http_client, mock_token_manager
+    ):
+        with (
+            patch('tools.command_tools._submit_command', return_value={'id': 'cmd-st'}),
+            patch(
+                'tools.command_tools._get_command_result',
+                return_value={'id': 'cmd-st', 'status': 'stuck', 'handled_at': None},
+            ),
+        ):
+            result = await execute_command(
+                server_id=VALID_SERVER_ID,
+                command='sleep 900',
+                workspace='testworkspace',
+                timeout=1,
+            )
+
+        assert result['status'] == 'error'
+        assert result['error_type'] == 'timeout'
+        assert 'check_command_status' in result['next_action']
 
     @pytest.mark.asyncio
     async def test_acl_error(self, mock_http_client, mock_token_manager):
@@ -778,7 +804,7 @@ class TestExecuteCommand:
             assert result['data']['exit_code'] == 2
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize('status', ['stuck', 'denied', 'rejected'])
+    @pytest.mark.parametrize('status', ['denied', 'rejected'])
     async def test_terminal_failure_status(
         self, status, mock_http_client, mock_token_manager
     ):
@@ -834,7 +860,7 @@ class TestExecuteCommand:
             assert result['requires_human_approval'] is True
             assert result['command_id'] == 'cmd-402'
             # Category has a registered next_action (not the generic fallback).
-            assert 'list_commands' in result['next_action']
+            assert 'check_command_status' in result['next_action']
 
     @pytest.mark.asyncio
     async def test_forwards_all_params(self, mock_http_client, mock_token_manager):
@@ -1263,6 +1289,27 @@ class TestExecuteCommandGateTranslation:
 
         assert 'response' not in result
         assert 'details' not in result
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'submitted', [{'id': 'cmd-multi-2'}, [{'id': 'cmd-multi-2'}]]
+    )
+    async def test_an_accepted_entry_carries_its_command_id(
+        self, submitted, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = submitted
+
+        result = await execute_command_multi_server(
+            server_ids=[VALID_SERVER_ID], command='ls', workspace='testworkspace'
+        )
+
+        entry = result['deploy_shell_results'][VALID_SERVER_ID]
+        assert result['status'] == 'success'
+        assert entry == {
+            'status': 'success',
+            'data': submitted,
+            'command_id': 'cmd-multi-2',
+        }
 
 
 class TestExecuteCommandMultiServerGateTranslation:
@@ -1853,7 +1900,7 @@ class TestPurposeDemandWindow:
             f'If no purpose arrives by {expiry.isoformat()} '
             f'(about {result["deadline_seconds"]} s), the command is judged again '
             'without one: it runs, waits for a human approver (who is notified '
-            'then), or is refused. Read the result with list_commands; do not '
+            'then), or is refused. Read the result with check_command_status; do not '
             'resubmit.'
         ) in result['message']
 
@@ -1870,7 +1917,7 @@ class TestPurposeDemandWindow:
             f'If no purpose arrives by {expiry.isoformat()} (about 0 s), '
             'the command is judged again without one: it runs, waits for a '
             'human approver (who is notified then), or is refused. Read the '
-            'result with list_commands; do not resubmit.'
+            'result with check_command_status; do not resubmit.'
         ) in result['message']
 
     @pytest.mark.asyncio
@@ -1885,7 +1932,8 @@ class TestPurposeDemandWindow:
         assert 'deadline_at' not in result
         assert 'the command is judged again without one' in result['message']
         assert (
-            'Read the result with list_commands; do not resubmit.' in result['message']
+            'Read the result with check_command_status; do not resubmit.'
+            in result['message']
         )
 
     @pytest.mark.asyncio
@@ -5005,3 +5053,285 @@ async def test_parallel_rule_lives_on_the_parameter(tool_name, param, phrase, go
     # Then the parameter states the rule and the tool no longer does
     assert phrase in on_parameter
     assert gone not in on_tool
+
+
+class TestCheckCommandStatus:
+    """One GET by command_id that never waits and never resubmits."""
+
+    @staticmethod
+    async def _check(row: object) -> tuple[ToolResponse, MagicMock]:
+        with patch(
+            'tools.command_tools._get_command_result', return_value=row
+        ) as mock_poll:
+            result = await check_command_status(
+                command_id='cmd-s1', workspace='testworkspace', region='ap1'
+            )
+        return result, mock_poll
+
+    @pytest.mark.asyncio
+    async def test_a_finished_command_returns_its_row(
+        self, mock_http_client, mock_token_manager
+    ):
+        row = {
+            'id': 'cmd-s1',
+            'status': 'success',
+            'result': 'ok',
+            'handled_at': '2026-04-03T03:00:01Z',
+        }
+
+        result, _ = await self._check(row)
+
+        assert result['status'] == 'success'
+        assert result['data'] == row
+        assert result['command_id'] == 'cmd-s1'
+        assert 'server_id' not in result
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('status', ['running', 'queued', 'verifying'])
+    async def test_a_running_command_succeeds_with_a_message_and_one_read(
+        self, status, mock_http_client, mock_token_manager
+    ):
+        row = {'id': 'cmd-s1', 'status': status, 'handled_at': None}
+
+        result, mock_poll = await self._check(row)
+
+        assert result['status'] == 'success'
+        assert result['message'] == f'Command still {status}; check again shortly.'
+        assert 'check_command_status' in result['next_action']
+        assert result['data'] == row
+        mock_poll.assert_called_once_with(
+            command_id='cmd-s1', region='ap1', workspace='testworkspace', token=ANY
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_stuck_command_is_not_reported_as_a_failure(
+        self, mock_http_client, mock_token_manager
+    ):
+        row = {'id': 'cmd-s1', 'status': 'stuck', 'handled_at': None}
+
+        result, _ = await self._check(row)
+
+        assert result['status'] == 'success'
+        assert 'may still finish' in result['message']
+        assert 'Do not resubmit' in result['message']
+        assert 'check_command_status' in result['next_action']
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('row_status', [{}, {'status': 'archived'}])
+    async def test_an_unrecognized_status_is_not_called_running(
+        self, row_status, mock_http_client, mock_token_manager
+    ):
+        result, _ = await self._check(
+            {'id': 'cmd-s1', 'handled_at': None, **row_status}
+        )
+
+        assert result['status'] == 'success'
+        assert 'not one this tool recognizes' in result['message']
+        assert 'still' not in result['message']
+        assert 'check_command_status' in result['next_action']
+
+    @pytest.mark.asyncio
+    async def test_awaiting_approval_returns_the_pending_approval_shape(
+        self, mock_http_client, mock_token_manager
+    ):
+        row = {'id': 'cmd-s1', 'status': 'awaiting_approval', 'handled_at': None}
+
+        result, mock_poll = await self._check(row)
+
+        assert result['status'] == 'pending_approval'
+        assert result['category'] == 'COMMAND_AWAITING_APPROVAL'
+        assert result['requires_human_approval'] is True
+        assert result['command_id'] == 'cmd-s1'
+        assert 'check_command_status' in result['message']
+        assert mock_poll.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_awaiting_purpose_returns_purpose_required(
+        self, mock_http_client, mock_token_manager
+    ):
+        row = {'id': 'cmd-s1', 'status': 'awaiting_purpose', 'handled_at': None}
+
+        result, _ = await self._check(row)
+
+        assert result['status'] == 'purpose_required'
+        assert result['answerable_by_agent'] is True
+        assert result['command_id'] == 'cmd-s1'
+        assert 'state_command_purpose' in result['next_action']
+
+    @pytest.mark.asyncio
+    async def test_a_command_that_never_ran_is_an_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        row = {'id': 'cmd-s1', 'status': 'denied', 'handled_at': None}
+
+        result, _ = await self._check(row)
+
+        assert result['status'] == 'error'
+        assert result['message'] == 'Command failed with status: denied'
+        assert result['command_id'] == 'cmd-s1'
+
+    @pytest.mark.asyncio
+    async def test_a_script_body_refusal_keeps_its_error_code(
+        self, mock_http_client, mock_token_manager
+    ):
+        row = {
+            'id': 'cmd-s1',
+            'status': 'rejected',
+            'rejection_cause': 'use_file_execution',
+            'handled_at': None,
+        }
+
+        result, _ = await self._check(row)
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'use_file_execution'
+        assert 'execute_file' in result['next_action']
+
+    @pytest.mark.asyncio
+    async def test_an_http_error_is_an_error_result(
+        self, mock_http_client, mock_token_manager
+    ):
+        envelope = {
+            'error': 'HTTP Error',
+            'status_code': HTTPStatus.NOT_FOUND,
+            'response': '{"detail":"Not found."}',
+        }
+
+        result, mock_poll = await self._check(envelope)
+
+        assert result['status'] == 'error'
+        assert result['command_id'] == 'cmd-s1'
+        assert result['status_code'] == HTTPStatus.NOT_FOUND
+        assert mock_poll.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_a_non_object_body_is_an_error_result(
+        self, mock_http_client, mock_token_manager
+    ):
+        result, _ = await self._check(['unexpected'])
+
+        assert result['status'] == 'error'
+        assert 'Unexpected response format' in result['message']
+
+
+class TestExecuteCommandWithoutWaiting:
+    """wait=False submits once and hands back the command_id."""
+
+    @staticmethod
+    async def _submit(row: object, purpose: str | None = None):
+        with (
+            patch('tools.command_tools._submit_command', return_value=row) as submit,
+            patch('tools.command_tools._get_command_result') as poll,
+        ):
+            result = await execute_command(
+                server_id=VALID_SERVER_ID,
+                command='sleep 600',
+                workspace='testworkspace',
+                wait=False,
+                purpose=purpose,
+            )
+        return result, submit, poll
+
+    @pytest.mark.asyncio
+    async def test_it_returns_the_command_id_without_polling(
+        self, mock_http_client, mock_token_manager
+    ):
+        row = {'id': 'cmd-w1', 'status': 'queued', 'handled_at': None}
+
+        result, _, poll = await self._submit(row)
+
+        assert result['status'] == 'success'
+        assert result['command_id'] == 'cmd-w1'
+        assert result['data'] == row
+        assert result['server_id'] == VALID_SERVER_ID
+        assert result['command'] == 'sleep 600'
+        assert 'Do not resubmit' in result['message']
+        assert 'check_command_status' in result['message']
+        assert 'check_command_status' in result['next_action']
+        poll.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_it_declines_the_purpose_demand(
+        self, mock_http_client, mock_token_manager
+    ):
+        _, submit, _ = await self._submit({'id': 'cmd-w1'})
+
+        assert submit.call_args.kwargs['purpose_demand_supported'] is False
+
+    @pytest.mark.asyncio
+    async def test_a_denial_stamped_at_creation_is_an_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        row = {'id': 'cmd-w2', 'status': 'rejected', 'handled_at': None}
+
+        result, _, poll = await self._submit(row)
+
+        assert result['status'] == 'error'
+        assert result['message'].startswith('Command failed with status: rejected')
+        assert result['command_id'] == 'cmd-w2'
+        poll.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_a_hold_stamped_at_creation_returns_pending_approval(
+        self, mock_http_client, mock_token_manager
+    ):
+        row = {'id': 'cmd-w5', 'status': 'awaiting_approval', 'handled_at': None}
+
+        result, _, poll = await self._submit([row])
+
+        assert result['status'] == 'pending_approval'
+        assert result['command_id'] == 'cmd-w5'
+        assert result['server_id'] == VALID_SERVER_ID
+        poll.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_a_failed_submission_is_an_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        envelope = {
+            'error': 'HTTP Error',
+            'status_code': HTTPStatus.FORBIDDEN,
+            'response': '{"detail":"no"}',
+        }
+
+        result, _, poll = await self._submit(envelope)
+
+        assert result['status'] == 'error'
+        assert 'command_id' not in result
+        poll.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_an_overlong_purpose_is_still_flagged(
+        self, mock_http_client, mock_token_manager
+    ):
+        result, _, _ = await self._submit(
+            {'id': 'cmd-w3'}, purpose='x' * (PURPOSE_MAX_LENGTH + 1)
+        )
+
+        assert result['status'] == 'success'
+        assert result['purpose_truncated'] is True
+
+    @pytest.mark.asyncio
+    async def test_waiting_stays_the_default(
+        self, mock_http_client, mock_token_manager
+    ):
+        with (
+            patch('tools.command_tools._submit_command') as submit,
+            patch('tools.command_tools._get_command_result') as poll,
+        ):
+            submit.return_value = {'id': 'cmd-w4'}
+            poll.return_value = {
+                'id': 'cmd-w4',
+                'status': 'success',
+                'handled_at': '2026-04-03T03:00:01Z',
+            }
+            result = await execute_command(
+                server_id=VALID_SERVER_ID,
+                command='uptime',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+        assert result['data']['status'] == 'success'
+        assert submit.call_args.kwargs['purpose_demand_supported'] is True
+        poll.assert_called()

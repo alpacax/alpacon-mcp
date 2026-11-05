@@ -133,6 +133,8 @@ execute_command(
 
 The call waits for the result—up to `timeout` seconds (default 300). `list_commands(workspace, server_id=...)` shows recent history with status and output.
 
+For a command that may outlast the wait, pass `wait=False`: the call returns a `command_id` at once, and `check_command_status(command_id, workspace)` reads the result later without waiting. The same call recovers a command whose wait timed out; never resubmit it, since that runs it again.
+
 ### A script, verified by digest
 
 Anything longer than a one-off line goes as a file. `write_file=True` writes the script to the host and submits the same bytes in one call; the agent runs the on-disk file only if it hashes to what the reviewer saw.

@@ -10,11 +10,11 @@ import pytest
 from utils import auth0_env
 from utils.auth import _get_auth0_config, get_token_workspaces_with_dropped
 from utils.auth0_env import get_auth0_env
-from utils.oauth import (
+from utils.oauth._http import _get_oauth_config
+from utils.oauth._sealing import (
     _GRANT_SECRET_INFO,
     _STATE_SECRET_INFO,
     _get_grant_secret,
-    _get_oauth_config,
     _get_state_secret,
 )
 

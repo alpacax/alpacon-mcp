@@ -434,7 +434,7 @@ Search events by criteria.
 > ⚠️ **ACL configuration required**: Command API tools require pre-approved commands in your token's Access Control List (ACL). Configure permissions by clicking on your token in the Alpacon web interface → ACL settings.
 
 ### `execute_command`
-Execute a command on a server and wait for the result.
+Execute a command on a server and wait for the result, or with `wait: false` return its `command_id` at once.
 
 **Parameters:**
 - `server_id` (string): Server UUID
@@ -451,13 +451,18 @@ Execute a command on a server and wait for the result.
 - `work_session_id` (string, optional): Work Session to link the call to for audit; required for MCP OAuth and browser-login callers, optional for static API and service tokens; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
 - `purpose` (string, optional): What this particular command is for (ADR 0052). The assessor judges the command with it in hand, so one that would otherwise queue for a human may clear on its own. State a fact local to this host that the Work Session description does not already imply; general knowledge adds nothing the assessor lacks, and a purpose cannot lower a command's intrinsic risk. Trimmed to 2000 characters rather than refused, and the response then carries `purpose_truncated: true`
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
+- `wait` (boolean, default: true): `false` submits the command and returns its `command_id` at once without polling; read the result later with `check_command_status`
+
+**Detached mode:** with `wait: false` the response is `status: "success"` with `command_id`, the submitted row in `data`, a `message` saying not to resubmit, and a `next_action` naming `check_command_status`. A command the server refused at creation (an ACL denial, for one) still returns its error, and a submission that never produced an id returns the usual error. No purpose demand is opened, since nobody is waiting to answer it, so state `purpose` up front. A resubmission runs the command again.
+
+**Timeout:** a wait that ends before the command does returns `status: "error"` with `error_type: "timeout"`, `command_id`, and a `next_action` to call `check_command_status`; do not resubmit.
 
 **Held for its purpose:** when no `purpose` was stated and the gate holds the command, the response is
 `status: "purpose_required"` rather than a result. It carries `command_id`, `requires_human_approval: false`,
 `answerable_by_agent: true`, `purpose_guidance`, and—when the server reports the demand's expiry—
 `deadline_at`, the absolute ISO 8601 deadline, alongside `deadline_seconds`, the number of seconds left.
 If no purpose arrives by that deadline, the command is judged again without one: it runs, waits for a
-human approver (who is notified then), or is refused. Read the result with `list_commands`; do not resubmit.
+human approver (who is notified then), or is refused. Read the result with `check_command_status`; do not resubmit.
 No approval request exists during the purpose demand, so a client must not treat it as a pending
 approval: answer it with `state_command_purpose`. The window is the server's demand deadline, which `deadline_at` and `deadline_seconds` report.
 
@@ -624,8 +629,18 @@ the same `next_action` as on `execute_command`, naming that entry's server and a
 reminder to rerun only that server rather than the original target set.
 A rejected entry gains `rejection_hint` beside the row's own `rejection_cause` and `rejection_gate`, as described under `execute_command` (#242).
 
+### `check_command_status`
+Read one command's state and result by `command_id`, in a single call that never waits.
+
+**Parameters:**
+- `command_id` (string): The command, from an `execute_command` result or timeout error, or from an entry of `execute_command_multi_server`
+- `workspace` (string): Workspace name
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
+
+**Response:** the same shapes `execute_command` reports for the row: the result once the command has finished (`status: "success"`, the row in `data`), `pending_approval` while a human must approve it, `purpose_required` while the gate asks what it is for, and `status: "error"` for a command that was refused, including a `use_file_execution` refusal. A command that has not finished returns `status: "success"` with a `message` saying so, the row in `data`, and a `next_action` to check again. That includes `stuck`, which the server shows once the agent has not reported for over 10 minutes: the command may still finish, so it is not a failure and must not be resubmitted. The server and command line are not echoed, since the caller does not supply them; a finished or unfinished result carries the row in `data`, and an error carries it in `details`. It only reads: it never resubmits, cancels or approves anything.
+
 ### `execute_command_multi_server`
-Execute a command on multiple servers simultaneously.
+Execute a command on multiple servers simultaneously. The tool only submits: read each server's result with `check_command_status` and the `command_id` in that server's `deploy_shell_results` entry, or browse with `list_commands`. An accepted entry is `{status: "success", data, command_id}`, where `data` is the submission as the server returned it.
 
 **Parameters:**
 - `server_ids` (array): List of server IDs
@@ -642,7 +657,7 @@ Execute a command on multiple servers simultaneously.
 
 **Refused as a script body:** the `use_file_execution` refusal described under `execute_command`, which
 applies when the workspace approval policy blocks script bodies, is decided per server command after verification, so this tool's submit result never shows it and only
-some targets may be refused. Read it from `list_commands`, where each refused entry carries
+some targets may be refused. Read it from `check_command_status` with the `command_id` in that server's entry, or from `list_commands`, where each refused entry carries
 `error_code: "use_file_execution"` and a `next_action`. Rerun the script with `execute_file` on the
 refused servers only, with the same account: the file lane needs every target server to support it,
 so resubmitting the original target set can fail with `file_exec_unsupported_agent` on a server that
@@ -663,7 +678,7 @@ needed, or an error when it is denied.
 There is exactly one demand per command and it expires shortly, so a late or second answer is refused.
 Only the principal that submitted the command may answer. A settled command and an answer from the wrong
 principal share one server error, so a refusal cannot say which happened: read the command's state with
-`list_commands` rather than re-submitting it.
+`check_command_status` rather than re-submitting it.
 
 **Parameters:**
 - `command_id` (string): The held command, from the `purpose_required` response
