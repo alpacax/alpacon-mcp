@@ -33,6 +33,7 @@ from utils.oauth._http import (
 from utils.oauth._ledger import (
     _clear_ledger_cookie,
     _exchange_ledger_code,
+    _ledger_cookie_fits,
     _ledger_stage_url,
     _ledger_state,
     _set_ledger_cookie,
@@ -45,7 +46,6 @@ from utils.oauth._sealing import (
     _STAGE_REGULAR,
     _build_state,
     _clear_nonce_cookie,
-    _cookie_header_fits,
     _is_device_id,
     _nonce_cookie_matches,
     _refresh_nonce_cookie,
@@ -186,24 +186,36 @@ async def _complete_ledger_stage(
     elif code:
         grant = await _exchange_ledger_code(config, server_url, code, state.ledger_org)
     # A failure record stops the ledger tool from asking again at once.
-    staged = grant or LedgerGrant.failed(state.ledger_org)
-    sealed = seal_stage(key, staged, state.nonce_hash)
-    if not _cookie_header_fits(request, len(sealed)):
-        logger.warning('Ledger stage dropped its token: no room for the cookie')
-        sealed = seal_stage(key, LedgerGrant.failed(state.ledger_org), state.nonce_hash)
+    sealed = _sealed_stage_that_fits(
+        request, key, state, grant or LedgerGrant.failed(state.ledger_org)
+    )
 
     response = RedirectResponse(
         url=_final_stage_url(config, server_url, state),
         status_code=HTTPStatus.FOUND,
     )
     _refresh_nonce_cookie(request, response, state.nonce_hash)
-    _set_ledger_cookie(response, sealed, nonce_hash=state.nonce_hash)
+    if sealed:
+        _set_ledger_cookie(response, sealed, nonce_hash=state.nonce_hash)
     logger.info(
         'Ledger stage complete (token obtained: %s); redirecting to the '
         'regular audience',
         grant is not None,
     )
     return response
+
+
+def _sealed_stage_that_fits(
+    request: Request, key: bytes, state: _CallbackState, staged: LedgerGrant
+) -> str:
+    """The sealed grant, else its failure record when the token has no room, else
+    '': one cookie past the header limit would lock every live flow out."""
+    for grant in (staged, LedgerGrant.failed(state.ledger_org)):
+        sealed = seal_stage(key, grant, state.nonce_hash)
+        if _ledger_cookie_fits(request, sealed, state.nonce_hash):
+            return sealed
+        logger.warning('Ledger stage has no cookie room for its record')
+    return ''
 
 
 def _forward_auth0_error(

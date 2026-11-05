@@ -32,6 +32,7 @@ from utils.oauth._sealing import (
     _DEVICE_SCOPE_PREFIX,
     _FLOW_COOKIE_ATTRS,
     _STATE_TTL_SECONDS,
+    _cookie_header_fits,
     _flow_cookie_name,
     ledger_grant_key,
 )
@@ -138,6 +139,11 @@ async def _exchange_ledger_code(
 
 def _ledger_cookie_name(nonce_hash: str) -> str:
     return _flow_cookie_name(_LEDGER_COOKIE_PREFIX, nonce_hash)
+
+
+def _ledger_cookie_fits(request: Request, sealed: str, nonce_hash: str) -> bool:
+    added = f'; {_ledger_cookie_name(nonce_hash)}={sealed}'
+    return _cookie_header_fits(request, len(added))
 
 
 def _set_ledger_cookie(response: Response, sealed: str, *, nonce_hash: str) -> None:

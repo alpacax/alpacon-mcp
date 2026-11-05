@@ -71,6 +71,7 @@ from utils.ledger_grant import (
 from utils.oauth import ledger_grant_key, register_oauth_routes
 from utils.oauth._ledger import _ledger_cookie_name, _ledger_org
 from utils.oauth._sealing import (
+    _COOKIE_HEADER_LIMIT,
     _build_state,
     _hash_nonce,
     _open_seal,
@@ -446,6 +447,21 @@ class TestCallback:
         assert 'max-age=600' in refreshed[0].lower()
 
     def test_a_token_with_no_cookie_room_is_staged_as_a_failure(self, oauth):
+        oauth.cookies.set('unrelated', 'x' * 7000)
+        token = _jwt(ALICE, int(time.time()) + 600, padding='y' * 1000)
+        auth0 = _mock_auth0_response(json_data={'access_token': token})
+        with patch('utils.oauth._ledger.httpx.AsyncClient', return_value=auth0):
+            response = oauth.get(
+                '/oauth/callback',
+                params={
+                    'code': 'ledger-code',
+                    'state': _state(stage='ledger', ledger_org=WORKSPACE),
+                },
+                follow_redirects=False,
+            )
+        self._assert_failure_staged(response)
+
+    def test_no_ledger_cookie_is_set_when_even_a_failure_has_no_room(self, oauth):
         oauth.cookies.set('unrelated', 'x' * 7900)
         token = _jwt(ALICE, int(time.time()) + 600)
         auth0 = _mock_auth0_response(json_data={'access_token': token})
@@ -458,7 +474,35 @@ class TestCallback:
                 },
                 follow_redirects=False,
             )
-        self._assert_failure_staged(response)
+
+        assert response.status_code == HTTPStatus.FOUND
+        assert _query(response)['audience'] == OAUTH_ENV['AUTH0_ALPACON_USER_AUDIENCE']
+        assert LEDGER_COOKIE not in response.cookies
+
+    @pytest.mark.parametrize('padding', range(7000, 7950, 25))
+    def test_a_ledger_stage_never_pushes_the_cookie_header_past_the_limit(
+        self, remote_env, padding
+    ):
+        browser = _browser_client()
+        for name, value in (
+            (TEST_NONCE_COOKIE, TEST_NONCE),
+            ('unrelated', 'x' * padding),
+        ):
+            browser.cookies.set(name, value, domain='testserver.local')
+        token = _jwt(ALICE, int(time.time()) + 600, padding='y' * 1000)
+        auth0 = _mock_auth0_response(json_data={'access_token': token})
+        with patch('utils.oauth._ledger.httpx.AsyncClient', return_value=auth0):
+            browser.get(
+                '/oauth/callback',
+                params={
+                    'code': 'ledger-code',
+                    'state': _state(stage='ledger', ledger_org=WORKSPACE),
+                },
+                follow_redirects=False,
+            )
+
+        next_header = browser.build_request('GET', '/oauth/callback').headers['cookie']
+        assert len(next_header) <= _COOKIE_HEADER_LIMIT
 
     def test_a_relayed_auth0_error_clears_both_flow_cookies(self, oauth):
         response = oauth.get(
