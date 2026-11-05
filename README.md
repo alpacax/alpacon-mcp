@@ -10,7 +10,7 @@ An MCP (Model Context Protocol) server that connects AI assistants to Alpacon. E
 
 ## ✨ What is Alpacon MCP server?
 
-[Alpacon](https://www.alpacax.com/alpacon/) gives people and AI agents one identity for every server. The Alpacon MCP server puts an agent's work through the same controls a person's goes through. Alpacon checks each command at runtime and runs it, or holds it until a human approves it in the web console or Slack. A Work Session ties commands and file transfers to a stated reason, a set of servers, and an expiry. Alpacon records every action that goes through it for audit. Agents reach servers over Alpacon's outbound-only tunnels, with no VPN to join and no SSH keys to hand out.
+[Alpacon](https://www.alpacax.com/alpacon/) gives people and AI agents one identity for every server. The Alpacon MCP server puts an agent's work under the same controls that govern a person's work. Alpacon checks each command at runtime and runs it, or holds it until a human approves it in the web console or Slack. A Work Session ties commands and file transfers to a stated reason, a set of servers, and an expiry. Alpacon records every action that goes through it for audit. Agents reach servers over Alpacon's outbound-only tunnels, with no VPN to join and no SSH keys to hand out.
 
 ### 🎯 Key benefits
 
@@ -25,7 +25,7 @@ An MCP (Model Context Protocol) server that connects AI assistants to Alpacon. E
 ## 🌟 Core features
 
 ### 🔐 **Session-scoped control**
-- Work Sessions that scope every action to an approved, auditable window
+- Work Sessions that scope commands and file transfers to an approved, auditable window for OAuth and browser callers (static API and service tokens bypass the gate)
 - Authenticate once, access every authorized server
 - Role-based access control (RBAC) with time-limited permissions
 - Full audit trail for every AI operation
