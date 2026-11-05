@@ -667,8 +667,9 @@ def work_session_gate_response(
             )
         case 'work_session_expired':
             next_action = (
-                'The attached Work Session has expired. Extend it with '
-                'work_session_extend, or create a new one, then retry.'
+                'The attached Work Session has expired, and an expired session '
+                'cannot be extended. Create a new one with work_session_create, get '
+                'it approved, then retry.'
             )
         case 'work_session_scope_not_allowed':
             next_action = _SCOPE_NOT_ALLOWED_NEXT_ACTION

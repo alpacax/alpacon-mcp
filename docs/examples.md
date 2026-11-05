@@ -102,7 +102,7 @@ The gate answers in a structured way. Each code has one right move:
 | `work_session_required` | No session at all | `work_session_create` |
 | `work_session_scope_not_allowed` | Session lacks the scope this call needs | `work_session_update` to add it, or open a fitting session |
 | `work_session_server_not_allowed` | Server is outside the session | `work_session_update` the server list |
-| `work_session_expired` | Window closed | `work_session_extend`, or open a new session |
+| `work_session_expired` | Window closed | Open a new session with `work_session_create`; an expired session cannot be extended |
 | `work_session_assignee_mismatch` | Session belongs to someone else | Open your own |
 
 A sudo escalation can also come back as `status="pending_approval"` with `SUDO_APPROVAL_REQUIRED` or `SUDO_INTENT_DEVIATION`. An agent cannot approve its own request—`explain_approval_decision` states this and points at the human channel.

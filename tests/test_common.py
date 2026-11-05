@@ -118,6 +118,13 @@ class TestWorkSessionGateResponse:
         assert out['code'] == code
         assert out['next_action']
 
+    def test_expired_session_is_replaced_not_extended(self):
+        out = work_session_gate_response('work_session_expired')
+
+        assert 'work_session_create' in out['next_action']
+        assert 'cannot be extended' in out['next_action']
+        assert 'with work_session_extend' not in out['next_action']
+
     def test_kwargs_are_passed_through(self):
         out = work_session_gate_response(
             'work_session_required', region='ap1', workspace='ws'
