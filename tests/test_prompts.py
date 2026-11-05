@@ -49,11 +49,21 @@ async def test_guarded_execution_covers_intent_deviation():
 
 @pytest.mark.asyncio
 async def test_guarded_execution_names_both_denial_fields():
-    # pending_approval_response carries `category`, gate errors carry `code`.
-    # Naming only one sends the agent looking for a field that is not there.
+    # pending_approval_response carries `category`, Work Session gate errors carry
+    # `code`, and every other coded error carries `error_code`. Naming only some
+    # sends the agent looking for a field that is not there.
     text = await _render('guarded_execution', {'work_session_id': 'sess-123'})
-    assert '`code`' in text
+    assert '`code` on a Work Session gate refusal' in text
+    assert '`error_code` on any other `error` result' in text
     assert '`category`' in text
+
+
+@pytest.mark.asyncio
+async def test_guarded_execution_places_a_hard_sudo_denial_on_sudo_hint():
+    # SUDO_RISK_DENIED never appears as a pending_approval category.
+    text = await _render('guarded_execution', {'work_session_id': 'sess-123'})
+    assert '`sudo_hint` with no `sudo_denial`' in text
+    assert 'SUDO_RISK_DENIED' not in text
 
 
 @pytest.mark.asyncio
