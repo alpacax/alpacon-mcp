@@ -37,7 +37,6 @@ from utils.oauth._sealing import (
     _NONCE_COOKIE_BYTES,
     _NONCE_COOKIE_PREFIX,
     _STATE_TTL_SECONDS,
-    _cookie_header_fits,
     _flow_cookie_name,
     ledger_grant_key,
 )
@@ -150,27 +149,41 @@ def _ledger_cookie_name(nonce_hash: str) -> str:
     return _flow_cookie_name(_LEDGER_COOKIE_PREFIX, nonce_hash)
 
 
-def _ledger_cookie_reservation(request: Request, ledger_org: str) -> int:
-    """Room for every ledger cookie still to come. Authorize holds it, because ledger
-    callbacks that run at once each see only the Cookie header they started with."""
+def _pending_ledger_flows(request: Request) -> set[str]:
+    """Flow suffixes of the ledger flows whose grant is not staged yet."""
     nonce_prefix = f'{_NONCE_COOKIE_PREFIX}_'
     ledger_prefix = f'{_LEDGER_COOKIE_PREFIX}_'
     cookies = request.cookies
     staged = {
         n.removeprefix(ledger_prefix) for n in cookies if n.startswith(ledger_prefix)
     }
-    pending = sum(
-        name.startswith(nonce_prefix)
+    return {
+        name.removeprefix(nonce_prefix)
+        for name, value in cookies.items()
+        if name.startswith(nonce_prefix)
         and value.startswith(_LEDGER_NONCE_MARK)
         and name.removeprefix(nonce_prefix) not in staged
-        for name, value in cookies.items()
+    }
+
+
+def _ledger_cookie_reservation(request: Request, ledger_org: str) -> int:
+    """Room for every ledger cookie still to come. Authorize holds it, because ledger
+    callbacks that run at once each see only the Cookie header they started with."""
+    return _LEDGER_COOKIE_BYTES * (
+        len(_pending_ledger_flows(request)) + bool(ledger_org)
     )
-    return _LEDGER_COOKIE_BYTES * (pending + bool(ledger_org))
 
 
 def _ledger_cookie_fits(request: Request, sealed: str, nonce_hash: str) -> bool:
-    added = len(f'; {_ledger_cookie_name(nonce_hash)}={sealed}')
-    return added <= _LEDGER_COOKIE_BYTES and _cookie_header_fits(request, added)
+    """Within this flow's slot and its even share of the header room left: authorize
+    requests sent at once can each pass, but their ledger callbacks see every flow."""
+    name = _ledger_cookie_name(nonce_hash)
+    pending = _pending_ledger_flows(request) | {
+        name.removeprefix(f'{_LEDGER_COOKIE_PREFIX}_')
+    }
+    room = _COOKIE_HEADER_LIMIT - len(request.headers.get('cookie', ''))
+    added = len(f'; {name}={sealed}')
+    return added <= min(_LEDGER_COOKIE_BYTES, room // len(pending))
 
 
 def _set_ledger_cookie(response: Response, sealed: str, *, nonce_hash: str) -> None:

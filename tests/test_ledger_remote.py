@@ -1229,6 +1229,58 @@ class TestOverlappingLedgerFlows:
             delivered.append(grant.token)
         assert delivered == tokens
 
+    def test_ledger_flows_admitted_by_overlapping_authorizes_stay_within_the_limit(
+        self, browser
+    ):
+        first = _authorize(browser, f'openid ledger:{WORKSPACE}')
+        snapshot = browser.build_request('GET', '/oauth/authorize').headers['cookie']
+        overlapping = [
+            browser.get(
+                '/oauth/authorize',
+                params={
+                    'response_type': 'code',
+                    'redirect_uri': 'http://localhost:8080/callback',
+                    'scope': f'openid ledger:{WORKSPACE}',
+                    'state': 'client-state',
+                    **PKCE_PARAMS,
+                },
+                headers={'cookie': snapshot},
+                follow_redirects=False,
+            )
+            for _ in range(2)
+        ]
+        assert [r.status_code for r in overlapping] == [HTTPStatus.FOUND] * 2
+        header = browser.build_request('GET', '/oauth/callback').headers['cookie']
+
+        finals = []
+        for started in (first, *overlapping):
+            token = _jwt(ALICE, int(time.time()) + 600, padding='y' * 1500)
+            auth0 = _mock_auth0_response(json_data={'access_token': token})
+            with patch('utils.oauth._ledger.httpx.AsyncClient', return_value=auth0):
+                response = browser.get(
+                    '/oauth/callback',
+                    params={'code': 'ledger-code', 'state': _query(started)['state']},
+                    headers={'cookie': header},
+                    follow_redirects=False,
+                )
+            assert response.status_code == HTTPStatus.FOUND
+            finals.append(_query(response)['state'])
+
+        next_header = browser.build_request('GET', '/oauth/callback').headers['cookie']
+        assert len(next_header) <= _COOKIE_HEADER_LIMIT
+        for state in finals:
+            response = browser.get(
+                '/oauth/callback',
+                params={'code': 'final-code', 'state': state},
+                follow_redirects=False,
+            )
+            assert response.status_code == HTTPStatus.FOUND
+            opened = _open_seal('code', _query(response)['code'])
+            assert opened is not None
+            grant = open_grant(ledger_grant_key(), opened.ledger)
+            assert grant is not None
+            assert grant.is_failure
+
     def test_a_ledger_flow_past_the_reserved_room_waits_but_a_plain_one_starts(
         self, browser
     ):
