@@ -42,7 +42,7 @@ All MCP tools follow a consistent response structure:
 }
 ```
 
-> **Note**: A 4xx or 5xx answer is a top-level `"status": "error"`. `message` is the tool's own guidance, not the raw HTTP line, so branch on `status_code` and `error_code` rather than matching its text.
+> **Note**: This is the shape of a generic HTTP error. On a 4xx, `message` is the tool's own guidance, not the raw HTTP line. A 5xx, a timeout, or an `outcome_unknown` error keeps the client's message instead, such as `Server error after N attempts`. Either way, branch on `status_code` and `error_code` rather than matching the text. Work Session gate codes take a different shape: `work_session_not_active` returns `"status": "pending_approval"` with `"category": "WORK_SESSION_PENDING"`, and every other gate code returns `"status": "error"` with the code in `code`, not `error_code`, plus `next_action`.
 
 A request is retried with backoff after a 5xx, a timeout, or a network error, with one exception: a `POST` or `PATCH` is retried only when it never reached the server—no connection opened or came free from the pool, the proxy refused the tunnel, the URL scheme cannot be sent, or the server answered 503 `auth_verification_unavailable`, which it sends before any view runs. Once it may have reached the server (a read or write timeout, a broken connection, any other 5xx, or an unexpected error such as a 2xx whose body cannot be read), the tool's error comes back at once with `outcome_unknown: true` and no `recovery_hints`, because sending it again could repeat what it did. Check whether the write took effect before calling the tool again. An error without the field was not acted on, or came from a method that is safe to resend (#392).
 
