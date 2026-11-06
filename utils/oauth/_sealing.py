@@ -63,10 +63,21 @@ _DEVICE_ID_PATTERN = DEVICE_ID_PATTERN
 
 # The __Host- prefix makes the browser itself require Secure, Path=/ and no
 # Domain, so the cookie cannot be planted by a sibling host.
-_NONCE_COOKIE_NAME = '__Host-alpacon_oauth_nonce'
+_NONCE_COOKIE_PREFIX = '__Host-alpacon_oauth_nonce'
+
+# Long enough that two flows in one browser never share a cookie name.
+_FLOW_SUFFIX_CHARS = 16
+
+_MAX_LIVE_FLOWS = 8
+# Under nginx's default 8 KB header line, so a callback still reaches this server.
+_COOKIE_HEADER_LIMIT = 8000
+# Bounds `; <nonce cookie name>=<nonce>`, a ledger flow's marked nonce included.
+_NONCE_COOKIE_BYTES = 100
+# Leads a ledger flow's nonce, so authorize can count the grants still to be staged.
+_LEDGER_NONCE_MARK = 'ledger.'
 
 
-class _NonceCookieAttrs(TypedDict):
+class _FlowCookieAttrs(TypedDict):
     path: Literal['/']
     secure: Literal[True]
     httponly: bool
@@ -75,7 +86,7 @@ class _NonceCookieAttrs(TypedDict):
 
 # Shared by set and delete: a delete without Path or Secure misses a __Host- cookie,
 # which then survives. Lax, since Strict drops it on the top-level return from Auth0.
-_NONCE_COOKIE_ATTRS: _NonceCookieAttrs = {
+_FLOW_COOKIE_ATTRS: _FlowCookieAttrs = {
     'path': '/',
     'secure': True,
     'httponly': True,
@@ -195,9 +206,10 @@ def _state_str(state_data: dict[str, object], key: str) -> str:
     return value if isinstance(value, str) else ''
 
 
-def _mint_nonce() -> str:
+def _mint_nonce(*, ledger: bool = False) -> str:
     """Mint the per-flow value that proves a callback reached the same browser."""
-    return secrets.token_urlsafe(32)
+    nonce = secrets.token_urlsafe(32)
+    return f'{_LEDGER_NONCE_MARK}{nonce}' if ledger else nonce
 
 
 def _hash_nonce(nonce: str) -> str:
@@ -205,21 +217,60 @@ def _hash_nonce(nonce: str) -> str:
     return base64.urlsafe_b64encode(hashlib.sha256(nonce.encode()).digest()).decode()
 
 
+def _flow_cookie_name(prefix: str, nonce_hash: str) -> str:
+    """A per-flow name, so a second authorize in the same browser leaves the first
+    flow's cookies alone; the signed state's nonce_hash names the flow."""
+    digest = hashlib.sha256(nonce_hash.encode()).hexdigest()
+    return f'{prefix}_{digest[:_FLOW_SUFFIX_CHARS]}'
+
+
+def _nonce_cookie_name(nonce_hash: str) -> str:
+    return _flow_cookie_name(_NONCE_COOKIE_PREFIX, nonce_hash)
+
+
 def _set_nonce_cookie(response: Response, nonce: str) -> None:
     response.set_cookie(
-        _NONCE_COOKIE_NAME, nonce, max_age=_STATE_TTL_SECONDS, **_NONCE_COOKIE_ATTRS
+        _nonce_cookie_name(_hash_nonce(nonce)),
+        nonce,
+        max_age=_STATE_TTL_SECONDS,
+        **_FLOW_COOKIE_ATTRS,
     )
 
 
-def _clear_nonce_cookie(response: Response) -> None:
-    response.delete_cookie(_NONCE_COOKIE_NAME, **_NONCE_COOKIE_ATTRS)
+def _refresh_nonce_cookie(
+    request: Request, response: Response, nonce_hash: str
+) -> None:
+    """Re-set the cookie so its expiry tracks the next stage's fresh state."""
+    # Only past _nonce_cookie_matches, which saw this cookie non-empty.
+    _set_nonce_cookie(response, request.cookies[_nonce_cookie_name(nonce_hash)])
+
+
+def _clear_nonce_cookie(response: Response, nonce_hash: str) -> None:
+    response.delete_cookie(_nonce_cookie_name(nonce_hash), **_FLOW_COOKIE_ATTRS)
+
+
+def _cookie_header_fits(request: Request, added_bytes: int) -> bool:
+    size = len(request.headers.get('cookie', ''))
+    return size + added_bytes <= _COOKIE_HEADER_LIMIT
+
+
+def _has_room_for_a_flow(request: Request, reserved_bytes: int) -> bool:
+    """Live flows keep their cookies, so a full browser is refused a new flow until
+    one finishes or expires; reserved_bytes keeps room for ledger cookies to come."""
+    prefix = f'{_NONCE_COOKIE_PREFIX}_'
+    live = sum(name.startswith(prefix) for name in request.cookies)
+    return live < _MAX_LIVE_FLOWS and _cookie_header_fits(
+        request, _NONCE_COOKIE_BYTES + reserved_bytes
+    )
 
 
 def _nonce_cookie_matches(request: Request, state_data: dict[str, object]) -> bool:
     """Fail closed: a state with no binding, or a browser with no cookie, is a no."""
     expected = _state_str(state_data, 'nonce_hash')
-    nonce = request.cookies.get(_NONCE_COOKIE_NAME, '')
-    if not expected or not nonce:
+    if not expected:
+        return False
+    nonce = request.cookies.get(_nonce_cookie_name(expected), '')
+    if not nonce:
         return False
     # Compare bytes: compare_digest raises TypeError on non-ASCII str input.
     return hmac.compare_digest(expected.encode(), _hash_nonce(nonce).encode())

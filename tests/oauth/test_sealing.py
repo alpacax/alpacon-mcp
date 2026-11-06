@@ -4,6 +4,7 @@ import base64
 import hashlib
 import hmac
 import json
+import re
 import time
 from unittest.mock import patch
 
@@ -21,10 +22,11 @@ from tests.oauth._support import (
     _state_payload,
 )
 from utils.oauth import register_oauth_routes, request_state_key
+from utils.oauth._ledger import _ledger_cookie_name
 from utils.oauth._sealing import (
     _GRANT_SECRET_ENV,
     _GRANT_SECRET_INFO,
-    _NONCE_COOKIE_NAME,
+    _NONCE_COOKIE_BYTES,
     _SEAL_KIND_CODE,
     _SEAL_KIND_REFRESH,
     _STAGE_MFA,
@@ -37,6 +39,7 @@ from utils.oauth._sealing import (
     _hash_nonce,
     _mint_device_id,
     _mint_nonce,
+    _nonce_cookie_name,
     _open_seal,
     _seal_code,
     _seal_refresh_token,
@@ -201,6 +204,14 @@ class TestNonceHelpers:
     def test_mint_nonce_is_long_enough_to_resist_guessing(self):
         assert len(_mint_nonce()) >= 32
 
+    @pytest.mark.parametrize('ledger', [False, True])
+    def test_a_nonce_cookie_fits_the_bytes_authorize_reserves_for_it(self, ledger):
+        nonce = _mint_nonce(ledger=ledger)
+
+        added = f'; {_nonce_cookie_name(_hash_nonce(nonce))}={nonce}'
+
+        assert len(added) <= _NONCE_COOKIE_BYTES
+
     def test_hash_nonce_is_stable_for_the_same_input(self):
         assert _hash_nonce('abc') == _hash_nonce('abc')
 
@@ -211,8 +222,20 @@ class TestNonceHelpers:
         expected = base64.urlsafe_b64encode(hashlib.sha256(b'abc').digest()).decode()
         assert _hash_nonce('abc') == expected
 
-    def test_nonce_cookie_name_carries_the_host_prefix(self):
-        assert _NONCE_COOKIE_NAME == '__Host-alpacon_oauth_nonce'
+    def test_nonce_cookie_name_is_a_host_cookie_named_for_its_flow(self):
+        name = _nonce_cookie_name(_hash_nonce('abc'))
+        assert re.fullmatch(r'__Host-alpacon_oauth_nonce_[0-9a-f]{16}', name)
+        assert name == _nonce_cookie_name(_hash_nonce('abc'))
+
+    def test_ledger_cookie_name_is_a_host_cookie_named_for_its_flow(self):
+        name = _ledger_cookie_name(_hash_nonce('abc'))
+        assert re.fullmatch(r'__Host-alpacon_ledger_grant_[0-9a-f]{16}', name)
+        assert name != _ledger_cookie_name(_hash_nonce('abd'))
+
+    def test_nonce_cookie_name_differs_per_flow(self):
+        assert _nonce_cookie_name(_hash_nonce('abc')) != _nonce_cookie_name(
+            _hash_nonce('abd')
+        )
 
 
 class TestStateEnvelope:

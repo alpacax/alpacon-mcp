@@ -3,7 +3,7 @@
 import os
 import re
 from typing import TypeGuard
-from urllib.parse import urlparse
+from urllib.parse import ParseResult, urlparse
 
 from utils.logger import escape_for_log
 from utils.oauth._http import logger
@@ -84,11 +84,20 @@ def _is_redirect_uri_report_only() -> bool:
     return os.getenv(_ENV_REDIRECT_URI_REPORT_ONLY, '').lower() == 'true'
 
 
+def _parse_redirect_uri(url: str) -> ParseResult | None:
+    """Parse a client-supplied URI; None when urlparse refuses it (an unbalanced
+    IPv6 bracket), so every predicate rejects it instead of raising."""
+    try:
+        return urlparse(url)
+    except ValueError:
+        return None
+
+
 def _is_allowed_redirect_host(url: str) -> bool:
     """Whether the URL is https on an allowlisted host; not sufficient alone, see
     _is_allowed_redirect_uri."""
-    parsed = urlparse(url)
-    if parsed.scheme != 'https':
+    parsed = _parse_redirect_uri(url)
+    if parsed is None or parsed.scheme != 'https':
         return False
 
     return (parsed.hostname or '') in _get_allowed_redirect_domains()
@@ -97,8 +106,8 @@ def _is_allowed_redirect_host(url: str) -> bool:
 def _is_exact_allowed_redirect_uri(url: str) -> bool:
     """Whether the URL is a pinned https callback endpoint without query or fragment;
     it bypasses the host allowlist, so the https check lives here too."""
-    parsed = urlparse(url)
-    if parsed.scheme != 'https' or parsed.query or parsed.fragment:
+    parsed = _parse_redirect_uri(url)
+    if parsed is None or parsed.scheme != 'https' or parsed.query or parsed.fragment:
         return False
 
     if url in _get_allowed_redirect_uris():
@@ -126,7 +135,9 @@ def _is_allowed_redirect_uri(url: str) -> bool:
     if _is_exact_allowed_redirect_uri(url):
         return True
 
-    parsed = urlparse(url)
+    parsed = _parse_redirect_uri(url)
+    if parsed is None:
+        return False
     if (parsed.hostname or '') in _ALLOWED_LOOPBACK_HOSTS:
         return parsed.scheme in ('http', 'https')
 

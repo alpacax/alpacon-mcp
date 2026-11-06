@@ -7,6 +7,7 @@ from unittest.mock import patch
 from tests.oauth._support import (
     EVIL_REDIRECT_URI,
     LISTED_REDIRECT_URI,
+    MALFORMED_REDIRECT_URI,
     REPORT_ONLY,
     TEST_CLIENT_ID,
     UNLISTED_PATH_URI,
@@ -185,6 +186,17 @@ class TestOAuthRegister:
             _REGISTER_PATH,
             content=json.dumps(
                 {'redirect_uris': [LISTED_REDIRECT_URI, EVIL_REDIRECT_URI]}
+            ).encode(),
+            headers={'content-type': _JSON_CONTENT_TYPE},
+        )
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert response.json()['error'] == 'invalid_redirect_uri'
+
+    def test_register_rejects_an_unparseable_redirect_uri(self, oauth_app):
+        response = oauth_app.post(
+            _REGISTER_PATH,
+            content=json.dumps(
+                {'redirect_uris': [LISTED_REDIRECT_URI, MALFORMED_REDIRECT_URI]}
             ).encode(),
             headers={'content-type': _JSON_CONTENT_TYPE},
         )
