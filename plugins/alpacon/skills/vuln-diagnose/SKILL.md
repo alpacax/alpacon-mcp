@@ -5,20 +5,20 @@ description: Find which Alpacon servers are affected by a vulnerability by readi
 
 # Diagnose a vulnerability
 
-Answer one question per server: is the installed software older than the fixed version? This skill only reads. Follow the `using-alpacon` skill for workspaces, server UUIDs, Work Sessions, and approvals.
+Answer one question per server: is the installed software older than the fixed version? This skill only reads. Follow the `using-alpacon` skill for workspaces, server UUIDs, Work Sessions, approvals, and multi-server results.
 
 ## Inputs
 
 - The CVE or advisory, and its vendor advisory.
 - The install method, which picks the reference file below.
-- The fixed version for each distribution release or release line in the advisory, or the fixing commit. Vendors often fix several lines at once (`0.53.x` and `0.54.x`), so compare an install with the fix for its own line. A release or line the advisory does not list has no fixed version to compare with.
+- The fixed version for each distribution release or release line in the advisory, or the fixing commit. Vendors often fix several lines at once (`0.53.x` and `0.54.x`), so compare an install with the fix for its own line.
 - Optionally, a check command the person wrote.
 
 If the fixed version is missing or comes only from a secondary source, ask for the vendor advisory before running anything: a wrong fixed version turns every verdict wrong at once.
 
 ## Steps
 
-1. Call `list_servers` and keep the candidates whose `os_name` and `os_version` the advisory covers. A server with `is_connected: false` is `unknown` (offline) and gets no command. A Windows server is `unknown` (unsupported): the checks below are POSIX shell.
+1. Call `list_servers` and keep the candidates in the OS families the advisory covers (Ubuntu and Debian for a USN or DSA, the RHEL family for an RHSA). Keep a candidate whose release the advisory does not list; the check reports it `unknown`, so it stays in the report instead of vanishing. A server with `is_connected: false` is `unknown` (offline) and gets no command. A Windows server is `unknown` (unsupported): the checks below are POSIX shell.
 2. Read the reference file for the install method and build the check command from it:
    - Distribution package, including the kernel: [distro-package.md](references/distro-package.md)
    - pip or npm package: [language-package.md](references/language-package.md)
@@ -27,17 +27,19 @@ If the fixed version is missing or comes only from a secondary source, ask for t
    - Source build: [source-build.md](references/source-build.md)
    - The person's own check command: [custom-check.md](references/custom-check.md)
 3. Show the person the exact command and the servers it will run on, and wait for them to agree. It runs as written on every server, so they should see it first.
-4. Run it once with `execute_command_multi_server`, passing a `purpose` that names the CVE and says the command only reads a version. Read every server's entry: an accepted one carries a `command_id`; read its output with `check_command_status`. A refused or `pending_approval` entry is handled as `using-alpacon` describes, never by resending the whole call.
-5. Turn each server's output into a verdict, as the reference file says.
+4. Run each check command once across its servers with `execute_command_multi_server`, with a `purpose` that names the CVE and says the command only reads a version, and read each server's result as `using-alpacon`'s fleet reference describes.
+5. Turn each server's output into a verdict.
 
 ## Verdicts
 
-- `affected`: the installed version is older than the fixed version, or the fixing commit is missing.
+- `affected`: the installed version is older than the fixed version, or the fixing commit is missing. Keep the check's `reason`: `reboot-pending` means a fixed kernel is installed but not running.
 - `not_affected`: the software is not installed, or the installed version is the fixed version or newer.
-- `unknown`: anything else. Say why: offline, unsupported OS, command refused or failed, output that does not parse, a release the advisory does not list, or the software running inside a container that the host cannot see into.
+- `unknown`: anything else, with the reason: offline, unsupported OS, command refused or failed, output that does not parse, a release the advisory does not list, or software inside a container the host cannot see into.
 
-Never fold `unknown` into `not_affected`. A server nobody could check is a server nobody knows is safe, and the report is the only place the person learns that.
+When a check prints `installed=` and leaves the comparison to you, compare release numbers numerically (`1.10.0` is newer than `1.9.3`). A pre-release, a local version (`+cu121`), or anything you cannot order with certainty is `unknown`, with the version in the reason.
+
+Never fold `unknown` into `not_affected`: a server nobody could check is a server nobody knows is safe.
 
 ## Report
 
-A table with one row per candidate server: name, UUID, OS and release, installed version, verdict, and the reason for every `unknown`. Hand the `affected` rows to `vuln-remediate` when patching follows.
+A table with one row per candidate server: name, UUID, OS and release, installed version, verdict, and the reason for every `unknown` and every `reboot-pending`. When patching follows, hand the `affected` rows to `vuln-remediate`, except `reboot-pending` ones, which need only a reboot by a person.

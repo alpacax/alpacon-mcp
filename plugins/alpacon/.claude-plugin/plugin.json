@@ -1,7 +1,7 @@
 {
   "name": "alpacon",
   "displayName": "Alpacon",
-  "description": "Let AI agents operate your infrastructure under your control. Connects the agent to Alpacon, which checks each command at runtime, holds risky ones for human approval, and records them for audit. A bundled skill and hook keep the agent on Alpacon's MCP tools.",
+  "description": "Let AI agents operate your infrastructure under your control. Connects the agent to Alpacon, which checks each command at runtime, holds risky ones for human approval, and records them for audit. Bundled skills keep the agent on Alpacon's MCP tools and walk it through patching a vulnerability; a hook refuses the alpacon CLI.",
   "author": {
     "name": "AlpacaX",
     "email": "support@alpacon.io",

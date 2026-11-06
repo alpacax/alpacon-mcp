@@ -1,18 +1,19 @@
 ---
 name: vuln-remediate
-description: Apply a vulnerability fix to Alpacon servers by running one reviewed recipe script with execute_file—first on a single server, then on the rest—inside an approved Work Session. Use when someone wants affected servers upgraded or patched ("upgrade openssh on the affected servers", "apply the PHP fix to web-01 to web-12", "run the patch recipe"), usually after vuln-diagnose and as the second step of vuln-patch. Does not restart services, reboot, or redeploy containers.
+description: Apply a vulnerability fix to Alpacon servers by running one reviewed recipe script with execute_file—first on a single server, then on the rest—inside an approved Work Session. Use when someone wants affected servers upgraded or patched ("upgrade openssh on the affected servers", "apply the PHP fix to web-01 to web-12", "run the patch recipe"), usually after vuln-diagnose and as the second step of vuln-patch. Runs no restart, reboot, or container redeploy itself.
 ---
 
 # Remediate a vulnerability
 
-Run one recipe, unchanged, on each target server, and stop at the first failure. Follow the `using-alpacon` skill for Work Sessions, approvals, `pending_approval` results, and `execute_file` refusals; this skill does not repeat those rules.
+Run one recipe, unchanged, on each target server. The first server is the test: nothing else runs until it has finished and shows the fixed version. Follow the `using-alpacon` skill for Work Sessions, approvals, `pending_approval` and `outcome_unknown` results, and `execute_file` refusals.
 
 ## Inputs
 
+- The CVE, the package, and the fixed version for each release, as `vuln-diagnose` used them. Step 4 needs them to judge the first run.
 - The target servers, normally the `affected` rows from `vuln-diagnose`.
 - The install method.
 - The recipe: a script the person supplies, or one you draft from [recipes.md](references/recipes.md).
-- A Work Session from the caller, if `vuln-patch` handed one over.
+- Whether a caller such as `vuln-patch` will verify in the same Work Session afterwards.
 
 ## What this skill does not run
 
@@ -20,17 +21,25 @@ A container image or a vendor installer is upgraded by redeploying or reinstalli
 
 ## Steps
 
-1. Show the person the server list and the full recipe, byte for byte as it will run, with the path and the account it will run as. Wait for them to agree. Do not edit the recipe after this: changing one byte makes it a different file that needs a new review, and the servers would no longer all run the same thing.
-2. Use the caller's Work Session if there is one. Otherwise open one with `work_session_create`: scopes `command` and `webftp` (writing the script to the host goes through WebFTP), the target servers, and a description naming the CVE, the package, and that nothing is restarted. A recipe that needs root runs as root: set `target_account_username: root` on the session and pass `username: root` on each call. If the workspace does not allow logging in as root, run as the usual account with `sudo` inside the recipe, add the `sudo` scope, and with more than a few servers file one `request_sudo_policy` for the recipe's commands up front, so the approver decides once instead of once per server.
-3. Run the recipe on one server with `execute_file`: `write_file: true`, the recipe as `content`, a fixed `path` such as `/var/tmp/alpacon-<CVE>.sh`, `interpreter: /bin/bash`, a `purpose` naming the CVE and the package, and `reuse_days: 1` so the approver can let the same bytes run on the other servers without paging again. Pass `overwrite: true` when rerunning after a failure, since the file is already there.
-4. If the first server's run fails, or its output does not show the fixed version, stop. Report its output and do not touch the other servers: whatever broke there would break everywhere.
-5. Run the same call on each remaining server: same `content`, `path`, `interpreter`, account, and `args`. Anything different starts a new review.
-6. Close the Work Session if you opened it. Leave a session the caller handed over open; the caller closes it.
+1. Show the person the server list and the full recipe, byte for byte as it will run, with the path and the account it will run as. Wait for them to agree. Do not edit the recipe after this: one changed byte makes it a different file that needs a new review, and the servers would no longer all run the same thing.
+2. Open a Work Session with `work_session_create`: scopes `command` and `webftp` (writing the script to the host goes through WebFTP), the target servers, and a description naming the CVE and the package, and saying the recipe restarts nothing itself. A recipe that needs root runs as root: set `target_account_username: root` and pass `username: root` on each call. If the workspace does not allow root as the session account, run as the usual account with `sudo` inside the recipe (see [recipes.md](references/recipes.md)) and add the `sudo` scope. Each sudo then follows `using-alpacon`'s sudo rules; a session-authorized sudo policy that would clear them is set by a person in the web console, since `request_sudo_policy` cannot create one.
+3. Run the recipe on one server with `execute_file`: `write_file: true`, the recipe as `content`, a fixed `path` such as `/var/tmp/alpacon-<CVE>.sh`, `interpreter: /bin/bash`, and a `purpose` naming the CVE and the package.
+4. Wait until that run has finished. If it is held for approval, wait for the decision; do not move on meanwhile. If it failed, or its output does not show the fixed version, stop and report its output: whatever broke there would break everywhere.
+5. Run the same call on each remaining server: same `content`, `path`, `interpreter`, account, and `args`. Each server's run is reviewed on its own; an approval on one server does not carry over to the next.
+6. Close the Work Session when nothing follows. When a caller will verify next, leave it open and hand back its id.
 
-A server whose agent cannot run verified files answers `file_exec_unsupported_agent` (alpamon older than 2.8.3, or Windows, which has no file lane). List it in the report as not patched with that reason. Do not fall back to pasting the recipe into `execute_command`: the approver agreed to a verified file, not to a shell line.
+A server whose agent cannot run verified files answers `file_exec_unsupported_agent` (alpamon older than 2.8.3, or Windows, which has no file lane). Report it as `not_run` with that reason. Here, unlike the general `execute_file` advice in `using-alpacon`, do not fall back to `execute_command`: the person agreed to a verified file, not to a shell line.
 
-The recipe is idempotent, so a server that waited on approval, timed out, or failed partway can run it again once the cause is fixed. A held run is not rerun; read its result with `check_command_status` when it is approved.
+The recipe is idempotent, so a run that finished and failed can run again once the cause is fixed; pass `overwrite: true`, since the file is already on the host. A run that is held, timed out, or came back `outcome_unknown` is not a failed run: follow `using-alpacon` for it and do not run it again.
 
 ## Report
 
-A table with one row per target server: name, outcome (`patched`, `failed`, `not_run` with the reason, or `pending_approval`), the version the recipe printed afterwards, and the `command_id`. Below it, the container and vendor-install servers with the steps for a person, and every server whose first run stopped the rest.
+A table with one row per target server: name, outcome, the version the recipe printed afterwards, and the `command_id`. The outcome is one of:
+
+- `patched`: the run finished and printed the fixed version.
+- `failed`: the run finished with an error or without the fixed version.
+- `pending_approval`: still held for a person.
+- `not_run`: never submitted, with the reason (a stop after the first server, an unsupported agent, a refusal).
+- `unknown`: may or may not have run, such as `outcome_unknown`, with the reason.
+
+Below it, the container and vendor-install servers with the steps for a person.
