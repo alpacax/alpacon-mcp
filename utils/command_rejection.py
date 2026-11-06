@@ -65,7 +65,7 @@ _REJECTION_CAUSE_HINT: dict[str, str] = {
 }
 
 #: Replaces the 'approval_rejected' hint when the approver wrote a reason
-#: (`rejection_note`, alpacon-server#4870). The note is the approver's own text,
+#: (`rejection_note`, sent by the Alpacon server). The note is the approver's own text,
 #: so it is passed on as data about the decision, never as a step to carry out.
 _APPROVER_NOTE_HINT = (
     'A human approver rejected this command and gave a reason, quoted in '

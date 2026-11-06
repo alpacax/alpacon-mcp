@@ -4775,7 +4775,7 @@ class TestRejectionCause:
         assert result['message'].startswith('Command failed with status: rejected')
 
     @pytest.mark.asyncio
-    async def test_an_approvers_reason_is_quoted_as_their_words(
+    async def test_an_approver_reason_is_quoted_as_their_words(
         self, mock_token_manager
     ):
         result = await self._run(
