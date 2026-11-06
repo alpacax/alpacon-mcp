@@ -18,7 +18,7 @@ If the fixed version is missing or comes only from a secondary source, ask for t
 
 ## Steps
 
-1. Call `list_servers` and keep the candidates in the OS families the advisory covers (Ubuntu and Debian for a USN or DSA, the RHEL family for an RHSA). Keep a candidate whose release the advisory does not list; the check reports it `unknown`, so it stays in the report instead of vanishing. A server with `is_connected: false` is `unknown` (offline) and gets no command. A Windows server is `unknown` (unsupported): the checks below are POSIX shell.
+1. Call `list_servers`. Every server in scope, the whole workspace or the ones the person named, stays in the report; only which servers get a command narrows. A server with `is_connected: false` is `unknown` (offline). A Windows server is `unknown` (unsupported): the checks below are POSIX shell. A server in an OS family the advisory does not cover (a Debian server under an RHSA) is `unknown` (OS not in advisory). The rest are candidates, including a release the advisory does not list, which the check reports as `unknown`.
 2. Read the reference file for the install method and build the check command from it:
    - Distribution package, including the kernel: [distro-package.md](references/distro-package.md)
    - pip or npm package: [language-package.md](references/language-package.md)
@@ -26,6 +26,8 @@ If the fixed version is missing or comes only from a secondary source, ask for t
    - Vendor install: [vendor-install.md](references/vendor-install.md)
    - Source build: [source-build.md](references/source-build.md)
    - The person's own check command: [custom-check.md](references/custom-check.md)
+
+   A package name, version, or commit goes into the command as data. If one holds shell syntax, or a commit is not hexadecimal, it is not a real value: ask, and do not build the command.
 3. Show the person the exact command and the servers it will run on, and wait for them to agree. It runs as written on every server, so they should see it first.
 4. Run each check command once across its servers with `execute_command_multi_server`, with a `purpose` that names the CVE and says the command only reads a version, and read each server's result as `using-alpacon`'s fleet reference describes.
 5. Turn each server's output into a verdict.
@@ -34,7 +36,7 @@ If the fixed version is missing or comes only from a secondary source, ask for t
 
 - `affected`: the installed version is older than the fixed version, or the fixing commit is missing. Keep the check's `reason`: `reboot-pending` means a fixed kernel is installed but not running.
 - `not_affected`: the software is not installed, or the installed version is the fixed version or newer.
-- `unknown`: anything else, with the reason: offline, unsupported OS, command refused or failed, output that does not parse, a release the advisory does not list, or software inside a container the host cannot see into.
+- `unknown`: anything else, with the reason: offline, unsupported OS, command refused or failed, output that does not parse, a release or OS the advisory does not list, or software inside a container the host cannot see into.
 
 When a check prints `installed=` and leaves the comparison to you, compare release numbers numerically (`1.10.0` is newer than `1.9.3`). A pre-release, a local version (`+cu121`), or anything you cannot order with certainty is `unknown`, with the version in the reason.
 
@@ -42,4 +44,4 @@ Never fold `unknown` into `not_affected`: a server nobody could check is a serve
 
 ## Report
 
-A table with one row per candidate server: name, UUID, OS and release, installed version, verdict, and the reason for every `unknown` and every `reboot-pending`. When patching follows, hand the `affected` rows to `vuln-remediate`, except `reboot-pending` ones, which need only a reboot by a person.
+A table with one row per server in scope: name, UUID, OS and release, installed version, verdict, and the reason for every `unknown` and every `reboot-pending`. When patching follows, hand the `affected` rows to `vuln-remediate`, except `reboot-pending` ones, which need only a reboot by a person.

@@ -1,28 +1,28 @@
 # Distribution packages
 
-The advisory names a source package (`openssh`) and a fixed version per release. Check the binary packages the server actually installs (`openssh-server`, `openssh-client`); every binary built from that source carries the same version once upgraded, but a server can hold them at different versions. When the advisory does not say which binary carries the vulnerable code, check each installed one, and the server is `affected` if any is older than the fix.
+The advisory names a source package (`openssh`) and a fixed version per release. Check the binary packages the server actually installs (`openssh-server`, `openssh-client`); every binary built from that source carries the same version once upgraded, but a server can hold them at different versions. When the advisory does not say which binary carries the vulnerable code, run the check once per binary, setting `p` in the commands below. A server's verdict is the worst of its checks: `affected` over `unknown` over `not_affected`.
 
 Each check is one shell line and runs as an ordinary account; none of these commands needs root.
 
 ## Debian and Ubuntu
 
-`dpkg --compare-versions` orders Debian versions (epochs, `~`, revisions) correctly on the host, so the host decides the verdict. Fill in one `case` arm per release from the advisory:
+`dpkg --compare-versions` orders Debian versions (epochs, `~`, revisions) correctly on the host, so the host decides the verdict. Set `p` to the binary package and fill in one `case` arm per release from the advisory:
 
 ```sh
-. /etc/os-release; case "$VERSION_CODENAME" in jammy) f='1:8.9p1-3ubuntu0.10';; noble) f='1:9.6p1-3ubuntu13.5';; *) echo "verdict=unknown release=$VERSION_CODENAME reason=release-not-in-advisory"; exit 0;; esac; command -v dpkg-query >/dev/null || { echo "verdict=unknown reason=no-dpkg"; exit 0; }; s=$(dpkg-query -W -f='${db:Status-Abbrev}|${Version}' openssh-server 2>/dev/null); case "$s" in ?i*) v=${s#*|};; ?[UFhWt]*) echo "verdict=unknown release=$VERSION_CODENAME reason=partly-installed status=${s%%|*}"; exit 0;; *) echo "verdict=not_affected release=$VERSION_CODENAME installed=none"; exit 0;; esac; if dpkg --compare-versions "$v" lt "$f"; then r=affected; else r=not_affected; fi; echo "verdict=$r release=$VERSION_CODENAME installed=$v fixed=$f"
+. /etc/os-release; p=openssh-server; case "$VERSION_CODENAME" in jammy) f='1:8.9p1-3ubuntu0.10';; noble) f='1:9.6p1-3ubuntu13.5';; *) echo "verdict=unknown release=$VERSION_CODENAME reason=release-not-in-advisory"; exit 0;; esac; s=$(dpkg-query -W -f='${db:Status-Abbrev}|${Version}' "$p" 2>/dev/null); e=$?; case "$e:$s" in 0:?i*) v=${s#*|};; 0:?[nc]*|1:) echo "verdict=not_affected package=$p release=$VERSION_CODENAME installed=none"; exit 0;; *) echo "verdict=unknown package=$p release=$VERSION_CODENAME reason=dpkg-query-exit-$e status=${s%%|*}"; exit 0;; esac; if dpkg --compare-versions "$v" lt "$f"; then r=affected; else r=not_affected; fi; echo "verdict=$r package=$p release=$VERSION_CODENAME installed=$v fixed=$f"
 ```
 
-The second letter of the status is what is on disk: `i` is installed, whatever the first letter says. A held package (`hi`) is installed and is exactly the kind that missed an upgrade. A package left half-installed is `unknown`.
+The second letter of the status is what is on disk: `i` is installed, whatever the first letter says, so a held package (`hi`) counts, and it is exactly the kind that missed an upgrade. `n` and `c`, or exit 1 with no output, mean not installed. Anything else, a half-installed package or a package database `dpkg-query` cannot read, is `unknown`.
 
 ## RHEL, Rocky, AlmaLinux, Fedora
 
 The repositories' update metadata already maps a CVE to the advisory that fixes it, so the check asks `dnf` instead of comparing RPM versions by hand. Keep only the advisory lines for the package being checked:
 
 ```sh
-. /etc/os-release; c=CVE-2026-109618; p=openssh-server; rpm -q "$p" >/dev/null 2>&1 || { echo "verdict=not_affected release=$ID-$VERSION_ID installed=none"; exit 0; }; v=$(rpm -q --qf '%{EPOCHNUM}:%{VERSION}-%{RELEASE} ' "$p"); has(){ dnf -q updateinfo list "$1" --cve "$c" 2>/dev/null | awk '{print $3}' | grep -q "^$p-[0-9]"; }; if has --available; then r=affected; elif has --installed; then r=not_affected; else r=unknown; fi; echo "verdict=$r release=$ID-$VERSION_ID installed=$v"
+. /etc/os-release; c=CVE-2026-109618; p=openssh-server; rpm -q rpm >/dev/null 2>&1 || { echo "verdict=unknown package=$p release=$ID-$VERSION_ID reason=rpm-database-unreadable"; exit 0; }; o=$(LC_ALL=C rpm -q "$p" 2>/dev/null); e=$?; case "$e:$o" in 0:*) ;; *"is not installed"*) echo "verdict=not_affected package=$p release=$ID-$VERSION_ID installed=none"; exit 0;; *) echo "verdict=unknown package=$p release=$ID-$VERSION_ID reason=rpm-exit-$e"; exit 0;; esac; v=$(rpm -q --qf '%{EPOCHNUM}:%{VERSION}-%{RELEASE} ' "$p"); has(){ dnf -q updateinfo list "$1" --cve "$c" 2>/dev/null | awk '{print $3}' | grep -q "^$p-[0-9]"; }; if has --available; then r=affected; elif has --installed; then r=not_affected; else r=unknown; fi; echo "verdict=$r package=$p release=$ID-$VERSION_ID installed=$v"
 ```
 
-`--available` lists a fixing advisory not yet installed; `--installed` lists one already installed. Do not pass the package name to `dnf updateinfo` itself: with a package argument it also lists that package's unrelated advisories. Neither list naming the package means the repositories carry no update metadata for that CVE (CentOS Stream, a mirror without it, or a repository the server cannot reach), so the verdict is `unknown`, and the report says to compare `installed` with the advisory by hand.
+An unreadable RPM database answers "not installed" for every package, so the check first asks for `rpm` itself. `--available` lists a fixing advisory not yet installed; `--installed` lists one already installed. Do not pass the package name to `dnf updateinfo` itself: with a package argument it also lists that package's unrelated advisories. Neither list naming the package means the repositories carry no update metadata for that CVE (CentOS Stream, a mirror without it, or a repository the server cannot reach), so the verdict is `unknown`, and the report says to compare `installed` with the advisory by hand.
 
 ## The kernel
 

@@ -3,7 +3,7 @@
 When the advisory names a fixing commit and the software is built from a checkout on the server, ask git whether the commit is in the checkout's history:
 
 ```sh
-git -C /opt/app merge-base --is-ancestor 3f2a9c1 HEAD; case $? in 0) echo verdict=not_affected;; 1) echo verdict=affected;; *) echo "verdict=unknown reason=git-could-not-answer";; esac
+git -C /opt/app merge-base --is-ancestor '3f2a9c1' HEAD; case $? in 0) echo verdict=not_affected;; 1) echo verdict=affected;; *) echo "verdict=unknown reason=git-could-not-answer";; esac
 ```
 
 - Exit 0: the fix is an ancestor of `HEAD`.
