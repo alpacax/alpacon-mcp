@@ -16,13 +16,28 @@ A package's own upgrade script may still restart its service (`openssh-server` o
 #!/bin/bash
 set -eu
 pkg=openssh-server
-echo "before=$(dpkg-query -W -f='${Version}' "$pkg")"
+. /etc/os-release
+case "$VERSION_CODENAME" in
+  jammy) fixed='1:8.9p1-3ubuntu0.10' ;;
+  noble) fixed='1:9.6p1-3ubuntu13.5' ;;
+  *) echo "release $VERSION_CODENAME is not in the advisory" >&2; exit 1 ;;
+esac
+before=$(dpkg-query -W -f='${Version}' "$pkg")
+echo "before=$before"
+if dpkg --compare-versions "$before" ge "$fixed"; then
+  echo "after=$before"
+  exit 0
+fi
 export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l
 apt-get update -q
 apt-get install -y -q --only-upgrade -o Dpkg::Options::=--force-confold -o DPkg::Lock::Timeout=120 "$pkg"
-echo "after=$(dpkg-query -W -f='${Version}' "$pkg")"
+after=$(dpkg-query -W -f='${Version}' "$pkg")
+echo "after=$after"
+dpkg --compare-versions "$after" ge "$fixed"
 ```
 
+- The early exit keeps a rerun from touching a server that is already fixed: `apt-get` alone would move it to any newer candidate.
+- The last line fails the run when the upgrade did not reach the fix, such as a mirror that lacks it: `apt-get` exits 0 with nothing to upgrade.
 - `--only-upgrade` never installs the package on a server that lacks it.
 - `NEEDRESTART_MODE=l` keeps `needrestart` (default on Ubuntu 22.04 and later) to listing services instead of restarting them.
 - `--force-confold` keeps the server's edited configuration files instead of stopping to ask.

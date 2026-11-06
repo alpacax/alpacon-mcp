@@ -12,7 +12,7 @@ This skill holds no procedure of its own. It runs three skills in order, hands e
 1. Run the `vuln-diagnose` skill on the servers in scope, with the inputs it asks for. It runs in a Work Session of its own with the `command` scope only, which you close once it reports. Show the person its table.
 2. If no server is `affected`, stop and report the table.
 3. Run the `vuln-remediate` skill on the `affected` servers, leaving out the `reboot-pending` ones: their fix is installed and they need only a reboot. Tell it verify follows, so it leaves its Work Session open and hands back the id and the account.
-4. If remediate stopped after its first server, stop here: report what failed and do not verify.
+4. If remediate stopped after its first server, close its Work Session and stop here: report what failed and do not verify.
 5. Run the `vuln-verify` skill on the servers remediate reports `patched`, in that Work Session and as that account.
 6. Close the Work Session, then report.
 
