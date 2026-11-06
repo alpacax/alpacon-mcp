@@ -4,6 +4,7 @@ import json
 from collections.abc import Awaitable, Iterator
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
+from pathlib import Path
 from typing import Protocol
 from unittest.mock import ANY, MagicMock, patch
 
@@ -23,6 +24,7 @@ from tools.command_tools import (
     _FILE_PHASE_GENERIC_HINT,
     _FILE_PHASE_HINTS,
     _SUDO_DENIAL_HINTS,
+    _SUDO_HUMAN_APPROVAL_CODES,
     DO_NOT_RESUBMIT,
     FILE_CONTENT_MAX_BYTES,
     FILE_REUSE_DAYS_MAX,
@@ -1076,6 +1078,16 @@ class TestExecuteCommand:
 
             assert 'sudo_hint' in result
             assert 'sudo_denial' not in result
+
+    @pytest.mark.parametrize('doc', ['docs/examples.md', 'docs/troubleshooting.md'])
+    def test_docs_name_every_human_resolvable_sudo_denial_category(self, doc):
+        text = (Path(__file__).resolve().parent.parent / doc).read_text()
+
+        missing = {
+            code for code in _SUDO_HUMAN_APPROVAL_CODES if f'`{code}`' not in text
+        }
+
+        assert missing == set()
 
     def test_sudo_denial_returns_code_and_hint(self):
         out = {'result': 'Alpacon denied this sudo command (SUDO_APPROVAL_REQUIRED).\n'}

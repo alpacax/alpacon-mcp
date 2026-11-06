@@ -105,7 +105,7 @@ The gate answers in a structured way. Each code has one right move:
 | `work_session_expired` | Window closed | Open a new session with `work_session_create`; an expired session cannot be extended |
 | `work_session_assignee_mismatch` | Session belongs to someone else | Open your own |
 
-A denied sudo escalation comes back on the finished command as `sudo_denial`, whose `category` can be `SUDO_APPROVAL_REQUIRED` or `SUDO_INTENT_DEVIATION`, and the command is rerun after a person acts. An agent cannot approve its own request—`explain_approval_decision` states this and points at the human channel.
+A denied sudo escalation that a person can clear comes back on the finished command as `sudo_denial`. Its `category` names the denial (`SUDO_APPROVAL_REQUIRED`, `SUDO_INTENT_DEVIATION`, `SUDO_PRESENCE_REQUIRED`, `SUDO_NO_WORKSESSION_POLICY`, `SUDO_POLICY_MFA_REQUIRED` or `WORK_SESSION_SCOPE_NOT_ALLOWED`) and its `next_action` says what the person has to do; the command is rerun after they act. An agent cannot approve its own request—`explain_approval_decision` states this and points at the human channel.
 
 ### After the work: the audit trail
 
