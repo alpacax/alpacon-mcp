@@ -37,6 +37,7 @@ _GRANT_REFRESH_TOKEN = 'refresh_token'
 _RESPONSE_TYPE_CODE = 'code'
 
 _ERROR_INVALID_REQUEST = 'invalid_request'
+_ERROR_TEMPORARILY_UNAVAILABLE = 'temporarily_unavailable'
 _ERROR_INVALID_CLIENT = 'invalid_client'
 _ERROR_INVALID_GRANT = 'invalid_grant'
 _ERROR_UNSUPPORTED_GRANT_TYPE = 'unsupported_grant_type'
