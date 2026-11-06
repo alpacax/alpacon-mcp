@@ -51,6 +51,7 @@ def main() -> None:
         prepare,
         resolve_host,
         resolve_port,
+        resolve_transport_security,
         resource_metadata_url,
     )
 
@@ -59,8 +60,23 @@ def main() -> None:
 
         host = resolve_host()
         port = resolve_port()
+        transport_security = resolve_transport_security()
+        if transport_security is None:
+            logger.info(
+                'DNS rebinding protection left to the SDK default for %s '
+                '(on for loopback binds only)',
+                host,
+            )
+        else:
+            logger.info(
+                'DNS rebinding protection on: allowed_hosts=%s allowed_origins=%s',
+                transport_security.allowed_hosts,
+                transport_security.allowed_origins,
+            )
         app = UpstreamAuthErrorMiddleware(
-            create_streamable_http_app(host=host),
+            create_streamable_http_app(
+                host=host, transport_security=transport_security
+            ),
             resource_metadata_url=resource_metadata_url(),
         )
         logger.info(

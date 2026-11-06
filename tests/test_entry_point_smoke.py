@@ -316,3 +316,34 @@ def test_main_http_rejects_a_public_host_header_when_bound_to_loopback(entry_env
 
     assert response.status_code == HTTP_MISDIRECTED
     assert 'Invalid Host header' in response.text
+
+
+def test_main_http_rejects_an_unlisted_host_on_a_wildcard_bind_when_allowed_hosts_is_set(
+    entry_env,
+):
+    env = {**entry_env, 'ALPACON_MCP_ALLOWED_HOSTS': 'mcp.example.com'}
+    with _serve_http(['-c', STUBBED_AUTH_LAUNCH], env) as url:
+        response = _post_initialize_as_public_host(url)
+
+    assert response.status_code == HTTP_MISDIRECTED
+    assert response.text == 'Invalid Host header'
+
+
+def test_main_http_exits_naming_the_variable_for_a_malformed_allowed_host(
+    entry_env, tmp_path
+):
+    env = {**entry_env, 'ALPACON_MCP_ALLOWED_HOSTS': 'https://mcp.example.com'}
+
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, str(Path(REPO_ROOT) / 'main_http.py')],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=BOOT_TIMEOUT,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert 'ALPACON_MCP_ALLOWED_HOSTS' in result.stderr
+    assert 'https://mcp.example.com' in result.stderr

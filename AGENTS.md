@@ -140,12 +140,15 @@ Things the code will not tell you at a glance:
   `Auth0TokenVerifier` unwraps it before verifying, so `AccessToken.token` is
   always the bare JWT. That credential is the only place a remote ledger token
   lives; never cache one in the process.
-- **Transport settings live at the entry point, not on the constructor.** SDK 2.x
-  takes `host`, `json_response` and `stateless_http` on
+- **Transport settings live at the entry point, not on the constructor.** SDK
+  2.x takes `host`, `json_response` and `stateless_http` on
   `mcp.streamable_http_app()`, so `create_streamable_http_app(host=...)` carries
   them. `host` decides DNS rebinding protection—the SDK enables it for loopback
   addresses only—and must be the address uvicorn actually binds, or a deployment
-  on `0.0.0.0` rejects its own public Host header with a 421.
+  on `0.0.0.0` rejects its own public Host header with a 421. `main_http.py`
+  passes `transport_security` from `ALPACON_MCP_ALLOWED_HOSTS` and
+  `ALPACON_MCP_ALLOWED_ORIGINS`; set, it replaces the loopback default, and
+  unset it is `None`.
 - **`server.run()` refuses streamable-http.** It serves stdio only;
   `main_http.py` composes that transport itself, wrapping
   `create_streamable_http_app()` in `UpstreamAuthErrorMiddleware`. An app built

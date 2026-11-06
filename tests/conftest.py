@@ -14,6 +14,7 @@ import pytest
 from mcp.server.apps import APP_MIME_TYPE, EXTENSION_ID
 from mcp.server.auth.provider import AccessToken
 from mcp.server.context import ServerRequestContext
+from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ClientCapabilities
 
 import server as server_module
@@ -69,10 +70,13 @@ def authenticated_mcp(monkeypatch):
 @asynccontextmanager
 async def streamable_http_client(
     host: str = '0.0.0.0',  # noqa: S104
+    transport_security: TransportSecuritySettings | None = None,
 ) -> AsyncIterator[httpx.AsyncClient]:
     """Drive the streamable-http app's own ASGI lifespan, which is what
     initializes the session manager's task group."""
-    app = server_module.create_streamable_http_app(host=host)
+    app = server_module.create_streamable_http_app(
+        host=host, transport_security=transport_security
+    )
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app),

@@ -1,5 +1,6 @@
 import importlib
 import os
+import re
 import signal
 import sys
 from collections.abc import AsyncIterator
@@ -10,6 +11,7 @@ from urllib.parse import urlparse
 
 from mcp.server import MCPServer
 from mcp.server.apps import Apps
+from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -291,9 +293,50 @@ def _modules_to_load(toolsets: str | None, remote_mode: bool) -> set[str]:
     return enabled | ALWAYS_ON_MODULES
 
 
-def create_streamable_http_app(*, host: str) -> Starlette:
-    """Build the streamable-http ASGI app; host must be what the server binds, as it
-    decides DNS rebinding protection."""
+_NAME = r'(?:[a-z0-9_](?:[a-z0-9._-]*[a-z0-9_])?|\[[0-9a-f:.]+\])'
+_PORT = r'(?::(?:[0-9]{1,5}|\*))?'
+_HOST_ENTRY = re.compile(_NAME + _PORT)
+_ORIGIN_ENTRY = re.compile(r'[a-z][a-z0-9+.-]*://' + _NAME + _PORT)
+_HOST_FORM = 'lowercase name[:port] with no scheme or path, port a number or *'
+_ORIGIN_FORM = 'lowercase scheme://name[:port] with no path, port a number or *'
+
+
+def _env_list(name: str, pattern: re.Pattern[str], form: str) -> list[str]:
+    raw = os.getenv(name, '')
+    if not raw.strip():
+        return []
+    entries = [item.strip() for item in raw.split(',') if item.strip()]
+    if not entries:
+        raise RuntimeError(f'{name} holds no entries: {raw!r}.')
+    bad = [entry for entry in entries if not pattern.fullmatch(entry)]
+    if bad:
+        raise RuntimeError(f'{name} has malformed entries {bad}; expected {form}.')
+    return entries
+
+
+def resolve_transport_security() -> TransportSecuritySettings | None:
+    """Read the operator's Host/Origin allowlists; None leaves the SDK's loopback default."""
+    hosts = _env_list('ALPACON_MCP_ALLOWED_HOSTS', _HOST_ENTRY, _HOST_FORM)
+    origins = _env_list('ALPACON_MCP_ALLOWED_ORIGINS', _ORIGIN_ENTRY, _ORIGIN_FORM)
+    if not hosts:
+        if origins:
+            raise RuntimeError(
+                'ALPACON_MCP_ALLOWED_ORIGINS needs ALPACON_MCP_ALLOWED_HOSTS too: '
+                'the Origin check runs only alongside the Host check.'
+            )
+        return None
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=hosts,
+        allowed_origins=origins,
+    )
+
+
+def create_streamable_http_app(
+    *, host: str, transport_security: TransportSecuritySettings | None = None
+) -> Starlette:
+    """Build the streamable-http ASGI app; host must be what the server binds. With no
+    transport_security the SDK enables DNS rebinding protection for loopback hosts only."""
     if not is_auth_enabled() or mcp.settings.auth is None:
         raise RuntimeError(
             'The streamable-http app requires ALPACON_MCP_AUTH_ENABLED=true; '
@@ -301,6 +344,7 @@ def create_streamable_http_app(*, host: str) -> Starlette:
         )
     return mcp.streamable_http_app(
         host=host,
+        transport_security=transport_security,
         json_response=True,
         stateless_http=True,
         max_request_body_size=MAX_REQUEST_BODY_SIZE,
