@@ -12,11 +12,12 @@ from tests.oauth._support import (
     DEVICE_ID,
     EVIL_REDIRECT_URI,
     LISTED_REDIRECT_URI,
-    NONCE_COOKIE_PREFIX,
     PKCE_PARAMS,
     TEST_NONCE,
+    TEST_NONCE_SET_COOKIE,
     TRUSTED_REDIRECT_URI,
     UNLISTED_PATH_URI,
+    _browser_client,
     _forge_state_under_valid_signature,
     _mock_auth0_response,
     _state_payload,
@@ -27,9 +28,12 @@ from utils.oauth._http import (
     _RESPONSE_TYPE_CODE,
 )
 from utils.oauth._sealing import (
+    _MAX_LIVE_FLOWS,
+    _NONCE_COOKIE_PREFIX,
     _SEAL_KIND_CODE,
     _STAGE_MFA,
     _hash_nonce,
+    _nonce_cookie_name,
     _open_seal,
     _sign_state,
 )
@@ -403,7 +407,7 @@ class TestOAuthCallback:
         )
         assert response.status_code == HTTPStatus.FOUND
         raw = response.headers['set-cookie'].lower()
-        assert NONCE_COOKIE_PREFIX in raw
+        assert TEST_NONCE_SET_COOKIE in raw
         assert 'max-age=0' in raw or 'expires=' in raw
 
     def test_json_fallback_clears_the_cookie(self, oauth_app):
@@ -414,8 +418,24 @@ class TestOAuthCallback:
         )
         assert response.status_code == HTTPStatus.OK
         raw = response.headers['set-cookie'].lower()
-        assert NONCE_COOKIE_PREFIX in raw
+        assert TEST_NONCE_SET_COOKIE in raw
         assert 'max-age=0' in raw or 'expires=' in raw
+
+    def test_relayed_auth0_error_clears_the_cookie(self, oauth_app):
+        """An Auth0 refusal ends the flow, so its mark is spent like a code's."""
+        composite = _make_composite_state('http://localhost:52048/callback', 'xyz')
+        response = oauth_app.get(
+            _CALLBACK_PATH,
+            params={'error': 'access_denied', 'state': composite},
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.FOUND
+        assert parse_qs(urlparse(response.headers['location']).query)['error'] == [
+            'access_denied'
+        ]
+        raw = response.headers['set-cookie'].lower()
+        assert raw.startswith(TEST_NONCE_SET_COOKIE)
+        assert 'max-age=0' in raw
 
     def test_rejection_leaves_the_cookie_alone(self, oauth_app):
         """Otherwise a forced callback could wipe a live flow's cookie."""
@@ -463,7 +483,7 @@ class TestOAuthCallback:
                 follow_redirects=False,
             )
         raw = response.headers['set-cookie'].lower()
-        assert f'{NONCE_COOKIE_PREFIX}{TEST_NONCE}' in raw
+        assert f'{TEST_NONCE_SET_COOKIE}{TEST_NONCE}' in raw
         assert 'max-age=600' in raw
 
     def test_callback_rejects_a_browser_without_the_cookie(self, oauth_app_no_cookie):
@@ -478,18 +498,34 @@ class TestOAuthCallback:
         assert response.json()['error'] == 'invalid_request'
         assert 'location' not in response.headers
 
-    def test_callback_rejects_a_mismatched_cookie(self, oauth_app):
+    def test_callback_rejects_a_mismatched_cookie(self, oauth_app_no_cookie):
         """A different browser's nonce must not unlock someone else's state."""
+        oauth_app_no_cookie.cookies.set(
+            _nonce_cookie_name(_hash_nonce('other')), TEST_NONCE
+        )
         composite = _make_composite_state(
             'http://localhost:52048/callback', 'xyz', nonce_hash=_hash_nonce('other')
         )
-        response = oauth_app.get(
+        response = oauth_app_no_cookie.get(
             _CALLBACK_PATH,
             params={'code': 'auth-code', 'state': composite},
             follow_redirects=False,
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert response.json()['error'] == 'invalid_request'
         assert 'location' not in response.headers
+
+    def test_callback_ignores_the_old_fixed_name_cookie(self, oauth_app_no_cookie):
+        """A cookie under the pre-#160 name binds no flow."""
+        oauth_app_no_cookie.cookies.set(_NONCE_COOKIE_PREFIX, TEST_NONCE)
+        composite = _make_composite_state('http://localhost:52048/callback', 'xyz')
+        response = oauth_app_no_cookie.get(
+            _CALLBACK_PATH,
+            params={'code': 'auth-code', 'state': composite},
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert response.json()['error'] == 'invalid_request'
 
     def test_callback_rejects_state_without_a_binding(self, oauth_app):
         """Fail closed: a state carrying no nonce_hash is not accepted."""
@@ -560,3 +596,143 @@ class TestOAuthCallback:
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
         assert 'location' not in response.headers
+
+
+@pytest.fixture
+def browser():
+    return _browser_client()
+
+
+def _start_flow(browser, client_state):
+    response = browser.get(
+        _AUTHORIZE_PATH,
+        params={
+            'redirect_uri': 'http://localhost:52048/callback',
+            'state': client_state,
+            **PKCE_PARAMS,
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == HTTPStatus.FOUND
+    return parse_qs(urlparse(response.headers['location']).query)['state'][0]
+
+
+class TestLiveFlowLimit:
+    """A browser's cookies stay small enough for its callbacks to reach the server."""
+
+    def test_authorize_past_the_limit_is_refused_and_keeps_earlier_flows(self, browser):
+        states = [_start_flow(browser, str(i)) for i in range(_MAX_LIVE_FLOWS)]
+        held = dict(browser.cookies)
+
+        refused = browser.get(
+            _AUTHORIZE_PATH,
+            params={'redirect_uri': 'http://localhost:52048/callback', **PKCE_PARAMS},
+            follow_redirects=False,
+        )
+
+        assert refused.status_code == HTTPStatus.TOO_MANY_REQUESTS
+        assert refused.json()['error'] == 'temporarily_unavailable'
+        assert 'location' not in refused.headers
+        assert 'set-cookie' not in refused.headers
+        assert dict(browser.cookies) == held
+        finished = browser.get(
+            _CALLBACK_PATH,
+            params={'code': 'auth-code', 'state': states[0]},
+            follow_redirects=False,
+        )
+        assert finished.status_code == HTTPStatus.FOUND
+
+    def test_finishing_a_flow_frees_room_for_a_new_one(self, browser):
+        states = [_start_flow(browser, str(i)) for i in range(_MAX_LIVE_FLOWS)]
+        browser.get(
+            _CALLBACK_PATH,
+            params={'code': 'auth-code', 'state': states[0]},
+            follow_redirects=False,
+        )
+
+        _start_flow(browser, 'next')
+
+    @pytest.mark.parametrize(
+        ('padding', 'expected'),
+        [(7800, HTTPStatus.FOUND), (7900, HTTPStatus.TOO_MANY_REQUESTS)],
+    )
+    def test_authorize_needs_room_for_its_nonce_cookie(
+        self, oauth_app_no_cookie, padding, expected
+    ):
+        oauth_app_no_cookie.cookies.set('unrelated', 'x' * padding)
+
+        response = oauth_app_no_cookie.get(
+            _AUTHORIZE_PATH,
+            params={'redirect_uri': 'http://localhost:52048/callback', **PKCE_PARAMS},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == expected
+
+
+class TestOverlappingFlows:
+    """Two MCP clients signing in through the same browser at the same time."""
+
+    def test_first_flow_completes_after_a_second_authorize(self, browser):
+        first = _start_flow(browser, 'client-1')
+        _start_flow(browser, 'client-2')
+
+        response = browser.get(
+            _CALLBACK_PATH,
+            params={'code': 'auth-code', 'state': first},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == HTTPStatus.FOUND
+        params = parse_qs(urlparse(response.headers['location']).query)
+        assert params['state'] == ['client-1']
+
+    @pytest.mark.parametrize('order', [(0, 1), (1, 0)])
+    def test_both_flows_complete_in_either_order(self, browser, order):
+        states = [_start_flow(browser, 'client-1'), _start_flow(browser, 'client-2')]
+
+        answers = [
+            browser.get(
+                _CALLBACK_PATH,
+                params={'code': 'auth-code', 'state': states[i]},
+                follow_redirects=False,
+            )
+            for i in order
+        ]
+
+        assert [r.status_code for r in answers] == [HTTPStatus.FOUND] * 2
+        delivered = [
+            parse_qs(urlparse(r.headers['location']).query)['state'] for r in answers
+        ]
+        assert delivered == [[f'client-{i + 1}'] for i in order]
+
+    def test_finishing_one_flow_leaves_the_other_flows_cookie(self, browser):
+        first = _start_flow(browser, 'client-1')
+        second = _start_flow(browser, 'client-2')
+        done = browser.get(
+            _CALLBACK_PATH,
+            params={'code': 'auth-code', 'state': first},
+            follow_redirects=False,
+        )
+
+        replay = browser.get(
+            _CALLBACK_PATH,
+            params={'code': 'auth-code', 'state': first},
+            follow_redirects=False,
+        )
+        response = browser.get(
+            _CALLBACK_PATH,
+            params={'code': 'auth-code', 'state': second},
+            follow_redirects=False,
+        )
+
+        first_cookie = _nonce_cookie_name(str(_state_payload(first)['nonce_hash']))
+        second_cookie = _nonce_cookie_name(str(_state_payload(second)['nonce_hash']))
+        cleared = done.headers.get_list('set-cookie')
+        assert done.status_code == HTTPStatus.FOUND
+        assert [c.split('=', 1)[0] for c in cleared] == [first_cookie]
+        assert 'max-age=0' in cleared[0].lower()
+        assert second_cookie not in ' '.join(cleared)
+        assert replay.status_code == HTTPStatus.BAD_REQUEST
+        assert replay.json()['error'] == 'invalid_request'
+        assert response.status_code == HTTPStatus.FOUND

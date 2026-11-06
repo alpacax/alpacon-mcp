@@ -5,10 +5,20 @@ import json
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx
+from starlette.applications import Starlette
 from starlette.routing import Route
+from starlette.testclient import TestClient
 
+from utils.oauth import register_oauth_routes
 from utils.oauth._http import _PKCE_CHALLENGE_METHOD
-from utils.oauth._sealing import _NONCE_COOKIE_NAME, _sign_state, _verify_state
+from utils.oauth._sealing import (
+    _NONCE_COOKIE_PREFIX,
+    _hash_nonce,
+    _nonce_cookie_name,
+    _sign_state,
+    _verify_state,
+)
 
 # Test configuration constants
 TEST_AUTH0_ALPACON_DOMAIN = 'test.us.auth0.com'
@@ -66,9 +76,10 @@ PKCE_PARAMS = {
 
 # The nonce a browser is pretending to carry through the callback tests
 TEST_NONCE = 'test-nonce-value'
+TEST_NONCE_COOKIE = _nonce_cookie_name(_hash_nonce(TEST_NONCE))
 
 # Set-Cookie assertions lowercase the whole header, so the name must match in kind
-NONCE_COOKIE_PREFIX = f'{_NONCE_COOKIE_NAME.lower()}='
+TEST_NONCE_SET_COOKIE = f'{TEST_NONCE_COOKIE.lower()}='
 
 
 class MockMCPServer:
@@ -83,6 +94,17 @@ class MockMCPServer:
             return func
 
         return decorator
+
+
+def _browser_client() -> TestClient:
+    """One cookie jar across requests, over https so it keeps __Host- cookies."""
+    mock_server = MockMCPServer()
+    register_oauth_routes(mock_server)
+    return TestClient(
+        Starlette(routes=mock_server.routes),
+        base_url='https://testserver',
+        raise_server_exceptions=False,
+    )
 
 
 def _forge_state_under_valid_signature():
@@ -105,6 +127,18 @@ def _mock_auth0_response(status_code=HTTPStatus.OK, json_data=None):
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=None)
     return mock_client
+
+
+def _issued_nonce(response: httpx.Response) -> str:
+    issued = {
+        name: value
+        for name, value in response.cookies.items()
+        if name.startswith(f'{_NONCE_COOKIE_PREFIX}_')
+    }
+    assert len(issued) == 1
+    [(name, nonce)] = issued.items()
+    assert name == _nonce_cookie_name(_hash_nonce(nonce))
+    return nonce
 
 
 def _state_payload(state: str) -> dict[str, object]:

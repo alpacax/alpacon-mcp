@@ -33,6 +33,7 @@ from utils.oauth._http import (
 from utils.oauth._ledger import (
     _clear_ledger_cookie,
     _exchange_ledger_code,
+    _ledger_cookie_fits,
     _ledger_stage_url,
     _ledger_state,
     _set_ledger_cookie,
@@ -40,7 +41,6 @@ from utils.oauth._ledger import (
 )
 from utils.oauth._redirect_uris import _is_allowed_redirect_uri
 from utils.oauth._sealing import (
-    _NONCE_COOKIE_NAME,
     _STAGE_LEDGER,
     _STAGE_MFA,
     _STAGE_REGULAR,
@@ -48,8 +48,8 @@ from utils.oauth._sealing import (
     _clear_nonce_cookie,
     _is_device_id,
     _nonce_cookie_matches,
+    _refresh_nonce_cookie,
     _seal_code,
-    _set_nonce_cookie,
     _state_str,
     _verify_state,
     ledger_grant_key,
@@ -186,20 +186,36 @@ async def _complete_ledger_stage(
     elif code:
         grant = await _exchange_ledger_code(config, server_url, code, state.ledger_org)
     # A failure record stops the ledger tool from asking again at once.
-    staged = grant or LedgerGrant.failed(state.ledger_org)
+    sealed = _sealed_stage_that_fits(
+        request, key, state, grant or LedgerGrant.failed(state.ledger_org)
+    )
 
     response = RedirectResponse(
         url=_final_stage_url(config, server_url, state),
         status_code=HTTPStatus.FOUND,
     )
-    _set_nonce_cookie(response, request.cookies[_NONCE_COOKIE_NAME])
-    _set_ledger_cookie(response, seal_stage(key, staged, state.nonce_hash))
+    _refresh_nonce_cookie(request, response, state.nonce_hash)
+    if sealed:
+        _set_ledger_cookie(response, sealed, nonce_hash=state.nonce_hash)
     logger.info(
         'Ledger stage complete (token obtained: %s); redirecting to the '
         'regular audience',
         grant is not None,
     )
     return response
+
+
+def _sealed_stage_that_fits(
+    request: Request, key: bytes, state: _CallbackState, staged: LedgerGrant
+) -> str:
+    """The sealed grant, else its failure record when the token has no room, else
+    '': one cookie past the header limit would lock every live flow out."""
+    for grant in (staged, LedgerGrant.failed(state.ledger_org)):
+        sealed = seal_stage(key, grant, state.nonce_hash)
+        if _ledger_cookie_fits(request, sealed, state.nonce_hash):
+            return sealed
+        logger.warning('Ledger stage has no cookie room for its record')
+    return ''
 
 
 def _forward_auth0_error(
@@ -211,15 +227,19 @@ def _forward_auth0_error(
         escape_for_log(error),
         escape_for_log(error_description),
     )
+    response: Response
     if state.client_redirect_uri:
         params = {'error': error, 'error_description': error_description}
         if state.original_state:
             params['state'] = state.original_state
-        return RedirectResponse(
+        response = RedirectResponse(
             url=_build_redirect_url(state.client_redirect_uri, params),
             status_code=HTTPStatus.FOUND,
         )
-    return _oauth_error_response(error, error_description)
+    else:
+        response = _oauth_error_response(error, error_description)
+    _clear_flow_cookies(response, state)
+    return response
 
 
 async def _complete_mfa_stage(
@@ -258,9 +278,7 @@ async def _complete_mfa_stage(
         auth0_url = _final_stage_url(config, server_url, state)
         logger.info('Stage 2: Redirecting to Auth0 regular audience (SSO)')
     response = RedirectResponse(url=auth0_url, status_code=HTTPStatus.FOUND)
-    # The next stage restarts the state expiry; re-set the cookie so the two
-    # do not drift apart.
-    _set_nonce_cookie(response, request.cookies[_NONCE_COOKIE_NAME])
+    _refresh_nonce_cookie(request, response, state.nonce_hash)
     return response
 
 
@@ -352,7 +370,15 @@ def _deliver_code(request: Request, state: _CallbackState, code: str) -> Respons
         )
     else:
         response = JSONResponse(params)
-    _clear_nonce_cookie(response)
-    if state.ledger_org:
-        _clear_ledger_cookie(response)
+    _clear_flow_cookies(response, state)
     return response
+
+
+def _clear_flow_cookies(response: Response, state: _CallbackState) -> None:
+    """Spend the flow's cookies once its outcome reaches the client; a callback
+    without a verified state names no flow."""
+    if not state.nonce_hash:
+        return
+    _clear_nonce_cookie(response, state.nonce_hash)
+    if state.ledger_org:
+        _clear_ledger_cookie(response, state.nonce_hash)
