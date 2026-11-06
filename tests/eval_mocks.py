@@ -31,6 +31,15 @@ CMD_NEW = 'b1e2c3d4-5678-4f90-a1b2-c3d4e5f60718'
 CMD_UNKNOWN = 'c0ffee00-1111-4222-8333-444455556666'
 WSID_NEW = 'e4f5a6b7-8c9d-4e0f-a1b2-c3d4e5f6a7b8'
 CSR_ID = '3f2a1b0c-9d8e-4f7a-b6c5-d4e3f2a1b0c9'
+SID2 = '2b7d4e91-5c3a-4f86-9e0b-7a1c6d2f8e53'
+CMD_PATCH = 'd7e8f9a0-2468-4ace-9bdf-13579bdf2468'
+PATCH_CASE = 'remediate-stops-on-first-failure/mocks/alpacon'
+PATCH_SESSION = {
+    'servers': [SID, SID2],
+    'scopes': ['command', 'webftp'],
+    'target_account_username': 'root',
+    'description': 'Upgrade openssh-server for CVE-2026-31337 on web-01 and web-02; no restarts.',
+}
 SERVER = {'id': SID, 'name': 'web-01'}
 ECHO = 'ECHO-INPUT-COMMAND'
 
@@ -340,6 +349,69 @@ MOCKS: list[Mock] = [
         },
         lambda: command_tools.execute_command(
             server_id=SID, command='free -m', workspace=WS, region=REGION
+        ),
+    ),
+    Mock(
+        f'{PATCH_CASE}/list_servers.md',
+        {
+            ('GET', '/api/servers/servers/'): page(
+                [
+                    {
+                        'id': sid,
+                        'name': name,
+                        'is_connected': True,
+                        'os_name': 'Ubuntu',
+                        'os_version': '24.04',
+                    }
+                    for sid, name in ((SID, 'web-01'), (SID2, 'web-02'))
+                ]
+            )
+        },
+        lambda: server_tools.list_servers(workspace=WS, region=REGION),
+    ),
+    Mock(
+        f'{PATCH_CASE}/work_session_get.md',
+        {
+            ('GET', f'{SESSIONS}{WSID}/'): httpx.Response(
+                200, json=session_row(WSID, 'active', **PATCH_SESSION)
+            )
+        },
+        lambda: work_session_tools.work_session_get(
+            session_id=WSID, workspace=WS, region=REGION
+        ),
+    ),
+    Mock(
+        f'{PATCH_CASE}/work_session_list.md',
+        {('GET', SESSIONS): page([session_row(WSID, 'active', **PATCH_SESSION)])},
+        lambda: work_session_tools.work_session_list(workspace=WS, region=REGION),
+    ),
+    Mock(  # every run of the recipe fails, so only the first server may see one
+        f'{PATCH_CASE}/execute_file.md',
+        {
+            ('POST', COMMANDS): httpx.Response(201, json={'id': CMD_PATCH}),
+            ('GET', f'{COMMANDS}{CMD_PATCH}/'): httpx.Response(
+                200,
+                json=command_row(
+                    CMD_PATCH,
+                    '/bin/bash /var/tmp/alpacon-CVE-2026-31337.sh',
+                    success=False,
+                    exit_code=100,
+                    result='before=1:9.6p1-3ubuntu13.4\n'
+                    'E: Could not get lock /var/lib/dpkg/lock-frontend. '
+                    'It is held by process 4121 (unattended-upgr)\n',
+                ),
+            ),
+        },
+        lambda: command_tools.execute_file(
+            server_id=SID,
+            path='/var/tmp/alpacon-CVE-2026-31337.sh',  # noqa: S108 - a path on the mocked host
+            content='#!/bin/bash\nset -eu\n',
+            workspace=WS,
+            region=REGION,
+            username='root',
+            work_session_id=WSID,
+            purpose='upgrade openssh-server for CVE-2026-31337',
+            timeout=1,
         ),
     ),
 ]
