@@ -12,6 +12,7 @@ from tests.oauth._support import (
     EVIL_REDIRECT_URI,
     EXEMPT_REDIRECT_URI,
     LISTED_REDIRECT_URI,
+    MALFORMED_REDIRECT_URI,
     NONCE_COOKIE_PREFIX,
     OTHER_DEVICE_ID,
     PKCE_CHALLENGE,
@@ -201,6 +202,17 @@ class TestOAuthAuthorize:
                 'response_type': _RESPONSE_TYPE_CODE,
                 'redirect_uri': 'https://evil.com/callback',
             },
+        )
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        data = response.json()
+        assert data['error'] == 'invalid_request'
+        assert 'allowlisted' in data['error_description']
+
+    def test_authorize_rejects_an_unparseable_redirect_uri(self, oauth_app):
+        response = oauth_app.get(
+            _AUTHORIZE_PATH,
+            params={'redirect_uri': MALFORMED_REDIRECT_URI, **PKCE_PARAMS},
+            follow_redirects=False,
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
         data = response.json()

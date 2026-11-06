@@ -30,6 +30,7 @@ FAR_FUTURE_EXP = 9999999999
 LISTED_REDIRECT_URI = 'https://claude.ai/api/mcp/auth_callback'
 EXEMPT_REDIRECT_URI = 'https://global.consent.azure-apim.net/redirect'
 UNLISTED_PATH_URI = 'https://chatgpt.com/evil/path'
+MALFORMED_REDIRECT_URI = 'https://[::1'  # urlparse raises ValueError: Invalid IPv6 URL
 
 # Environment variables needed for OAuth config
 OAUTH_ENV = {

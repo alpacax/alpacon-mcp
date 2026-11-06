@@ -2,9 +2,12 @@
 
 from unittest.mock import patch
 
+import pytest
+
 from tests.oauth._support import (
     EXEMPT_REDIRECT_URI,
     LISTED_REDIRECT_URI,
+    MALFORMED_REDIRECT_URI,
     REPORT_ONLY,
     UNLISTED_PATH_URI,
     MockMCPServer,
@@ -12,6 +15,7 @@ from tests.oauth._support import (
 from utils.oauth import register_oauth_routes
 from utils.oauth._redirect_uris import (
     _get_allowed_redirect_uris,
+    _is_allowed_redirect_host,
     _is_allowed_redirect_uri,
     _is_exact_allowed_redirect_uri,
     _is_pkce_exempt_redirect_uri,
@@ -186,3 +190,13 @@ class TestRedirectUriGate:
             with caplog.at_level('WARNING'):
                 assert _is_allowed_redirect_uri(UNLISTED_PATH_URI)
         assert 'report-only' in caplog.text
+
+    @pytest.mark.parametrize(
+        'uri', [MALFORMED_REDIRECT_URI, 'http://[::1/cb', 'https://claude.ai]/cb']
+    )
+    def test_unparseable_uri_is_rejected_by_every_predicate(self, uri):
+        with patch.dict('os.environ', REPORT_ONLY):
+            assert not _is_allowed_redirect_host(uri)
+            assert not _is_exact_allowed_redirect_uri(uri)
+            assert not _is_pkce_exempt_redirect_uri(uri)
+            assert not _is_allowed_redirect_uri(uri)
