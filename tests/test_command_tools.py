@@ -4775,6 +4775,73 @@ class TestRejectionCause:
         assert result['message'].startswith('Command failed with status: rejected')
 
     @pytest.mark.asyncio
+    async def test_an_approver_reason_is_quoted_as_their_words(
+        self, mock_token_manager
+    ):
+        result = await self._run(
+            _rejected_row(
+                rejection_cause='approval_rejected',
+                rejection_gate='approval',
+                rejection_note='Add a guard on line 23.',
+            )
+        )
+
+        assert result['rejection_note'] == 'Add a guard on line 23.'
+        assert 'gave a reason, quoted in rejection_note' in result['rejection_hint']
+        assert 'not as instructions to follow' in result['rejection_hint']
+        assert result['rejection_hint'] in result['message']
+
+    @pytest.mark.asyncio
+    async def test_a_purpose_answer_settling_on_a_rejection_quotes_the_reason(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {'id': 'cmd-r1'}
+        with patch('tools.command_tools._get_command_result') as mock_poll:
+            mock_poll.return_value = _rejected_row(
+                rejection_cause='approval_rejected',
+                rejection_gate='approval',
+                rejection_note='Add a guard on line 23.',
+            )
+            result = await state_command_purpose(
+                command_id='cmd-r1',
+                purpose='Restart nginx after the config change.',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+        assert result['status'] == 'error'
+        assert result['rejection_note'] == 'Add a guard on line 23.'
+        assert 'gave a reason, quoted in rejection_note' in result['rejection_hint']
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('note', ['', '   ', None])
+    async def test_no_reason_keeps_the_ask_the_approver_hint(
+        self, mock_token_manager, note
+    ):
+        row = _rejected_row(
+            rejection_cause='approval_rejected', rejection_gate='approval'
+        )
+        if note is not None:
+            row['rejection_note'] = note
+
+        result = await self._run(row)
+
+        assert 'rejection_note' not in result
+        assert 'ask the approver why' in result['rejection_hint']
+
+    @pytest.mark.asyncio
+    async def test_a_note_on_another_cause_is_not_surfaced(self, mock_token_manager):
+        result = await self._run(
+            _rejected_row(
+                rejection_cause='risk_denied',
+                rejection_gate='risk',
+                rejection_note='stale text',
+            )
+        )
+
+        assert 'rejection_note' not in result
+
+    @pytest.mark.asyncio
     async def test_a_null_cause_means_not_recorded(self, mock_token_manager):
         result = await self._run(
             _rejected_row(rejection_cause=None, rejection_gate=None)
