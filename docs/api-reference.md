@@ -30,20 +30,19 @@ All MCP tools follow a consistent response structure:
 ### HTTP request with API error
 ```json
 {
-  "status": "success",  // HTTP request succeeded
-  "data": {
-    "error": "HTTP Error",
-    "status_code": 403,  // Actual API error code
-    "message": "Client error '403 Forbidden'...",
-    "response": "Access denied"
-  },
+  "status": "error",
+  "message": "Command execution failed",  // the tool's default_message
+  "status_code": 403,
+  "error_code": "...",  // only when the API names a code
   "server_id": "server-uuid",
   "region": "ap1",
-  "workspace": "production"
+  "workspace": "production",
+  "recovery_hints": ["Check if the API token has 'command_execute' ACL permission.", "..."],
+  "related_tools": ["list_command_acls", "create_command_acl"]
 }
 ```
 
-> **Note**: `"status": "success"` indicates successful HTTP communication. Check the `data.error` field for API-level errors like ACL permission issues (403/404).
+> **Note**: This is the shape of a generic HTTP error. On a 4xx, `message` is the tool's own guidance, not the raw HTTP line. A 5xx, a timeout, or an `outcome_unknown` error keeps the client's message instead, such as `Server error after N attempts`. Either way, branch on `status_code` and `error_code` rather than matching the text. Work Session gate codes take a different shape: `work_session_not_active` returns `"status": "pending_approval"` with `"category": "WORK_SESSION_PENDING"`, and every other gate code returns `"status": "error"` with the code in `code`, not `error_code`, plus `next_action`.
 
 A request is retried with backoff after a 5xx, a timeout, or a network error, with one exception: a `POST` or `PATCH` is retried only when it never reached the server—no connection opened or came free from the pool, the proxy refused the tunnel, the URL scheme cannot be sent, or the server answered 503 `auth_verification_unavailable`, which it sends before any view runs. Once it may have reached the server (a read or write timeout, a broken connection, any other 5xx, or an unexpected error such as a 2xx whose body cannot be read), the tool's error comes back at once with `outcome_unknown: true` and no `recovery_hints`, because sending it again could repeat what it did. Check whether the write took effect before calling the tool again. An error without the field was not acted on, or came from a method that is safe to resend (#392).
 
@@ -438,7 +437,7 @@ Execute a command on a server and wait for the result, or with `wait: false` ret
 
 **Parameters:**
 - `server_id` (string): Server UUID
-- `command` (string): Command to execute; must not be empty or whitespace-only. Do not prefix it with `sudo` by default; use `sudo` only when the command genuinely requires root and the Work Session carries the `sudo` scope. Unless a Work Session sudo policy already covers the command, a sudo invocation either routes to human approval and blocks until a human acts, or is denied outright with no request anyone can approve. Check `sudo_denial.category` before waiting—a `sudo_hint` with no `sudo_denial` is a hard denial that creates no request
+- `command` (string): Command to execute; must not be empty or whitespace-only. Do not prefix it with `sudo` by default; use `sudo` only when the command genuinely requires root and the Work Session carries the `sudo` scope. Unless a Work Session sudo policy already covers the command, a sudo invocation is denied at once and the command finishes with the denial in its result. A `sudo_denial` means a person can clear it, so read its `category`, surface it, and rerun the whole command after they act; a `sudo_hint` with no `sudo_denial` is a hard denial that creates no request
 - `workspace` (string): Workspace name
 - `shell` (string, default: "system"): Shell type
 - `username` (string, optional): Username for execution
@@ -585,7 +584,7 @@ so a file changed after the read fails closed.
 There is no `env`, `data`, or `shell`: composition (pipes, redirection, `&&`, variables) goes inside the
 script, where it is reviewed with it. A one-off composition around a file belongs on `execute_command`.
 
-**Response:** the same shape as `execute_command`—`awaiting_approval`, `purpose_required`, sudo
+**Response:** the same shape as `execute_command`—`pending_approval`, `purpose_required`, sudo
 denials, and the result all follow the same rules—plus a `file` object echoing `path`, `interpreter`,
 and `args` (never `content`). `command` and `shell` are not echoed; the polled command row carries the
 server-rendered line.
@@ -644,7 +643,7 @@ Execute a command on multiple servers simultaneously. The tool only submits: rea
 
 **Parameters:**
 - `server_ids` (array): List of server IDs
-- `command` (string): Command to execute; must not be empty or whitespace-only. The same sudo rule as `execute_command` applies, per server: a needless `sudo` prefix stalls that server's command on a human approver, or is denied outright with no request anyone can approve
+- `command` (string): Command to execute; must not be empty or whitespace-only. The same sudo rule as `execute_command` applies, per server: a needless `sudo` prefix is denied at once on that server, and either a person has to clear it before a rerun or no one can
 - `workspace` (string): Workspace name
 - `shell` (string, default: "system"): Shell type
 - `username` (string, optional): Username for execution
@@ -957,7 +956,7 @@ Send an email invitation to join the workspace (Auth0-enabled deployments). **Pa
 A Work Session is the unit of authorized work: a scope, a set of servers, an expiry, and an audit trail. OAuth/browser callers must have one active before executing commands or transferring files; static API tokens and service tokens bypass the gate.
 
 ### `work_session_create`
-Open a session. **Parameters:** `workspace`, `scopes` (array; agents may request `command` for `execute_command` and `execute_file`, `webftp` for file transfers, `tunnel` for port forwarding, and `sudo` for privilege elevation—request `sudo` only when the work genuinely requires root, since a sudo invocation no policy covers routes to human approval), `servers` (array of UUIDs), `expires_at` (ISO 8601), `description`, `title` (optional), `target_account_username` (optional; the OS account commands will run as, such as `root`—set it when you intend to run as another account so it is approved with the session, then pass the same account as `username` to `execute_command` and `execute_file`; running directly as `root` is declared here, while the `sudo` scope is for elevation from another account; sent only when given), `region` (`ap1` or `us1`, optional). Only `title`, `target_account_username` and `region` may be omitted—a session with no expiry or no stated reason is not a session anyone can approve.
+Open a session. **Parameters:** `workspace`, `scopes` (array; agents may request `command` for `execute_command` and `execute_file`, `webftp` for file transfers, `tunnel` for port forwarding, and `sudo` for privilege elevation—request `sudo` only when the work genuinely requires root, since a sudo invocation no policy covers is denied at once), `servers` (array of UUIDs), `expires_at` (ISO 8601), `description`, `title` (optional), `target_account_username` (optional; the OS account commands will run as, such as `root`—set it when you intend to run as another account so it is approved with the session, then pass the same account as `username` to `execute_command` and `execute_file`; running directly as `root` is declared here, while the `sudo` scope is for elevation from another account; sent only when given), `region` (`ap1` or `us1`, optional). Only `title`, `target_account_username` and `region` may be omitted—a session with no expiry or no stated reason is not a session anyone can approve.
 
 `description` is prose for the human who approves the session. It is not a command list and nothing in it is executed; commands run via `execute_command` once the session is active. Be specific: name the targets, the action, and what will not be touched, since a bare word like "maintenance" gives the approver nothing to decide on. Markdown is supported.
 
@@ -969,7 +968,7 @@ When the created session is `pending`, `approved`, or `active`, the result's `ne
 Read one session (`session_id`) or list them (`status`, `requester_type`, `limit` filters).
 
 ### `work_session_update` / `work_session_extend`
-Partial update of `title`, `description`, `scopes`, `servers` (and `expires_at` for pending sessions only), or extend `expires_at` on an approved/active session. `description` carries the same prose-only rule as on `work_session_create`. `scopes` replaces the whole scope list, so list every scope the session keeps. An update that needs approval is queued as a modification request.
+Partial update of `title`, `description`, `scopes`, `servers` (and `expires_at` for pending sessions only), or extend `expires_at` on an approved or active session that has started and has not expired. `description` carries the same prose-only rule as on `work_session_create`. `scopes` replaces the whole scope list, so list every scope the session keeps. An update that needs approval is queued as a modification request.
 
 `work_session_extend` **parameters:** `session_id`, `workspace`, `expires_at` (ISO 8601, must be later than the current expiry), `reason` (required—a short justification the human approver judges the request by), `region` (`ap1` or `us1`, optional). Whether the extension applies immediately or waits for approval follows the workspace's approval policy, the same rule `work_session_create` uses: an auto-approve lane extends directly and the tool returns a normal success; any other lane queues an extension request instead, and the tool returns `status="pending_approval"`—the session's `expires_at` stays at its prior value until a human decides out-of-band. Poll `work_session_get` until `expires_at` changes to see the outcome; the session's `pending_extension_request` field names the open request until then. A blank `reason` is rejected with `error_code: work_session_extension_reason_required`.
 

@@ -403,7 +403,7 @@ async def approve_sign_request(
 
 
 @mcp_tool_handler(
-    description='Deny a certificate signing request (CSR). Unlike approve, there is no status guard, so a CSR in any state can be denied. The requester will be notified of the decision. Requires admin or CA owner privileges.',
+    description='Deny a certificate signing request (CSR) still awaiting a decision. The API refuses any other CSR with cert_request_in_progress, including one already being processed. The requester will be notified of the decision. Requires admin or CA owner privileges.',
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'certificate CSR signing request deny reject'},
 )

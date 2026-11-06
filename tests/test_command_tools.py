@@ -4,6 +4,7 @@ import json
 from collections.abc import Awaitable, Iterator
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
+from pathlib import Path
 from typing import Protocol
 from unittest.mock import ANY, MagicMock, patch
 
@@ -23,6 +24,7 @@ from tools.command_tools import (
     _FILE_PHASE_GENERIC_HINT,
     _FILE_PHASE_HINTS,
     _SUDO_DENIAL_HINTS,
+    _SUDO_HUMAN_APPROVAL_CODES,
     DO_NOT_RESUBMIT,
     FILE_CONTENT_MAX_BYTES,
     FILE_REUSE_DAYS_MAX,
@@ -1077,6 +1079,16 @@ class TestExecuteCommand:
             assert 'sudo_hint' in result
             assert 'sudo_denial' not in result
 
+    @pytest.mark.parametrize('doc', ['docs/examples.md', 'docs/troubleshooting.md'])
+    def test_docs_name_every_human_resolvable_sudo_denial_category(self, doc):
+        text = (Path(__file__).resolve().parent.parent / doc).read_text()
+
+        missing = {
+            code for code in _SUDO_HUMAN_APPROVAL_CODES if f'`{code}`' not in text
+        }
+
+        assert missing == set()
+
     def test_sudo_denial_returns_code_and_hint(self):
         out = {'result': 'Alpacon denied this sudo command (SUDO_APPROVAL_REQUIRED).\n'}
         denial = _sudo_denial(out)
@@ -1452,7 +1464,7 @@ class TestLostSubmissionIsNotResubmitted:
 
 class TestSudoGuidanceInToolDescriptions:
     """MCP prompts are opt-in—clients that read only tool schemas (Codex) must
-    still learn that an unneeded sudo prefix blocks the session on a human.
+    still learn what a sudo inside a command does to it.
     """
 
     @pytest.mark.asyncio
@@ -1462,12 +1474,33 @@ class TestSudoGuidanceInToolDescriptions:
     async def test_description_states_the_sudo_cost(self, tool_name):
         descriptions = await tool_descriptions()
         text = descriptions[tool_name]
-        assert 'human-in-the-loop' in text
-        # The carve-out and the hard-denial path qualify the parameter's sudo rule;
-        # pin both on the tool so neither regresses.
+        # The carve-out and both denial paths qualify the parameter's sudo rule;
+        # pin them on the tool so neither regresses.
         assert 'sudo policy already covers' in text
-        assert 'denied outright' in text
-        assert 'sudo_denial.category' in text
+        assert 'denied at once' in text
+        assert 'sudo_denial' in text
+        assert 'with no sudo_denial' in text
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'tool_name',
+        ['execute_command', 'execute_command_multi_server', 'execute_file'],
+    )
+    async def test_description_does_not_promise_a_sudo_that_resumes(self, tool_name):
+        # A denied sudo is over when the command finishes, so the agent reruns.
+        text = (await tool_descriptions())[tool_name]
+
+        assert 'until a human acts' not in text
+        assert 'routes to human' not in text
+        assert 'rerun' in text.lower()
+
+    @pytest.mark.asyncio
+    async def test_execute_file_names_the_status_it_returns(self):
+        text = (await tool_descriptions())['execute_file']
+
+        assert 'awaiting_approval' not in text
+        assert 'status of pending_approval' in text
+        assert 'COMMAND_AWAITING_APPROVAL' in text
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -1809,20 +1842,22 @@ class TestPurposeDemand:
 
     @pytest.mark.asyncio
     async def test_state_purpose_refusal_does_not_tell_the_agent_to_resubmit(
-        self, mock_http_client, mock_token_manager
+        self, mock_http_client, mock_token_manager, make_client
     ):
         # A settled command and a bystander's answer share one error code, so
         # the guidance cannot claim which happened—and must not send the agent
         # into a resubmission, which needs its own approval and may run twice.
+        refused = httpx.Response(
+            HTTPStatus.BAD_REQUEST, json={'code': 'command_purpose_not_demanded'}
+        )
+        client = make_client(httpx.MockTransport(lambda _: refused))
         with (
             patch('tools.command_tools._answer_purpose_demand') as mock_answer,
             patch('tools.command_tools._get_command_result') as mock_poll,
         ):
-            mock_answer.return_value = {
-                'error': 'HTTP Error',
-                'status_code': HTTPStatus.BAD_REQUEST,
-                'response': '{"code":"command_purpose_not_demanded"}',
-            }
+            mock_answer.return_value = await client.request(
+                'POST', 'https://ws.ap1.alpacon.io/api/events/commands/cmd-508/purpose/'
+            )
 
             result = await state_command_purpose(
                 command_id='cmd-508',
@@ -1831,7 +1866,10 @@ class TestPurposeDemand:
             )
 
         assert result['status'] == 'error'
+        assert result['status_code'] == HTTPStatus.BAD_REQUEST
+        assert result['error_code'] == 'command_purpose_not_demanded'
         assert 'Do not resubmit' in result['message']
+        assert 'check_command_status' in result['message']
         mock_poll.assert_not_called()
 
     @pytest.mark.asyncio

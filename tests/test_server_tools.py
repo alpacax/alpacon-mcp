@@ -492,7 +492,7 @@ class TestServerNotes:
         )
 
         assert result['status'] == 'error'
-        assert result['message'] == HTTP_ERROR_ENVELOPE['message']
+        assert result['message'].startswith('Failed to ')
         assert result['status_code'] == HTTP_ERROR_ENVELOPE['status_code']
         assert result['server_id'] == SERVER_ID
         assert result['region'] == 'ap1'
@@ -576,7 +576,7 @@ class TestServerNotes:
         )
 
         assert result['status'] == 'error'
-        assert result['message'] == HTTP_ERROR_ENVELOPE['message']
+        assert result['message'].startswith('Failed to ')
         assert result['status_code'] == HTTP_ERROR_ENVELOPE['status_code']
         assert result['server_id'] == SERVER_ID
         assert result['region'] == 'ap1'

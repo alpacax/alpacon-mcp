@@ -324,10 +324,10 @@ class AlpaconHTTPClient:
                     ):
                         return self._handle_upstream_401(e, token=token)
 
+                    # No message: httpx's line would mask the tool's default_message.
                     error_response = {
                         'error': _ERR_HTTP,
                         'status_code': e.response.status_code,
-                        'message': str(e),
                         'response': e.response.text,
                     }
                     logger.error(
@@ -539,13 +539,13 @@ class AlpaconHTTPClient:
             )
             raise UpstreamAuthError(mfa_required=mfa_required, source=source)
 
-        error_msg = 'MFA verification required' if mfa_required else str(exc)
         error_response: dict[str, JsonValue] = {
             'error': _ERR_MFA_REQUIRED if mfa_required else _ERR_HTTP,
             'status_code': HTTPStatus.UNAUTHORIZED,
-            'message': error_msg,
             'mfa_required': mfa_required,
         }
+        if mfa_required:
+            error_response['message'] = 'MFA verification required'
         logger.error(
             'Upstream 401 (mfa_required=%s, source=%s), not retrying',
             mfa_required,

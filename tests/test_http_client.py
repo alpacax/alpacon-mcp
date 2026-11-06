@@ -19,6 +19,7 @@ from mcp.types import (
 
 from tests.conftest import HTTP_VERBS
 from utils import mfa_step_up, request_signal
+from utils.common import unwrap_http_result
 from utils.error_handler import MfaStepUpRequired, UpstreamAuthError
 from utils.http_client import AlpaconHTTPClient, http_client
 from utils.recovery_hints import _detect_error_domain, enrich_error_response
@@ -550,6 +551,14 @@ class TestHandleUpstream401:
         assert result['error'] == 'MFA Required'
         assert result['message'] == 'MFA verification required'
 
+    def test_plain_401_leaves_the_message_to_the_tool(self):
+        exc = self._make_401_exc({'code': 'auth_token_expired'})
+
+        result = AlpaconHTTPClient._handle_upstream_401(exc)
+
+        assert result['status_code'] == HTTPStatus.UNAUTHORIZED
+        assert 'message' not in result
+
     def test_non_string_code_is_not_mfa_required(self, caplog):
         """An unhashable code is a plain 401, not a body that failed to parse."""
         exc = self._make_401_exc({'code': ['auth_token_mfa_missing']})
@@ -1066,3 +1075,38 @@ class TestIdempotentRequestIsRetried:
         assert len(seen) == client.max_retries
         assert result['error'] == 'Timeout'
         assert 'outcome_unknown' not in result
+
+
+class TestClientErrorMessage:
+    """A 4xx has no message of its own, so the tool's guidance reaches the agent."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'status',
+        [HTTPStatus.BAD_REQUEST, HTTPStatus.FORBIDDEN, HTTPStatus.NOT_FOUND],
+    )
+    async def test_tool_guidance_replaces_the_raw_http_error(self, make_client, status):
+        transport, _ = scripted((status, {'code': 'some_refusal'}))
+        client = make_client(transport)
+
+        result = await client.request('GET', SERVERS_URL)
+        refusal = unwrap_http_result(result, default_message='Failed to read servers')
+
+        assert refusal is not None
+        assert refusal['status_code'] == status
+        assert refusal['error_code'] == 'some_refusal'
+        assert refusal['message'] == 'Failed to read servers'
+
+    @pytest.mark.asyncio
+    async def test_exhausted_server_error_keeps_what_the_client_saw(self, make_client):
+        transport, _ = scripted((HTTPStatus.BAD_GATEWAY, {}))
+        client = make_client(transport)
+
+        result = await client.request('GET', SERVERS_URL)
+        refusal = unwrap_http_result(result, default_message='Failed to read servers')
+
+        assert refusal is not None
+        assert refusal['status_code'] == HTTPStatus.BAD_GATEWAY
+        assert refusal['message'] == (
+            f'Server error after {client.max_retries} attempts'
+        )

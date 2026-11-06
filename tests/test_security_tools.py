@@ -878,7 +878,7 @@ class TestListFileAcls:
         result = await list_file_acls(workspace='testworkspace', region='ap1')
 
         assert result['status'] == 'error'
-        assert result['message'] == HTTP_ERROR_ENVELOPE['message']
+        assert result['message'].startswith('Failed to ')
         assert result['status_code'] == HTTP_ERROR_ENVELOPE['status_code']
         assert result['workspace'] == 'testworkspace'
         assert result['region'] == 'ap1'

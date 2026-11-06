@@ -1576,3 +1576,11 @@ async def test_work_session_argument_rule_lives_on_the_parameter(
     # Then the parameter states the rule and the tool no longer does
     assert phrase in on_parameter
     assert gone not in on_tool
+
+
+@pytest.mark.asyncio
+async def test_extend_description_states_the_window_the_api_requires():
+    text = (await tool_descriptions())['work_session_extend']
+
+    assert 'has not started' in text
+    assert 'expires_at has passed' in text

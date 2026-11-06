@@ -418,8 +418,11 @@ async def work_session_update(
 
 @mcp_tool_handler(
     description=(
-        'Extend the expiry time of a Work Session. Only approved or active sessions '
-        'can be extended. Bound sudo policies are extended together. '
+        'Extend the expiry time of a Work Session. Only an approved or active session '
+        'inside its window can be extended: the API refuses one that has not started '
+        'yet or whose expires_at has passed, whatever its status, so replace an '
+        'expired session with work_session_create. Bound sudo policies are extended '
+        'together. '
         'Whether the extension applies immediately or waits for approval follows the '
         "workspace's approval policy, the same rule work_session_create uses: an "
         'auto-approve lane extends directly and this tool returns a normal success; '
