@@ -316,7 +316,7 @@ An OAuth/browser caller must run infrastructure actions inside an active Work Se
 
 ### 5a. Sudo needs approval
 
-A command that escalates privileges can finish with a `sudo_denial` whose `category` is `SUDO_APPROVAL_REQUIRED` or `SUDO_INTENT_DEVIATION`. An agent cannot approve its own request—that is deliberate. Surface it to a human, who approves out of band, then rerun the command.
+A command that escalates privileges can finish with a `sudo_denial`. Its `category` is one of `SUDO_APPROVAL_REQUIRED`, `SUDO_INTENT_DEVIATION`, `SUDO_PRESENCE_REQUIRED`, `SUDO_NO_WORKSESSION_POLICY`, `SUDO_POLICY_MFA_REQUIRED` and `WORK_SESSION_SCOPE_NOT_ALLOWED`, and its `next_action` names what a human has to do: approve a request, complete an MFA step-up, set up a session-authorized sudo policy, or add the `sudo` scope. An agent cannot approve its own request—that is deliberate. Surface it to a human, who acts out of band, then rerun the command.
 
 ### 5b. Local desktop notifications
 
