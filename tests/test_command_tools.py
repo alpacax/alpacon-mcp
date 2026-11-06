@@ -4792,6 +4792,28 @@ class TestRejectionCause:
         assert result['rejection_hint'] in result['message']
 
     @pytest.mark.asyncio
+    async def test_a_purpose_answer_settling_on_a_rejection_quotes_the_reason(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {'id': 'cmd-r1'}
+        with patch('tools.command_tools._get_command_result') as mock_poll:
+            mock_poll.return_value = _rejected_row(
+                rejection_cause='approval_rejected',
+                rejection_gate='approval',
+                rejection_note='Add a guard on line 23.',
+            )
+            result = await state_command_purpose(
+                command_id='cmd-r1',
+                purpose='Restart nginx after the config change.',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+        assert result['status'] == 'error'
+        assert result['rejection_note'] == 'Add a guard on line 23.'
+        assert 'gave a reason, quoted in rejection_note' in result['rejection_hint']
+
+    @pytest.mark.asyncio
     @pytest.mark.parametrize('note', ['', '   ', None])
     async def test_no_reason_keeps_the_ask_the_approver_hint(
         self, mock_token_manager, note

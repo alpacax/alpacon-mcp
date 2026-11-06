@@ -98,7 +98,8 @@ def approver_note(record: Mapping[str, JsonValue]) -> str | None:
 
 
 def rejection_hint(record: Mapping[str, JsonValue]) -> str | None:
-    """Guidance for a rejected command row: by cause, then by gate, else generic.
+    """Guidance for a rejected command row: approver's note first, then by cause,
+    then by gate, else generic.
     None for a row that was not rejected."""
     cause = record.get('rejection_cause')
     if not isinstance(cause, str) or not cause:
