@@ -30,19 +30,19 @@ All MCP tools follow a consistent response structure:
 ### HTTP request with API error
 ```json
 {
-  "status": "success",  // HTTP request succeeded
-  "data": {
-    "error": "HTTP Error",
-    "status_code": 403,  // Actual API error code
-    "response": "Access denied"
-  },
+  "status": "error",
+  "message": "Command execution failed",  // the tool's default_message
+  "status_code": 403,
+  "error_code": "...",  // only when the API names a code
   "server_id": "server-uuid",
   "region": "ap1",
-  "workspace": "production"
+  "workspace": "production",
+  "recovery_hints": ["Check if the API token has 'command_execute' ACL permission.", "..."],
+  "related_tools": ["list_command_acls", "create_command_acl"]
 }
 ```
 
-> **Note**: `"status": "success"` indicates successful HTTP communication. Check the `data.error` field for API-level errors like ACL permission issues (403/404).
+> **Note**: A 4xx or 5xx answer is a top-level `"status": "error"`. `message` is the tool's own guidance, not the raw HTTP line, so branch on `status_code` and `error_code` rather than matching its text.
 
 A request is retried with backoff after a 5xx, a timeout, or a network error, with one exception: a `POST` or `PATCH` is retried only when it never reached the server—no connection opened or came free from the pool, the proxy refused the tunnel, the URL scheme cannot be sent, or the server answered 503 `auth_verification_unavailable`, which it sends before any view runs. Once it may have reached the server (a read or write timeout, a broken connection, any other 5xx, or an unexpected error such as a 2xx whose body cannot be read), the tool's error comes back at once with `outcome_unknown: true` and no `recovery_hints`, because sending it again could repeat what it did. Check whether the write took effect before calling the tool again. An error without the field was not acted on, or came from a method that is safe to resend (#392).
 
