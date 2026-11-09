@@ -109,6 +109,8 @@ class TestOAuthRegister:
             b'{"client_name": "\xff"}',
             b'[' * _MAX_REQUEST_BODY_BYTES,
             b'1' * 5000,
+            b'{"client_name": "\\ud800"}',
+            b'{"client_name": "\xed\xa0\x80"}',
         ],
         ids=[
             'not-json',
@@ -116,6 +118,8 @@ class TestOAuthRegister:
             'inside-a-string',
             'nested-to-the-size-cap',
             'integer-over-the-digit-limit',
+            'escaped-lone-surrogate',
+            'raw-lone-surrogate',
         ],
     )
     def test_register_rejects_json_body_that_cannot_be_decoded(self, oauth_app, body):

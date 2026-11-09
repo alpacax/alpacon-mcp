@@ -570,6 +570,8 @@ class TestOAuthToken:
             b'{"grant_type": "\xff"}',
             b'[' * _MAX_REQUEST_BODY_BYTES,
             b'1' * 5000,
+            b'{"grant_type": "\\ud800"}',
+            b'{"grant_type": "\xed\xa0\x80"}',
         ],
         ids=[
             'not-json',
@@ -577,6 +579,8 @@ class TestOAuthToken:
             'inside-a-string',
             'nested-to-the-size-cap',
             'integer-over-the-digit-limit',
+            'escaped-lone-surrogate',
+            'raw-lone-surrogate',
         ],
     )
     def test_token_rejects_json_body_that_cannot_be_decoded(self, oauth_app, body):
