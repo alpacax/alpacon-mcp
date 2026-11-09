@@ -1,6 +1,5 @@
 """The token endpoint: proxies code and refresh exchanges to Auth0."""
 
-import json
 from http import HTTPStatus
 from urllib.parse import parse_qs
 
@@ -21,6 +20,7 @@ from utils.oauth._http import (
     _FORM_HEADERS,
     _GRANT_AUTHORIZATION_CODE,
     _GRANT_REFRESH_TOKEN,
+    _JSON_BODY_ERRORS,
     _JSON_CONTENT_TYPE,
     _MFA_SCOPE,
     _allow_browser_clients,
@@ -28,6 +28,7 @@ from utils.oauth._http import (
     _get_server_url,
     _oauth_error_response,
     _OAuthRequestError,
+    _parse_json_body,
     _read_bounded_body,
     _require_oauth_config,
     logger,
@@ -81,8 +82,8 @@ async def _parse_token_request(request: Request) -> dict[str, object]:
 
     if _JSON_CONTENT_TYPE in content_type:
         try:
-            params = json.loads(body)
-        except json.JSONDecodeError:
+            params = _parse_json_body(body)
+        except _JSON_BODY_ERRORS:
             raise _OAuthRequestError(
                 _oauth_error_response(_ERROR_INVALID_REQUEST, 'Invalid JSON')
             ) from None

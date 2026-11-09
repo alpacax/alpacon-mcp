@@ -1,6 +1,5 @@
 """The dynamic client registration endpoint."""
 
-import json
 from http import HTTPStatus
 
 from starlette.requests import Request
@@ -12,12 +11,14 @@ from utils.oauth._http import (
     _ERROR_INVALID_REDIRECT_URI,
     _ERROR_INVALID_REQUEST,
     _ERROR_SERVER_ERROR,
+    _JSON_BODY_ERRORS,
     _JSON_CONTENT_TYPE,
     _TOKEN_ENDPOINT_AUTH_NONE,
     _allow_browser_clients,
     _get_oauth_config,
     _oauth_error_response,
     _OAuthRequestError,
+    _parse_json_body,
     _read_bounded_body,
     logger,
 )
@@ -93,8 +94,8 @@ async def _parse_client_metadata(request: Request) -> dict[str, object]:
         )
 
     try:
-        client_metadata = json.loads(body)
-    except (json.JSONDecodeError, UnicodeDecodeError):
+        client_metadata = _parse_json_body(body)
+    except _JSON_BODY_ERRORS:
         raise _OAuthRequestError(
             _oauth_error_response(
                 _ERROR_INVALID_CLIENT_METADATA, 'Request body must be valid JSON'
