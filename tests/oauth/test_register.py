@@ -4,6 +4,8 @@ import json
 from http import HTTPStatus
 from unittest.mock import patch
 
+import pytest
+
 from tests.oauth._support import (
     EVIL_REDIRECT_URI,
     LISTED_REDIRECT_URI,
@@ -13,8 +15,10 @@ from tests.oauth._support import (
     UNLISTED_PATH_URI,
 )
 from utils.oauth._http import (
+    _ERROR_INVALID_CLIENT_METADATA,
     _FORM_CONTENT_TYPE,
     _JSON_CONTENT_TYPE,
+    _MAX_REQUEST_BODY_BYTES,
     _REGISTER_PATH,
 )
 from utils.oauth._redirect_uris import _MAX_REGISTERED_REDIRECT_URIS
@@ -97,14 +101,47 @@ class TestOAuthRegister:
         assert response.status_code == HTTPStatus.BAD_REQUEST
         assert response.json()['error'] == 'invalid_client_metadata'
 
-    def test_register_rejects_invalid_json(self, oauth_app):
+    @pytest.mark.parametrize(
+        'body',
+        [
+            b'not valid json',
+            b'\xff',
+            b'{"client_name": "\xff"}',
+            b'[' * _MAX_REQUEST_BODY_BYTES,
+            b'1' * 5000,
+        ],
+        ids=[
+            'not-json',
+            'not-utf8',
+            'inside-a-string',
+            'nested-to-the-size-cap',
+            'integer-over-the-digit-limit',
+        ],
+    )
+    def test_register_rejects_json_body_that_cannot_be_decoded(self, oauth_app, body):
         response = oauth_app.post(
             _REGISTER_PATH,
-            content=b'not valid json',
+            content=body,
             headers={'content-type': _JSON_CONTENT_TYPE},
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_client_metadata'
+        assert response.json() == {
+            'error': _ERROR_INVALID_CLIENT_METADATA,
+            'error_description': 'Request body must be valid JSON',
+        }
+
+    def test_register_rejects_json_body_that_overflows_the_parser(self, oauth_app):
+        with patch('utils.oauth._http.json.loads', side_effect=RecursionError):
+            response = oauth_app.post(
+                _REGISTER_PATH,
+                content=b'[]',
+                headers={'content-type': _JSON_CONTENT_TYPE},
+            )
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert response.json() == {
+            'error': _ERROR_INVALID_CLIENT_METADATA,
+            'error_description': 'Request body must be valid JSON',
+        }
 
     def test_register_rejects_non_object_json(self, oauth_app):
         response = oauth_app.post(

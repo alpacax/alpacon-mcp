@@ -1,5 +1,6 @@
 """Shared wire vocabulary, configuration and response helpers for the OAuth proxy."""
 
+import json
 import os
 from functools import wraps
 from http import HTTPStatus
@@ -82,6 +83,9 @@ _CORS_PREFLIGHT_HEADERS = {
 # Both body-reading routes are unauthenticated and a real request is under a
 # kilobyte; without a cap, the client decides how much the server allocates.
 _MAX_REQUEST_BODY_BYTES = 16 * 1024
+# ValueError covers bad syntax, bad UTF-8 and the integer digit limit; nesting
+# overflows json.loads before Python 3.14.
+_JSON_BODY_ERRORS = (ValueError, RecursionError)
 
 
 def _get_oauth_config() -> dict[str, str]:
@@ -192,6 +196,11 @@ async def _read_bounded_body(request: Request) -> bytes | None:
             return None
         chunks.append(chunk)
     return b''.join(chunks)
+
+
+def _parse_json_body(body: bytes) -> object:
+    """The parsed body; raises one of _JSON_BODY_ERRORS on bytes a client got wrong."""
+    return json.loads(body)
 
 
 def _build_redirect_url(base_url: str, extra_params: dict[str, str]) -> str:

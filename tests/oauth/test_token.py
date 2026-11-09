@@ -4,6 +4,7 @@ import json
 from http import HTTPStatus
 from unittest.mock import patch
 
+import pytest
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
@@ -21,10 +22,12 @@ from utils.oauth import register_oauth_routes
 from utils.oauth._http import (
     _CALLBACK_PATH,
     _ERROR_INVALID_GRANT,
+    _ERROR_INVALID_REQUEST,
     _FORM_CONTENT_TYPE,
     _GRANT_AUTHORIZATION_CODE,
     _GRANT_REFRESH_TOKEN,
     _JSON_CONTENT_TYPE,
+    _MAX_REQUEST_BODY_BYTES,
     _TOKEN_PATH,
 )
 from utils.oauth._sealing import (
@@ -559,14 +562,47 @@ class TestOAuthToken:
             f'{TEST_RESOURCE_URL}{_CALLBACK_PATH}'
         )
 
-    def test_token_rejects_invalid_json(self, oauth_app):
+    @pytest.mark.parametrize(
+        'body',
+        [
+            b'not valid json',
+            b'\xff',
+            b'{"grant_type": "\xff"}',
+            b'[' * _MAX_REQUEST_BODY_BYTES,
+            b'1' * 5000,
+        ],
+        ids=[
+            'not-json',
+            'not-utf8',
+            'inside-a-string',
+            'nested-to-the-size-cap',
+            'integer-over-the-digit-limit',
+        ],
+    )
+    def test_token_rejects_json_body_that_cannot_be_decoded(self, oauth_app, body):
         response = oauth_app.post(
             _TOKEN_PATH,
-            content=b'not valid json',
+            content=body,
             headers={'content-type': _JSON_CONTENT_TYPE},
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_request'
+        assert response.json() == {
+            'error': _ERROR_INVALID_REQUEST,
+            'error_description': 'Invalid JSON',
+        }
+
+    def test_token_rejects_json_body_that_overflows_the_parser(self, oauth_app):
+        with patch('utils.oauth._http.json.loads', side_effect=RecursionError):
+            response = oauth_app.post(
+                _TOKEN_PATH,
+                content=b'[]',
+                headers={'content-type': _JSON_CONTENT_TYPE},
+            )
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert response.json() == {
+            'error': _ERROR_INVALID_REQUEST,
+            'error_description': 'Invalid JSON',
+        }
 
     def test_token_rejects_non_object_json(self, oauth_app):
         response = oauth_app.post(
