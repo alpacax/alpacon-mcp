@@ -47,6 +47,21 @@ def _unwrap_error(
     return out
 
 
+def test_server_reach_error_names_admin_without_obsolete_owner():
+    envelope = {
+        'error': 'HTTP Error',
+        'status_code': HTTPStatus.FORBIDDEN,
+        'response': json.dumps({'code': 'permission_denied', 'gate': 'server_reach'}),
+    }
+
+    response = _unwrap_error(envelope, default_message='Failed to read server')
+
+    assert response['status'] == 'error'
+    assert response['status_code'] == HTTPStatus.FORBIDDEN
+    assert 'workspace admin' in response['message']
+    assert 'owner' not in response['message']
+
+
 class TestSudoDenialNextActions:
     """Falling through to _DEFAULT_NEXT_ACTION would tell the agent to wait on an
     approval request that, for some of these codes, does not exist.
@@ -76,6 +91,8 @@ class TestSudoDenialNextActions:
         assert 'work_session_update' in text
         # Saying otherwise sends the agent down a path it cannot finish.
         assert 'queue' in text
+        assert 'even for an admin' in text
+        assert 'advisory' in text
 
     def test_scope_not_allowed_wording_is_shared(self):
         # One denial, two transports; one string so the wording cannot drift.

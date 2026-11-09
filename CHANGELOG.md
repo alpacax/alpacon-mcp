@@ -71,6 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   personal API token has no command list on the ledger, and that the call should not be retried, instead of a bare 405. The
   three tool descriptions, `docs/api-reference.md` and `docs/examples.md` say the same; a server
   without the ledger still accepts these writes.
+- Corrected the remaining ownership guidance found while checking [#470](https://github.com/alpacax/alpacon-mcp/issues/470). Command and file ACL `username` descriptions now explain that an empty value matches the API token user's username but allows any system account for a service token. The server-reach refusal points to a workspace admin, Work Session refusal hints say MCP purpose changes are queued for approval even for admins unless the workspace uses advisory execution control, the paused-session notification points to the web console, the latest-metrics `search` description lists remote IP instead of owner, and the alert-recipient description explains that `reasons.owner` counts direct server maintainers on 2.47.0 or later. No request or response fields change.
 
 ### Removed
 - The MCP server no longer pre-checks MFA itself in remote mode (#427): Alpacon decides, and `ALPACON_ACCOUNT_URL` now only drives renamed-slug resolution. The null `mfa_timeout` reading and the strict reading of `mfa_required_actions`, `allowed_mfa_methods` and `mfa_timeout` (both released in v1.21.0) no longer apply, because those settings are not read.

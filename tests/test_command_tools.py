@@ -131,6 +131,8 @@ class TestSudoDenialHint:
         # 'queue' keeps the restated-description path from reading as approval-free.
         assert 'work_session_update' in hint
         assert 'queue' in hint
+        assert 'even for an admin' in hint
+        assert 'advisory' in hint
 
     def test_session_missing(self):
         out = {'result': 'Alpacon denied this sudo command (SUDO_SESSION_MISSING).\n'}
@@ -166,6 +168,8 @@ class TestSudoDenialHint:
         # to wait instead. 'queue' keeps that from reading as approval-free.
         assert 'work_session_update' in hint
         assert 'queue' in hint
+        assert 'even for an admin' in hint
+        assert 'advisory' in hint
 
     def test_workspace_sudo_with_mfa_disabled(self):
         out = {

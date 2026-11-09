@@ -4,6 +4,7 @@ from http import HTTPStatus
 
 import pytest
 
+from server import mcp
 from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
 from tools.security_tools import (
     bulk_server_acl,
@@ -26,6 +27,23 @@ SECOND_SERVER_ID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
 
 
 mock_http_client = http_client_fixture('tools.security_tools')
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'tool_name',
+    ['create_command_acl', 'update_command_acl', 'create_file_acl', 'update_file_acl'],
+)
+async def test_username_schema_distinguishes_api_and_service_tokens(tool_name):
+    tools = {tool.name: tool for tool in await mcp.list_tools()}
+
+    description = (
+        tools[tool_name].input_schema['properties']['username'].get('description', '')
+    )
+
+    assert 'API token' in description
+    assert 'service token' in description
+    assert 'any system account' in description
 
 
 class TestListCommandAcls:

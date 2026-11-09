@@ -14,6 +14,7 @@ from utils.common import (
     FILE_EXEC_INLINE_CREDENTIAL_HINT,
     FILE_EXEC_REFUSAL_HINTS,
     INLINE_CREDENTIAL_HINT,
+    WORK_SESSION_PURPOSE_APPROVAL_HINT,
     UnexpectedResponseShapeError,
     build_list_params,
     empty_value_error,
@@ -234,10 +235,8 @@ _SUDO_DENIAL_HINTS: dict[str, str] = {
         'wait for a reviewer, or—if the session description understates the work '
         'it was always meant to cover—restate that purpose in prose with '
         'work_session_update(description=...) and re-run. Never put the command '
-        'text in the description: it is a purpose statement for the approver and '
-        'nothing in it is executed. Note the server queues a description change '
-        'for its own approval unless you are an admin or hold owner/manager on '
-        'every server in the session.'
+        'text in the description. It is a purpose statement for the approver and '
+        'nothing in it is executed. ' + WORK_SESSION_PURPOSE_APPROVAL_HINT
     ),
     'SUDO_COMMAND_NOT_AUTHORIZED': (
         'sudo was denied: the command carries no requesting identity, so no '
@@ -247,9 +246,7 @@ _SUDO_DENIAL_HINTS: dict[str, str] = {
     'WORK_SESSION_SCOPE_NOT_ALLOWED': (
         'sudo was denied: the Work Session does not carry the sudo scope. Add '
         'it with work_session_update(scopes=[...]), or open a session that has '
-        'it, then re-run—note the server queues a scope addition for its own '
-        'approval unless you are an admin or hold owner/manager on every '
-        'server in the session.'
+        'it. ' + WORK_SESSION_PURPOSE_APPROVAL_HINT
     ),
     'SUDO_SESSION_MISSING': (
         'sudo was denied: the server could not tie this sudo request back to '

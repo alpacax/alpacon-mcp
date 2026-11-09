@@ -387,7 +387,7 @@ async def test_console_link_rule_on_every_platform(
         (
             'paused',
             'Alpacon: session paused',
-            'Work Session session-1 is paused after a critical denial. The owner or an approver can resume or end it.',
+            'Work Session session-1 is paused after a critical denial. Open the web console for the available recovery actions.',
         ),
     ],
 )
