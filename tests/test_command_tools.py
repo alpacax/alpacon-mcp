@@ -5446,3 +5446,85 @@ class TestExecuteCommandWithoutWaiting:
         assert result['data']['status'] == 'success'
         assert submit.call_args.kwargs['purpose_demand_supported'] is True
         poll.assert_called()
+
+
+_ENV_REFUSALS = [
+    (
+        'command_dangerous_env',
+        (
+            'The command environment policy refuses `PATH`, `LD_PRELOAD`: '
+            'these variables can change which program runs. Remove them, or set '
+            'them inside the command (`env NAME=value cmd`).'
+        ),
+    ),
+    (
+        'command_invalid_env',
+        (
+            'The command environment policy refuses `BAD-NAME`: '
+            'variable names must be valid environment identifiers.'
+        ),
+    ),
+]
+
+
+@pytest.mark.parametrize(('code', 'message'), _ENV_REFUSALS)
+@pytest.mark.asyncio
+async def test_execute_command_environment_refusal(
+    mock_http_client, mock_token_manager, code, message
+):
+    mock_http_client.post.return_value = {
+        'error': 'HTTP Error',
+        'status_code': 400,
+        'response': json.dumps(
+            {
+                'code': code,
+                'field_errors': {
+                    'non_field_errors': [{'code': code, 'message': message}]
+                },
+            }
+        ),
+    }
+    response = await execute_command(
+        server_id=VALID_SERVER_ID,
+        command='true',
+        workspace='testworkspace',
+        region='ap1',
+        env={'PATH': 'private-environment-value'},
+    )
+    assert response['status'] == 'error'
+    assert response['error_code'] == code
+    assert response['message'] == f'Command execution failed: {message}'
+    assert 'private-environment-value' not in json.dumps(response)
+
+
+@pytest.mark.parametrize(('code', 'message'), _ENV_REFUSALS)
+@pytest.mark.parametrize('handled_at', [None, '2026-11-09T10:00:00Z'])
+@pytest.mark.asyncio
+async def test_execute_command_late_environment_denial(
+    mock_http_client, mock_token_manager, code, message, handled_at
+):
+    mock_http_client.post.return_value = {'id': 'cmd-env-denied'}
+    mock_http_client.get.return_value = {
+        'id': 'cmd-env-denied',
+        'status': 'denied',
+        'denial_code': code,
+        'result': message,
+        'handled_at': handled_at,
+    }
+    response = await execute_command(
+        server_id=VALID_SERVER_ID,
+        command='true',
+        workspace='testworkspace',
+        region='ap1',
+    )
+    assert response['status'] == 'error'
+    assert response['denial_code'] == code
+    assert response['message'] == message
+    assert response['command_id'] == 'cmd-env-denied'
+
+
+@pytest.mark.asyncio
+async def test_execute_command_description_explains_environment_policy():
+    description = (await tool_descriptions())['execute_command']
+    assert 'PATH, LD_*' in description
+    assert 'refused by the server; set them inside the command instead' in description
