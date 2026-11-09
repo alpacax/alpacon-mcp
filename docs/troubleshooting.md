@@ -304,7 +304,7 @@ or a `status="error"` result carrying `work_session_required`, `work_session_not
 
 #### Why
 
-An OAuth/browser caller must run infrastructure actions inside an active Work Session. Static API tokens and service tokens bypass the gate, so this appears in hosted mode, not in stdio mode with `token.json`.
+Personal API tokens and OAuth/browser callers use an active, approved Work Session for command execution and REST file-transfer creation. This can apply in either hosted or stdio mode. Service tokens retain their endpoint-specific authorization rules; ordinary reads and Work Session requests keep their existing permissions. A selected session does not grant interactive channel access to a token, and the server decides admission.
 
 #### Solutions
 

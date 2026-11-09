@@ -1,5 +1,7 @@
 """Published guidance must distinguish personal and service token execution."""
 
+from pathlib import Path
+
 import pytest
 
 from server import mcp
@@ -33,3 +35,19 @@ async def test_personal_token_execution_guidance(tool_name: str) -> None:
     assert 'an explicit value wins' in description
     assert 'work_session_id' not in tool.input_schema.get('required', [])
     assert {'type': 'null'} in parameter['anyOf']
+
+
+@pytest.mark.parametrize(
+    'filename', ['README.md', 'docs/api-reference.md', 'docs/troubleshooting.md']
+)
+def test_public_help_does_not_promise_a_static_token_session_bypass(
+    filename: str,
+) -> None:
+    root = Path(__file__).resolve().parents[2]
+    prose = ' '.join((root / filename).read_text().split()).casefold()
+    for claim in (
+        'static api tokens and service tokens bypass the gate',
+        'static api and service tokens bypass',
+        'static api tokens bypass the gate',
+    ):
+        assert claim not in prose
