@@ -350,16 +350,50 @@ def _sudo_denial(result: _CommandRecord) -> tuple[str, str] | None:
 _HELD_STATUS_PATH_RE = re.compile(r'(/[A-Za-z0-9_~-][A-Za-z0-9_.~-]*)+/?')
 _HELD_STATUS_PATH_MAX_LENGTH = 256
 
+_HELD_WAIT_HINT = (
+    '{deadline} Approval does not resume this command. Wait by calling '
+    'check_command_status with command_id {command_id} and reading '
+    'data.sudo_grant_status: once it reads authorized, re-submit the whole '
+    'command; on rejected or expired, stop. held turning null does not end '
+    'the wait, and a re-submission before the decision never reports it. '
+    'approval_request is a reference to give the person, not a place to wait.'
+)
+_HELD_EXPIRED_HINT = (
+    'The approval deadline ({expires_at}) has passed, so an approval given now '
+    'cannot be used. Re-submit the command to request a new approval.'
+)
 
-def _held_expiry(value: JsonValue) -> tuple[str, datetime] | None:
-    """The deadline as sent and parsed, or None when absent or not an offset datetime."""
+
+def _held_reference(value: JsonValue) -> str | None:
+    """The approval request id in canonical form, or None when it is not a UUID."""
+    if not isinstance(value, str):
+        return None
+    try:
+        return str(uuid.UUID(value))
+    except ValueError:
+        return None
+
+
+def _held_deadline(value: JsonValue) -> datetime | None:
+    """The parsed deadline, or None when absent or not an offset datetime."""
     if not isinstance(value, str):
         return None
     try:
         parsed = datetime.fromisoformat(value)
     except ValueError:
         return None
-    return (value, parsed) if parsed.tzinfo is not None else None
+    return parsed if parsed.tzinfo is not None else None
+
+
+def _held_status_path(value: JsonValue) -> str | None:
+    """The path when it is plain and self-relative, else None."""
+    if (
+        isinstance(value, str)
+        and len(value) <= _HELD_STATUS_PATH_MAX_LENGTH
+        and _HELD_STATUS_PATH_RE.fullmatch(value)
+    ):
+        return value
+    return None
 
 
 def _held_approval(
@@ -370,46 +404,29 @@ def _held_approval(
     held = record.get('held')
     if not isinstance(held, dict):
         return None
-    carried: dict[str, JsonValue] = {}
-    reference = held.get('approval_request')
-    if isinstance(reference, str):
-        try:
-            carried['approval_request'] = str(uuid.UUID(reference))
-        except ValueError:
-            pass
-    expiry = _held_expiry(held.get('expires_at'))
-    carried['expires_at'] = expiry[0] if expiry else None
-    if expiry and expiry[1] <= datetime.now(UTC):
+    sent_expiry = held.get('expires_at')
+    deadline = _held_deadline(sent_expiry)
+    expires_at = sent_expiry if deadline is not None else None
+    carried: dict[str, JsonValue] = {
+        **exclude_none(approval_request=_held_reference(held.get('approval_request'))),
+        'expires_at': expires_at,
+    }
+    if deadline is not None and deadline <= datetime.now(UTC):
         # No status_path: waiting cannot redeem a hold whose deadline passed.
         return {
             'held': carried,
-            'wait_hint': (
-                f'The approval deadline ({expiry[0]}) has passed, so an approval '
-                'given now cannot be used. Re-submit the command to request a new '
-                'approval.'
-            ),
+            'wait_hint': _HELD_EXPIRED_HINT.format(expires_at=expires_at),
         }
-    path = held.get('status_path')
-    if (
-        isinstance(path, str)
-        and len(path) <= _HELD_STATUS_PATH_MAX_LENGTH
-        and _HELD_STATUS_PATH_RE.fullmatch(path)
-    ):
-        carried['status_path'] = path
-    deadline = (
-        f'It must be decided by {expiry[0]}.'
-        if expiry
+    carried |= exclude_none(status_path=_held_status_path(held.get('status_path')))
+    deadline_text = (
+        f'It must be decided by {expires_at}.'
+        if deadline is not None
         else 'The server reports no deadline for the decision.'
     )
     return {
         'held': carried,
-        'wait_hint': (
-            f'{deadline} Approval does not resume this command. Wait by calling '
-            f'check_command_status with command_id {command_id} and reading '
-            'data.sudo_grant_status: once it reads authorized, re-submit the whole '
-            'command; on rejected or expired, stop. held turning null does not end '
-            'the wait, and a re-submission before the decision never reports it. '
-            'approval_request is a reference to give the person, not a place to wait.'
+        'wait_hint': _HELD_WAIT_HINT.format(
+            deadline=deadline_text, command_id=command_id
         ),
     }
 
@@ -432,10 +449,8 @@ def _attach_sudo_denial(
     target['sudo_hint'] = hint
     # Only the category is disclosed—never the risk score or reasoning.
     if code in _SUDO_HUMAN_APPROVAL_CODES:
-        held = _held_approval(record, command_id) if command_id else None
-        target['sudo_denial'] = pending_approval_response(
-            hint, category=code, **(held or {})
-        )
+        held = (_held_approval(record, command_id) if command_id else None) or {}
+        target['sudo_denial'] = pending_approval_response(hint, category=code, **held)
 
 
 #: What a finished file-lane command's ``error_phase`` means (ADR 0053). The
