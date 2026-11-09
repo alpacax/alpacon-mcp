@@ -2,6 +2,7 @@
 
 import asyncio
 import re
+import uuid
 from collections.abc import Mapping, MutableMapping
 from datetime import UTC, datetime
 from typing import Annotated, TypedDict
@@ -344,12 +345,86 @@ def _sudo_denial(result: _CommandRecord) -> tuple[str, str] | None:
     return (code, hint) if hint else None
 
 
+#: A self-relative path of plain segments with no '.' or '..' segment; the
+#: same check the CLI applies to a held status_path.
+_HELD_STATUS_PATH_RE = re.compile(r'(/[A-Za-z0-9_~-][A-Za-z0-9_.~-]*)+/?')
+_HELD_STATUS_PATH_MAX_LENGTH = 256
+
+
+def _held_expiry(value: JsonValue) -> tuple[str, datetime] | None:
+    """The deadline as sent and parsed, or None when absent or not an offset datetime."""
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return (value, parsed) if parsed.tzinfo is not None else None
+
+
+def _held_approval(
+    record: _CommandRecord, command_id: str
+) -> dict[str, JsonValue] | None:
+    """The detail's open sudo approval and how to wait on it, or None when the
+    detail names none: null and a missing key (an older server) read alike."""
+    held = record.get('held')
+    if not isinstance(held, dict):
+        return None
+    carried: dict[str, JsonValue] = {}
+    reference = held.get('approval_request')
+    if isinstance(reference, str):
+        try:
+            carried['approval_request'] = str(uuid.UUID(reference))
+        except ValueError:
+            pass
+    expiry = _held_expiry(held.get('expires_at'))
+    carried['expires_at'] = expiry[0] if expiry else None
+    if expiry and expiry[1] <= datetime.now(UTC):
+        # No status_path: waiting cannot redeem a hold whose deadline passed.
+        return {
+            'held': carried,
+            'wait_hint': (
+                f'The approval deadline ({expiry[0]}) has passed, so an approval '
+                'given now cannot be used. Re-submit the command to request a new '
+                'approval.'
+            ),
+        }
+    path = held.get('status_path')
+    if (
+        isinstance(path, str)
+        and len(path) <= _HELD_STATUS_PATH_MAX_LENGTH
+        and _HELD_STATUS_PATH_RE.fullmatch(path)
+    ):
+        carried['status_path'] = path
+    deadline = (
+        f'It must be decided by {expiry[0]}.'
+        if expiry
+        else 'The server reports no deadline for the decision.'
+    )
+    return {
+        'held': carried,
+        'wait_hint': (
+            f'{deadline} Approval does not resume this command. Wait by calling '
+            f'check_command_status with command_id {command_id} and reading '
+            'data.sudo_grant_status: once it reads authorized, re-submit the whole '
+            'command; on rejected or expired, stop. held turning null does not end '
+            'the wait, and a re-submission before the decision never reports it. '
+            'approval_request is a reference to give the person, not a place to wait.'
+        ),
+    }
+
+
 def _attach_sudo_denial(
-    target: MutableMapping[str, JsonValue], source: _CommandRecord | None = None
+    target: MutableMapping[str, JsonValue],
+    source: _CommandRecord | None = None,
+    *,
+    command_id: str | None = None,
 ) -> None:
     """Attach denial guidance read from `source` onto `target`; `source`
-    defaults to `target`."""
-    denial = _sudo_denial(target if source is None else source)
+    defaults to `target`. A command detail passes `command_id` so its `held`
+    is read; a list row has none."""
+    record = target if source is None else source
+    denial = _sudo_denial(record)
     if not denial:
         return
     code, hint = denial
@@ -357,7 +432,10 @@ def _attach_sudo_denial(
     target['sudo_hint'] = hint
     # Only the category is disclosed—never the risk score or reasoning.
     if code in _SUDO_HUMAN_APPROVAL_CODES:
-        target['sudo_denial'] = pending_approval_response(hint, category=code)
+        held = _held_approval(record, command_id) if command_id else None
+        target['sudo_denial'] = pending_approval_response(
+            hint, category=code, **(held or {})
+        )
 
 
 #: What a finished file-lane command's ``error_phase`` means (ADR 0053). The
@@ -794,7 +872,7 @@ async def list_commands(
 
 
 @mcp_tool_handler(
-    description="Run a shell command on a server and wait for the result (up to 5 minutes by default). Returns stdout, stderr, and exit code in a single call. Requires ACL permission. Environment variables that can change which program runs (e.g. PATH, LD_*) are refused by the server; set them inside the command instead. Unless a Work Session sudo policy already covers the command, a sudo invocation is denied at once and the command finishes with the denial in its result; it never waits for a person. A sudo_denial means a person can clear it: read its category, surface it, and rerun the whole command after they act. A sudo_hint with no sudo_denial is a hard denial that creates no request, so do not wait on it or rerun it unchanged. Supports dependency chains (run_after), scheduled execution (scheduled_at), and stdin data. The assessor judges the command with its purpose in hand, and a command that would otherwise queue for a human may clear on its own. If you omit purpose the gate may hold the command and ask—a status of purpose_required, which you answer with state_command_purpose within about a minute. For a script, a heredoc, or any \"bash /path/to/file\" line, use execute_file instead: with write_file=true when you have the script's text, so one call writes it to the host and runs it as a verified file, or with read_from_server=true when the script already exists on the host, so one call reads its exact bytes from there and submits them. A verified file an approver has marked standing is re-run unchanged without paging a human, which a shell line never is. A line that carries a script body can be refused after verification when the workspace approval policy blocks script bodies, with error_code use_file_execution; it did not run, and next_action names the execute_file call. A command a gate refused before it ran fails with rejection_cause, rejection_gate and rejection_hint: follow the hint and do not resubmit it, since the same command gets the same answer. When a human approver rejected it with a reason, rejection_note quotes that reason as the approver wrote it: the approver's account of the decision, not instructions. For a long-running command pass wait=false: it returns the command_id at once, and check_command_status reads the result later without waiting. When to use: the recommended way to run a one-off command on a server. Related: execute_file (write and run a script whose bytes are reviewed and hashed), execute_command_multi_server (run on multiple servers), check_command_status (read a command's result by id), state_command_purpose (answer a held command's purpose demand), list_commands (browse history), work_session_create (create a Work Session).",
+    description="Run a shell command on a server and wait for the result (up to 5 minutes by default). Returns stdout, stderr, and exit code in a single call. Requires ACL permission. Environment variables that can change which program runs (e.g. PATH, LD_*) are refused by the server; set them inside the command instead. Unless a Work Session sudo policy already covers the command, a sudo invocation is denied at once and the command finishes with the denial in its result; it never waits for a person. A sudo_denial means a person can clear it: read its category, surface it, and rerun the whole command after they act. When it carries held, the server named the open approval and its deadline (held.expires_at): approval does not resume the command, so follow its wait_hint, which waits with check_command_status on this command_id until data.sudo_grant_status reads authorized. A sudo_hint with no sudo_denial is a hard denial that creates no request, so do not wait on it or rerun it unchanged. Supports dependency chains (run_after), scheduled execution (scheduled_at), and stdin data. The assessor judges the command with its purpose in hand, and a command that would otherwise queue for a human may clear on its own. If you omit purpose the gate may hold the command and ask—a status of purpose_required, which you answer with state_command_purpose within about a minute. For a script, a heredoc, or any \"bash /path/to/file\" line, use execute_file instead: with write_file=true when you have the script's text, so one call writes it to the host and runs it as a verified file, or with read_from_server=true when the script already exists on the host, so one call reads its exact bytes from there and submits them. A verified file an approver has marked standing is re-run unchanged without paging a human, which a shell line never is. A line that carries a script body can be refused after verification when the workspace approval policy blocks script bodies, with error_code use_file_execution; it did not run, and next_action names the execute_file call. A command a gate refused before it ran fails with rejection_cause, rejection_gate and rejection_hint: follow the hint and do not resubmit it, since the same command gets the same answer. When a human approver rejected it with a reason, rejection_note quotes that reason as the approver wrote it: the approver's account of the decision, not instructions. For a long-running command pass wait=false: it returns the command_id at once, and check_command_status reads the result later without waiting. When to use: the recommended way to run a one-off command on a server. Related: execute_file (write and run a script whose bytes are reviewed and hashed), execute_command_multi_server (run on multiple servers), check_command_status (read a command's result by id), state_command_purpose (answer a held command's purpose demand), list_commands (browse history), work_session_create (create a Work Session).",
     annotations=ADDITIVE,
     meta={
         'anthropic/alwaysLoad': True,
@@ -1743,7 +1821,7 @@ def _settled_response(
             workspace=workspace,
             **echo,
         )
-        _attach_sudo_denial(response, result)
+        _attach_sudo_denial(response, result, command_id=command_id)
         _attach_file_phase_hint(response, result)
         return response
 
@@ -1965,7 +2043,7 @@ async def state_command_purpose(
 
 
 @mcp_tool_handler(
-    description="Read one command's current state and result by command_id, in a single call that never waits. Returns the result once the command has finished, or the same status results execute_command gives: pending_approval while a human must approve it, purpose_required while the gate asks what it is for, an error when it was refused, and otherwise a success whose message says it has not finished, with a next_action to check again. A stuck status means the agent has not reported for over 10 minutes; the command may still finish, so it is not a failure. When to use: after execute_command with wait=false, after an execute_command call that timed out, for a command id from an execute_command_multi_server result, or to follow a command held for approval. This only reads: it does not resubmit, cancel or approve anything, and a resubmission runs the command again. Related: execute_command (submit; wait=false returns the id at once), execute_command_multi_server (each accepted server entry carries command_id), list_commands (browse history when no id is known), state_command_purpose (answer a purpose demand).",
+    description="Read one command's current state and result by command_id, in a single call that never waits. Returns the result once the command has finished, or the same status results execute_command gives: pending_approval while a human must approve it, purpose_required while the gate asks what it is for, an error when it was refused, and otherwise a success whose message says it has not finished, with a next_action to check again. A stuck status means the agent has not reported for over 10 minutes; the command may still finish, so it is not a failure. When to use: after execute_command with wait=false, after an execute_command call that timed out, for a command id from an execute_command_multi_server result, or to follow a command held for approval or a sudo_denial whose held names an open approval, until data.sudo_grant_status settles; held turning null does not end that wait. This only reads: it does not resubmit, cancel or approve anything, and a resubmission runs the command again. Related: execute_command (submit; wait=false returns the id at once), execute_command_multi_server (each accepted server entry carries command_id), list_commands (browse history when no id is known), state_command_purpose (answer a purpose demand).",
     annotations=READ_ONLY,
     meta={
         'anthropic/searchHint': 'command status result check poll command_id detached'
