@@ -1,6 +1,7 @@
 """The dynamic client registration endpoint."""
 
 import json
+import sys
 from http import HTTPStatus
 from unittest.mock import patch
 
@@ -101,6 +102,7 @@ class TestOAuthRegister:
         assert response.status_code == HTTPStatus.BAD_REQUEST
         assert response.json()['error'] == 'invalid_client_metadata'
 
+    @pytest.mark.usefixtures('default_int_digit_limit')
     @pytest.mark.parametrize(
         'body',
         [
@@ -108,7 +110,7 @@ class TestOAuthRegister:
             b'\xff',
             b'{"client_name": "\xff"}',
             b'[' * _MAX_REQUEST_BODY_BYTES,
-            b'1' * 5000,
+            b'1' * (sys.int_info.default_max_str_digits + 1),
             b'{"client_name": "\\ud800"}',
             b'{"client_name": "\xed\xa0\x80"}',
         ],

@@ -1,5 +1,6 @@
 """Fixtures shared by the OAuth proxy tests."""
 
+import sys
 from unittest.mock import patch
 
 import pytest
@@ -20,6 +21,15 @@ def _set_oauth_env():
     """Ensure OAuth env vars are set for all tests."""
     with patch.dict('os.environ', OAUTH_ENV):
         yield
+
+
+@pytest.fixture
+def default_int_digit_limit():
+    """Pin Python's integer digit limit, which PYTHONINTMAXSTRDIGITS can lift."""
+    previous = sys.get_int_max_str_digits()
+    sys.set_int_max_str_digits(sys.int_info.default_max_str_digits)
+    yield
+    sys.set_int_max_str_digits(previous)
 
 
 @pytest.fixture

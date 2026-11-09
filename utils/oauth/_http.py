@@ -84,7 +84,7 @@ _CORS_PREFLIGHT_HEADERS = {
 # kilobyte; without a cap, the client decides how much the server allocates.
 _MAX_REQUEST_BODY_BYTES = 16 * 1024
 # ValueError covers bad syntax, bad UTF-8, the integer digit limit and a lone
-# surrogate; nesting overflows json.loads before Python 3.14.
+# surrogate; json.loads raises RecursionError on nesting deeper than the stack.
 _JSON_BODY_ERRORS = (ValueError, RecursionError)
 
 

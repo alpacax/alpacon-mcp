@@ -1,6 +1,7 @@
 """The token endpoint: grant handling and the proxied Auth0 exchange."""
 
 import json
+import sys
 from http import HTTPStatus
 from unittest.mock import patch
 
@@ -562,6 +563,7 @@ class TestOAuthToken:
             f'{TEST_RESOURCE_URL}{_CALLBACK_PATH}'
         )
 
+    @pytest.mark.usefixtures('default_int_digit_limit')
     @pytest.mark.parametrize(
         'body',
         [
@@ -569,7 +571,7 @@ class TestOAuthToken:
             b'\xff',
             b'{"grant_type": "\xff"}',
             b'[' * _MAX_REQUEST_BODY_BYTES,
-            b'1' * 5000,
+            b'1' * (sys.int_info.default_max_str_digits + 1),
             b'{"grant_type": "\\ud800"}',
             b'{"grant_type": "\xed\xa0\x80"}',
         ],
