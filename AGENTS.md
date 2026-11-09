@@ -107,8 +107,8 @@ Things the code will not tell you at a glance:
   and REST file-transfer creation, as OAuth/browser callers do.** Service tokens
   retain their endpoint-specific authorization rules. This guidance grants no
   interactive channel access and changes no read or session-request permission.
-  Keep the README, API reference and troubleshooting guidance consistent, including
-  wrapped paragraphs. `ALPACON_WORK_SESSION` supplies a default session id; an explicit
+  Keep the published README, API reference and troubleshooting guidance consistent,
+  including wrapped paragraphs. `ALPACON_WORK_SESSION` supplies a default session id; an explicit
   `work_session_id` argument wins.
 - **API token tools reject static API tokens.** List/get receive an upstream
   403 for `source='api'` tokens. Create/update/delete/duplicate/rotate use
