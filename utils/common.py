@@ -351,7 +351,19 @@ COMMAND_ACL_MOVED_STDIO_HINT = (
     'revoke_ledger_entry do the same.'
 )
 
+COMMAND_ENV_REFUSAL_HINTS: dict[str, str] = {
+    'command_dangerous_env': (
+        'Remove environment variables that can change which program runs, '
+        'or set them inside the command (env NAME=value cmd).'
+    ),
+    'command_invalid_env': (
+        'Remove or correct the refused environment variables, '
+        'or set them inside the command (env NAME=value cmd).'
+    ),
+}
+
 _ERROR_CODE_HINT: dict[str, str] = {
+    **COMMAND_ENV_REFUSAL_HINTS,
     'auth_verification_unavailable': AUTH_VERIFICATION_UNAVAILABLE_HINT,
     'command_acl_moved': COMMAND_ACL_MOVED_HINT,
     'command_inline_credential': INLINE_CREDENTIAL_HINT,
@@ -840,14 +852,31 @@ def unwrap_http_result(
             )
 
     message = result.get('message', default_message)
+    server_reason = False
+    if code in COMMAND_ENV_REFUSAL_HINTS and body is not None:
+        # These policy messages name keys and reasons, never submitted values.
+        fields = body.get('field_errors')
+        entries = fields.get('non_field_errors') if isinstance(fields, dict) else None
+        if isinstance(entries, list):
+            messages = [
+                text
+                for entry in entries
+                if isinstance(entry, dict)
+                and isinstance(text := entry.get('message'), str)
+                and text
+            ]
+            if messages:
+                message = f'{message}: {" ".join(messages)}'
+                server_reason = True
     hint = refusal.get('hint')
     if code is not None:
         error_kwargs['error_code'] = code
-        if hint is None:
+        # The server's sentence already says what to do; the hint is the fallback.
+        if hint is None and not server_reason:
             hint = _ERROR_CODE_HINT.get(code)
             if serves_ledger_tools():
                 hint = _LEDGER_ERROR_CODE_HINT.get(code, hint)
-    if hint is None:
+    if hint is None and not server_reason:
         hint = refusal_hint(refusal.get('gate'), refusal.get('missing'))
     if hint is not None:
         separator = ' ' if message.endswith('.') else '. '
