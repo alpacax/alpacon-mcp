@@ -9,7 +9,7 @@ import sys
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 
@@ -33,6 +33,7 @@ WSID_NEW = 'e4f5a6b7-8c9d-4e0f-a1b2-c3d4e5f6a7b8'
 CSR_ID = '3f2a1b0c-9d8e-4f7a-b6c5-d4e3f2a1b0c9'
 SID2 = '2b7d4e91-5c3a-4f86-9e0b-7a1c6d2f8e53'
 CMD_PATCH = 'd7e8f9a0-2468-4ace-9bdf-13579bdf2468'
+UPLOAD_ID = 'f1e2d3c4-b5a6-4978-8a9b-0c1d2e3f4a5b'
 PATCH_CASE = 'remediate-stops-on-first-failure/mocks/alpacon'
 PATCH_SESSION = {
     'servers': [SID, SID2],
@@ -113,6 +114,7 @@ def page(results: list[dict[str, object]]) -> httpx.Response:
 
 COMMANDS = '/api/events/commands/'
 SESSIONS = '/api/work-sessions/sessions/'
+UPLOADS = '/api/webftp/uploads/'
 CSRS = '/api/cert/sign-requests/'
 CSR_ROW = {
     'id': CSR_ID,
@@ -130,6 +132,15 @@ CSR_ROW = {
 
 def _timeout(request: httpx.Request) -> Exception:
     return httpx.ReadTimeout('Read timed out', request=request)
+
+
+def _s3_accepts(call: Call) -> Call:
+    async def run() -> ToolResponse:
+        # The presigned PUT goes out on its own client, outside the mocked transport.
+        with patch('tools.command_tools._put_to_s3', AsyncMock(return_value=None)):
+            return await call()
+
+    return run
 
 
 MOCKS: list[Mock] = [
@@ -388,6 +399,14 @@ MOCKS: list[Mock] = [
     Mock(  # every run of the recipe fails, so only the first server may see one
         f'{PATCH_CASE}/execute_file.md',
         {
+            ('POST', UPLOADS): httpx.Response(
+                201,
+                json={'id': UPLOAD_ID, 'upload_url': 'https://s3.example.test/put'},
+            ),
+            ('GET', f'{UPLOADS}{UPLOAD_ID}/upload/'): httpx.Response(200, json={}),
+            ('GET', f'{UPLOADS}{UPLOAD_ID}/status/'): httpx.Response(
+                200, json={'success': True}
+            ),
             ('POST', COMMANDS): httpx.Response(201, json={'id': CMD_PATCH}),
             ('GET', f'{COMMANDS}{CMD_PATCH}/'): httpx.Response(
                 200,
@@ -402,16 +421,19 @@ MOCKS: list[Mock] = [
                 ),
             ),
         },
-        lambda: command_tools.execute_file(
-            server_id=SID,
-            path='/var/tmp/alpacon-CVE-2026-31337.sh',  # noqa: S108 - a path on the mocked host
-            content='#!/bin/bash\nset -eu\n',
-            workspace=WS,
-            region=REGION,
-            username='root',
-            work_session_id=WSID,
-            purpose='upgrade openssh-server for CVE-2026-31337',
-            timeout=1,
+        _s3_accepts(
+            lambda: command_tools.execute_file(
+                server_id=SID,
+                path='/var/tmp/alpacon-CVE-2026-31337.sh',  # noqa: S108 - a path on the mocked host
+                content='#!/bin/bash\nset -eu\n',
+                write_file=True,
+                workspace=WS,
+                region=REGION,
+                username='root',
+                work_session_id=WSID,
+                purpose='upgrade openssh-server for CVE-2026-31337',
+                timeout=1,
+            )
         ),
     ),
 ]

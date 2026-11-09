@@ -27,7 +27,7 @@ If the fixed version is missing or comes only from a secondary source, ask for t
    - Source build: [source-build.md](references/source-build.md)
    - The person's own check command: [custom-check.md](references/custom-check.md)
 
-   A package name, version, or commit goes into the command as data. If one holds shell syntax, or a commit is not hexadecimal, it is not a real value: ask, and do not build the command.
+   A package name, version, commit, or CVE id goes into the command as data. If one holds shell syntax, a commit is not hexadecimal, or a CVE id is not shaped `CVE-<year>-<number>`, it is not a real value: ask, and do not build the command.
 3. Show the person the exact command and the servers it will run on, and wait for them to agree. It runs as written on every server, so they should see it first.
 4. Run each check command once across its servers with `execute_command_multi_server`, with a `purpose` that names the CVE and says the command only reads a version, and read each server's result as `using-alpacon`'s fleet reference describes.
 5. Turn each server's output into a verdict.

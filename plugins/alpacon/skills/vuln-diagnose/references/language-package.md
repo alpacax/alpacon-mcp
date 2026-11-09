@@ -19,7 +19,7 @@ p=/opt/langflow/.venv/bin/python; n=langflow; [ -x "$p" ] || { echo "verdict=unk
 A vulnerable npm package is usually a transitive dependency, and an application can hold several copies at different versions. Read every copy, the top-level one included:
 
 ```sh
-cd /srv/app 2>/dev/null && [ -d node_modules ] || { echo "verdict=unknown reason=no-node_modules"; exit 0; }; command -v node >/dev/null || { echo "verdict=unknown reason=no-node"; exit 0; }; f=$(find "$PWD/node_modules" -path '*/node_modules/axios/package.json' 2>/dev/null) || { echo "verdict=unknown reason=find-failed"; exit 0; }; [ -n "$f" ] || { echo "installed=none"; exit 0; }; v=$(node -p 'process.argv.slice(1).map(f=>{const v=require(f).version;if(!v)throw 0;return v}).join(" ")' $f 2>/dev/null) || { echo "verdict=unknown reason=unreadable-package-json"; exit 0; }; echo "installed=$v"
+cd /srv/app 2>/dev/null && [ -d node_modules ] || { echo "verdict=unknown reason=no-node_modules"; exit 0; }; command -v node >/dev/null || { echo "verdict=unknown reason=no-node"; exit 0; }; f=$(find -L "$PWD/node_modules" -path '*/node_modules/axios/package.json' 2>/dev/null) || { echo "verdict=unknown reason=find-failed"; exit 0; }; [ -n "$f" ] || { echo "installed=none"; exit 0; }; v=$(node -p '[...new Set(process.argv.slice(1).map(f=>{const v=require(f).version;if(!v)throw 0;return v}))].join(" ")' $f 2>/dev/null) || { echo "verdict=unknown reason=unreadable-package-json"; exit 0; }; echo "installed=$v"
 ```
 
 The row is `affected` if any copy is older than the fixed version. An application shipped as a bundle without `node_modules` hides its dependencies from this check, so it is `unknown`.
