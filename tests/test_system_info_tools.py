@@ -86,7 +86,7 @@ class TestGetSystemInfo:
         )
 
         assert result['status'] == 'error'
-        assert result['message'] == 'Not found'
+        assert result['message'].startswith('Failed to ')
         assert result['status_code'] == HTTPStatus.NOT_FOUND
         assert result['server_id'] == SERVER_ID
         assert result['region'] == 'ap1'
@@ -245,7 +245,7 @@ class TestListSystemUsers:
         )
 
         assert result['status'] == 'error'
-        assert result['message'] == 'Not found'
+        assert result['message'].startswith('Failed to ')
         assert result['status_code'] == HTTPStatus.NOT_FOUND
         assert result['server_id'] == SERVER_ID
         assert 'data' not in result
@@ -486,7 +486,7 @@ class TestGetNetworkInterfaces:
         )
 
         assert result['status'] == 'error'
-        assert result['message'] == 'Not found'
+        assert result['message'].startswith('Failed to ')
         assert result['status_code'] == HTTPStatus.NOT_FOUND
         assert result['server_id'] == SERVER_ID
         assert 'data' not in result
@@ -590,6 +590,7 @@ class TestGetDiskInfo:
 
         assert result['status'] == 'error'
         assert result['status_code'] == HTTP_ERROR_ENVELOPE['status_code']
+        assert result['message'].count('Failed') == 1
 
     @pytest.mark.asyncio
     async def test_disk_info_no_token(self, mock_http_client, mock_token_manager):

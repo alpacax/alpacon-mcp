@@ -106,7 +106,6 @@ _LOGGED_VERBATIM_KEYS = frozenset(
         'groupname',
         'name',
         'organization',
-        'owner',
         'package_name',
         'reporter',
         'role',

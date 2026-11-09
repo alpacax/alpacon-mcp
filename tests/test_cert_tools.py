@@ -1,8 +1,15 @@
 """Unit tests for certificate and PKI management tools module."""
 
 import pytest
+from mcp.types import CallToolResult
 
-from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture, published_rule
+from server import mcp
+from tests.conftest import (
+    HTTP_ERROR_ENVELOPE,
+    http_client_fixture,
+    published_rule,
+    tool_descriptions,
+)
 from tools.cert_tools import (
     approve_revoke_request,
     approve_sign_request,
@@ -29,7 +36,118 @@ from tools.cert_tools import (
 
 mock_http_client = http_client_fixture('tools.cert_tools')
 SERVER_ID = '7e3984de-49ab-4cc6-bcdf-21fbd35858b8'
-OWNER_ID = '11111111-1111-1111-1111-111111111111'
+LEGACY_OWNER = 'alice'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'tool_name', ['create_certificate_authority', 'update_certificate_authority']
+)
+async def test_ca_schema_does_not_advertise_owner(tool_name):
+    tools = {tool.name: tool for tool in await mcp.list_tools()}
+
+    schema = tools[tool_name].input_schema
+
+    assert 'owner' not in schema['properties']
+    assert 'owner' not in schema.get('required', [])
+
+
+@pytest.mark.asyncio
+async def test_sdk_owner_only_ca_update_sends_no_request(
+    mock_http_client, mock_token_manager
+):
+    mock_http_client.patch.return_value = {'id': 'ca-1'}
+
+    result = await mcp.call_tool(
+        'update_certificate_authority',
+        {
+            'ca_id': 'ca-1',
+            'workspace': 'testworkspace',
+            'region': 'ap1',
+            'owner': LEGACY_OWNER,
+        },
+    )
+
+    assert isinstance(result, CallToolResult)
+    assert result.structured_content is not None
+    assert result.structured_content['status'] == 'error'
+    assert result.structured_content['message'] == 'No update data provided'
+    mock_http_client.patch.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('legacy_input', [{}, {'owner': LEGACY_OWNER}])
+async def test_sdk_ca_create_sends_ownerless_payload(
+    legacy_input, mock_http_client, mock_token_manager
+):
+    mock_http_client.post.return_value = {'id': 'ca-1'}
+
+    result = await mcp.call_tool(
+        'create_certificate_authority',
+        {
+            'workspace': 'testworkspace',
+            'name': 'Test CA',
+            'domain': 'test.acme.com',
+            'organization': 'ACME Corp',
+            'server_id': SERVER_ID,
+            'region': 'ap1',
+            **legacy_input,
+        },
+    )
+
+    assert isinstance(result, CallToolResult)
+    assert result.structured_content is not None
+    assert result.structured_content['status'] == 'success'
+    mock_http_client.post.assert_awaited_once_with(
+        region='ap1',
+        workspace='testworkspace',
+        endpoint='/api/cert/authorities/',
+        token='test-token',
+        data={
+            'name': 'Test CA',
+            'domain': 'test.acme.com',
+            'organization': 'ACME Corp',
+            'agent': SERVER_ID,
+        },
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ('tool_name', 'required_access'),
+    [
+        ('create_certificate_authority', 'manage access'),
+        ('update_certificate_authority', 'manage access'),
+        ('delete_sign_request', 'original requester or manage access'),
+        ('approve_sign_request', 'manage access'),
+        ('deny_sign_request', 'manage access'),
+        ('retry_sign_request', 'manage access'),
+        ('revoke_certificate', 'certificate requester or a caller with manage access'),
+        ('approve_revoke_request', 'manage access'),
+        ('deny_revoke_request', 'manage access'),
+        ('retry_revoke_request', 'manage access'),
+        ('cancel_revoke_request', 'original requester or manage access'),
+    ],
+)
+async def test_ca_action_description_states_host_access_not_ca_owner(
+    tool_name, required_access
+):
+    descriptions = await tool_descriptions()
+
+    description = descriptions[tool_name]
+
+    assert required_access in description
+    assert 'CA owner' not in description
+
+
+@pytest.mark.asyncio
+async def test_revoke_description_states_auto_approval_requirements():
+    descriptions = await tool_descriptions()
+
+    description = descriptions['revoke_certificate']
+
+    assert "approver role binding over the CA host's live groups" in description
+    assert 'API token also needs revoke_request:approve' in description
 
 
 class TestCertificateAuthorities:
@@ -71,7 +189,6 @@ class TestCertificateAuthorities:
             domain='internal.acme.com',
             organization='ACME Corp',
             server_id=SERVER_ID,
-            owner=OWNER_ID,
             root_valid_days=3650,
             default_valid_days=365,
             max_valid_days=730,
@@ -92,7 +209,6 @@ class TestCertificateAuthorities:
                 'domain': 'internal.acme.com',
                 'organization': 'ACME Corp',
                 'agent': SERVER_ID,
-                'owner': OWNER_ID,
                 'root_valid_days': 3650,
                 'default_valid_days': 365,
                 'max_valid_days': 730,
@@ -133,7 +249,6 @@ class TestCertificateAuthorities:
             domain='test.acme.com',
             organization='ACME Corp',
             server_id=SERVER_ID,
-            owner=OWNER_ID,
             region='ap1',
         )
 
@@ -148,7 +263,6 @@ class TestCertificateAuthorities:
                 'domain': 'test.acme.com',
                 'organization': 'ACME Corp',
                 'agent': SERVER_ID,
-                'owner': OWNER_ID,
             },
         )
 
@@ -407,7 +521,6 @@ class TestGetCertificateAuthority:
             workspace='testworkspace',
             default_valid_days=180,
             max_valid_days=365,
-            owner=OWNER_ID,
             region='ap1',
         )
 
@@ -421,7 +534,6 @@ class TestGetCertificateAuthority:
             data={
                 'default_valid_days': 180,
                 'max_valid_days': 365,
-                'owner': OWNER_ID,
             },
         )
 
@@ -443,6 +555,34 @@ class TestGetCertificateAuthority:
 
         assert result['status'] == 'success'
         mock_http_client.patch.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/cert/authorities/ca-1/',
+            token='test-token',
+            data={'default_valid_days': 90},
+        )
+
+    @pytest.mark.asyncio
+    async def test_sdk_drops_legacy_owner_from_ca_update(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.patch.return_value = {'id': 'ca-1'}
+
+        result = await mcp.call_tool(
+            'update_certificate_authority',
+            {
+                'ca_id': 'ca-1',
+                'workspace': 'testworkspace',
+                'default_valid_days': 90,
+                'owner': LEGACY_OWNER,
+                'region': 'ap1',
+            },
+        )
+
+        assert isinstance(result, CallToolResult)
+        assert result.structured_content is not None
+        assert result.structured_content['status'] == 'success'
+        mock_http_client.patch.assert_awaited_once_with(
             region='ap1',
             workspace='testworkspace',
             endpoint='/api/cert/authorities/ca-1/',
@@ -522,6 +662,13 @@ class TestSignRequestDetails:
             token='test-token',
             data={},
         )
+
+    @pytest.mark.asyncio
+    async def test_deny_description_states_the_status_the_api_requires(self):
+        text = (await tool_descriptions())['deny_sign_request']
+
+        assert 'any state' not in text
+        assert 'cert_request_in_progress' in text
 
     @pytest.mark.asyncio
     async def test_deny_sign_request_success(

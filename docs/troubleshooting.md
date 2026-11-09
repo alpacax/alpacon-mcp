@@ -309,14 +309,14 @@ An OAuth/browser caller must run infrastructure actions inside an active Work Se
 #### Solutions
 
 - `work_session_not_active`: the session exists but awaits human approval. Someone approves it in the Alpacon web console or Slack; then retry
-- `work_session_required`: open one with `work_session_create`, requesting only the scopes you need (`command`, `webftp`, `tunnel`)
+- `work_session_required`: open one with `work_session_create`, requesting only the scopes you need (`command`, `webftp`, `tunnel`, `sudo`)
 - `work_session_scope_not_allowed` / `work_session_server_not_allowed`: the session's scope or server list doesn't cover this call—`work_session_update` it, or open a session that does
-- `work_session_expired`: extend it with `work_session_extend`, or open a new one
+- `work_session_expired`: open a new one with `work_session_create`; an expired session cannot be extended
 - Pass the session explicitly as `work_session_id`, or set `ALPACON_WORK_SESSION` so tools pick it up by default
 
 ### 5a. Sudo needs approval
 
-A command that escalates privileges can come back as `status="pending_approval"` with `SUDO_APPROVAL_REQUIRED` or `SUDO_INTENT_DEVIATION`. An agent cannot approve its own request—that is deliberate. Surface it to a human, who approves out of band, then retry the call.
+A command that escalates privileges can finish with a `sudo_denial`. Its `category` is one of `SUDO_APPROVAL_REQUIRED`, `SUDO_INTENT_DEVIATION`, `SUDO_PRESENCE_REQUIRED`, `SUDO_NO_WORKSESSION_POLICY`, `SUDO_POLICY_MFA_REQUIRED` and `WORK_SESSION_SCOPE_NOT_ALLOWED`, and its `next_action` names what a human has to do: approve a request, complete an MFA step-up, set up a session-authorized sudo policy, or add the `sudo` scope. An agent cannot approve its own request—that is deliberate. Surface it to a human, who acts out of band, then rerun the command.
 
 ### 5b. Local desktop notifications
 

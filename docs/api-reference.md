@@ -30,20 +30,19 @@ All MCP tools follow a consistent response structure:
 ### HTTP request with API error
 ```json
 {
-  "status": "success",  // HTTP request succeeded
-  "data": {
-    "error": "HTTP Error",
-    "status_code": 403,  // Actual API error code
-    "message": "Client error '403 Forbidden'...",
-    "response": "Access denied"
-  },
+  "status": "error",
+  "message": "Command execution failed",  // the tool's default_message
+  "status_code": 403,
+  "error_code": "...",  // only when the API names a code
   "server_id": "server-uuid",
   "region": "ap1",
-  "workspace": "production"
+  "workspace": "production",
+  "recovery_hints": ["Check if the API token has 'command_execute' ACL permission.", "..."],
+  "related_tools": ["list_command_acls", "create_command_acl"]
 }
 ```
 
-> **Note**: `"status": "success"` indicates successful HTTP communication. Check the `data.error` field for API-level errors like ACL permission issues (403/404).
+> **Note**: This is the shape of a generic HTTP error. On a 4xx, `message` is the tool's own guidance, not the raw HTTP line. A 5xx, a timeout, or an `outcome_unknown` error keeps the client's message instead, such as `Server error after N attempts`. Either way, branch on `status_code` and `error_code` rather than matching the text. Work Session gate codes take a different shape: `work_session_not_active` returns `"status": "pending_approval"` with `"category": "WORK_SESSION_PENDING"`, and every other gate code returns `"status": "error"` with the code in `code`, not `error_code`, plus `next_action`.
 
 A request is retried with backoff after a 5xx, a timeout, or a network error, with one exception: a `POST` or `PATCH` is retried only when it never reached the server—no connection opened or came free from the pool, the proxy refused the tunnel, the URL scheme cannot be sent, or the server answered 503 `auth_verification_unavailable`, which it sends before any view runs. Once it may have reached the server (a read or write timeout, a broken connection, any other 5xx, or an unexpected error such as a 2xx whose body cannot be read), the tool's error comes back at once with `outcome_unknown: true` and no `recovery_hints`, because sending it again could repeat what it did. Check whether the write took effect before calling the tool again. An error without the field was not acted on, or came from a method that is safe to resend (#392).
 
@@ -260,7 +259,7 @@ deployment that supports them; earlier deployments omit them.
 **Parameters:**
 - `workspace` (string): Workspace name
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
-- `search` (string, optional): Free-text search across server name, version, owner, and group name
+- `search` (string, optional): Free-text search across server name, version, remote IP, and group name
 - `groups` (string, optional): Filter by group ID(s)
 - `tag` (string, optional): Filter by tag(s) in `key:value` form
 - `is_connected` (boolean, optional): Filter by live agent connection state
@@ -438,7 +437,7 @@ Execute a command on a server and wait for the result, or with `wait: false` ret
 
 **Parameters:**
 - `server_id` (string): Server UUID
-- `command` (string): Command to execute; must not be empty or whitespace-only. Do not prefix it with `sudo` by default; use `sudo` only when the command genuinely requires root and the Work Session carries the `sudo` scope. Unless a Work Session sudo policy already covers the command, a sudo invocation either routes to human approval and blocks until a human acts, or is denied outright with no request anyone can approve. Check `sudo_denial.category` before waiting—a `sudo_hint` with no `sudo_denial` is a hard denial that creates no request
+- `command` (string): Command to execute; must not be empty or whitespace-only. Do not prefix it with `sudo` by default; use `sudo` only when the command genuinely requires root and the Work Session carries the `sudo` scope. Unless a Work Session sudo policy already covers the command, a sudo invocation is denied at once and the command finishes with the denial in its result. A `sudo_denial` means a person can clear it, so read its `category`, surface it, and rerun the whole command after they act; a `sudo_hint` with no `sudo_denial` is a hard denial that creates no request
 - `workspace` (string): Workspace name
 - `shell` (string, default: "system"): Shell type
 - `username` (string, optional): Username for execution
@@ -501,7 +500,7 @@ The refused command did not run, so nothing needs cancelling. The server attache
 `execute_file_suggestion` here: the script body is on the command line, so there is no path to read.
 `state_command_purpose` returns the same refusal when the re-judged command lands on it.
 
-**Rejected by a gate:** a command a gate refused before it ran ends in `status: "rejected"`, and the response is `status: "error"` with the command row in `details` plus three fields read from it (#242). `rejection_cause` is why the platform refused it (`command_acl_denied`, `command_acl_unavailable`, `risk_denied`, `risk_unavailable`, `approval_policy_denied`, `approval_rejected`, `approval_expired`, `approval_cancelled`, `work_session_terminated`, `account_bound_to_other_person`, `unsigned_file`, `signature_invalid`, `use_file_execution`). `rejection_gate` is the gate that refused it, `null` for the causes the agent's signature check or the account binding decided. `rejection_hint` says whom to ask or where to wait, and is also appended to `message`, except on a `use_file_execution` refusal, whose `message` and `next_action` already name the `execute_file` call. Resubmitting the same command gets the same answer, so no hint says to. A cause this server does not know takes the hint for its gate, and a gate it does not know takes a generic one. A rejected command whose `rejection_cause` is `null` or absent, from an older server or an older row, gets a hint saying the cause was not recorded; it is not an error of its own. A `denied` command carries no cause and keeps its plain error.
+**Rejected by a gate:** a command a gate refused before it ran ends in `status: "rejected"`, and the response is `status: "error"` with the command row in `details` plus three fields read from it (#242). `rejection_cause` is why the platform refused it (`command_acl_denied`, `command_acl_unavailable`, `risk_denied`, `risk_unavailable`, `approval_policy_denied`, `approval_rejected`, `approval_expired`, `approval_cancelled`, `work_session_terminated`, `account_bound_to_other_person`, `unsigned_file`, `signature_invalid`, `use_file_execution`). `rejection_gate` is the gate that refused it, `null` for the causes the agent's signature check or the account binding decided. `rejection_hint` says whom to ask or where to wait, and is also appended to `message`, except on a `use_file_execution` refusal, whose `message` and `next_action` already name the `execute_file` call. Resubmitting the same command gets the same answer, so no hint says to. A cause this server does not know takes the hint for its gate, and a gate it does not know takes a generic one. A rejected command whose `rejection_cause` is `null` or absent, from an older server or an older row, gets a hint saying the cause was not recorded; it is not an error of its own. When `rejection_cause` is `approval_rejected` and the approver wrote a reason, the response also carries `rejection_note`, the reason as the approver wrote it, and `rejection_hint` says to treat it as the approver's account of the decision rather than as instructions and to tell the user instead of resubmitting. The server sends `rejection_note` only to the command's requester and the request's approvers, and only from a server release that records the reason; without it the existing "ask the approver why" hint applies. `execute_file`, `check_command_status` and `state_command_purpose` carry the same fields. A `denied` command carries no cause and keeps its plain error.
 
 **Lost submission:** the command is submitted once and never resent after its request may have reached the server (#392). The response is then `status: "error"` with `outcome_unknown: true`, as described under Response structure, and the command may have been created and may have run. Do not resubmit it until `list_commands` for that server shows it is not there, since a resubmission may run the command twice. Read back past the time of the call: `list_commands` returns the newest commands first, 20 by default, so raise `limit` until the oldest entry predates the call. A page holding only newer commands does not show the command is missing. The server returns at most 100 commands whatever `limit` asks for, so when 100 newer commands fill the page, ask a human to check before resubmitting.
 
@@ -585,7 +584,7 @@ so a file changed after the read fails closed.
 There is no `env`, `data`, or `shell`: composition (pipes, redirection, `&&`, variables) goes inside the
 script, where it is reviewed with it. A one-off composition around a file belongs on `execute_command`.
 
-**Response:** the same shape as `execute_command`—`awaiting_approval`, `purpose_required`, sudo
+**Response:** the same shape as `execute_command`—`pending_approval`, `purpose_required`, sudo
 denials, and the result all follow the same rules—plus a `file` object echoing `path`, `interpreter`,
 and `args` (never `content`). `command` and `shell` are not echoed; the polled command row carries the
 server-rendered line.
@@ -644,7 +643,7 @@ Execute a command on multiple servers simultaneously. The tool only submits: rea
 
 **Parameters:**
 - `server_ids` (array): List of server IDs
-- `command` (string): Command to execute; must not be empty or whitespace-only. The same sudo rule as `execute_command` applies, per server: a needless `sudo` prefix stalls that server's command on a human approver, or is denied outright with no request anyone can approve
+- `command` (string): Command to execute; must not be empty or whitespace-only. The same sudo rule as `execute_command` applies, per server: a needless `sudo` prefix is denied at once on that server, and either a person has to clear it before a rerun or no one can
 - `workspace` (string): Workspace name
 - `shell` (string, default: "system"): Shell type
 - `username` (string, optional): Username for execution
@@ -957,7 +956,7 @@ Send an email invitation to join the workspace (Auth0-enabled deployments). **Pa
 A Work Session is the unit of authorized work: a scope, a set of servers, an expiry, and an audit trail. OAuth/browser callers must have one active before executing commands or transferring files; static API tokens and service tokens bypass the gate.
 
 ### `work_session_create`
-Open a session. **Parameters:** `workspace`, `scopes` (array; agents may request `command` for `execute_command` and `execute_file`, `webftp` for file transfers, `tunnel` for port forwarding, and `sudo` for privilege elevation—request `sudo` only when the work genuinely requires root, since a sudo invocation no policy covers routes to human approval), `servers` (array of UUIDs), `expires_at` (ISO 8601), `description`, `title` (optional), `target_account_username` (optional; the OS account commands will run as, such as `root`—set it when you intend to run as another account so it is approved with the session, then pass the same account as `username` to `execute_command` and `execute_file`; running directly as `root` is declared here, while the `sudo` scope is for elevation from another account; sent only when given), `region` (`ap1` or `us1`, optional). Only `title`, `target_account_username` and `region` may be omitted—a session with no expiry or no stated reason is not a session anyone can approve.
+Open a session. **Parameters:** `workspace`, `scopes` (array; agents may request `command` for `execute_command` and `execute_file`, `webftp` for file transfers, `tunnel` for port forwarding, and `sudo` for privilege elevation—request `sudo` only when the work genuinely requires root, since a sudo invocation no policy covers is denied at once), `servers` (array of UUIDs), `expires_at` (ISO 8601), `description`, `title` (optional), `target_account_username` (optional; the OS account commands will run as, such as `root`—set it when you intend to run as another account so it is approved with the session, then pass the same account as `username` to `execute_command` and `execute_file`; running directly as `root` is declared here, while the `sudo` scope is for elevation from another account; sent only when given), `region` (`ap1` or `us1`, optional). Only `title`, `target_account_username` and `region` may be omitted—a session with no expiry or no stated reason is not a session anyone can approve.
 
 `description` is prose for the human who approves the session. It is not a command list and nothing in it is executed; commands run via `execute_command` once the session is active. Be specific: name the targets, the action, and what will not be touched, since a bare word like "maintenance" gives the approver nothing to decide on. Markdown is supported.
 
@@ -969,7 +968,7 @@ When the created session is `pending`, `approved`, or `active`, the result's `ne
 Read one session (`session_id`) or list them (`status`, `requester_type`, `limit` filters).
 
 ### `work_session_update` / `work_session_extend`
-Partial update of `title`, `description`, `scopes`, `servers` (and `expires_at` for pending sessions only), or extend `expires_at` on an approved/active session. `description` carries the same prose-only rule as on `work_session_create`. `scopes` replaces the whole scope list, so list every scope the session keeps. An update that needs approval is queued as a modification request.
+Partial update of `title`, `description`, `scopes`, `servers` (and `expires_at` for pending sessions only), or extend `expires_at` on an approved or active session that has started and has not expired. `description` carries the same prose-only rule as on `work_session_create`. `scopes` replaces the whole scope list, so list every scope the session keeps. An update that needs approval is queued as a modification request. MCP edits to the session's declared purpose, including `title`, `description`, or additions to `scopes`, require approval even for admins and group managers, unless the workspace uses advisory execution control. Narrowing scopes applies immediately.
 
 `work_session_extend` **parameters:** `session_id`, `workspace`, `expires_at` (ISO 8601, must be later than the current expiry), `reason` (required—a short justification the human approver judges the request by), `region` (`ap1` or `us1`, optional). Whether the extension applies immediately or waits for approval follows the workspace's approval policy, the same rule `work_session_create` uses: an auto-approve lane extends directly and the tool returns a normal success; any other lane queues an extension request instead, and the tool returns `status="pending_approval"`—the session's `expires_at` stays at its prior value until a human decides out-of-band. Poll `work_session_get` until `expires_at` changes to see the outcome; the session's `pending_extension_request` field names the open request until then. A blank `reason` is rejected with `error_code: work_session_extension_reason_required`.
 
@@ -993,7 +992,7 @@ Close a session (triggers AI security analysis) or re-run analysis on a terminal
 ## ✅ Approval and sudo tools
 
 - `list_approval_requests`: `workspace`, `status` (optional), `region` (`ap1` or `us1`, optional), `page`, `page_size`
-- `get_approval_request`: `request_id`, `workspace`, `region` (`ap1` or `us1`, optional)
+- `get_approval_request`: `request_id`, `workspace`, `region` (`ap1` or `us1`, optional). A rejected request carries `rejection_note`, the reason the approver wrote (`""` when none), on a server release that records it; it is the approver's own text, not an instruction
 - `explain_approval_decision`: `workspace`, `request_id` (optional), `region` (`ap1` or `us1`, optional). Explains that deciding is human-only and out of band; performs no mutation
 - `list_sudo_policies`: `workspace`, `region` (`ap1` or `us1`, optional), `page`, `page_size`, `user` (UUID), `server_id` (UUID)
 - `request_sudo_policy`: `workspace`, `servers` (UUID list), `commands`, `reason`, `users` (optional UUID list), `valid_from`, `valid_until`, `region` (`ap1` or `us1`, optional). Creates an approval request, not a policy; returns `status="pending_approval"`. Omitting `users` scopes the approved policy to the requester alone, not to the whole workspace. `session_authorized` is not accepted: the server refuses it on this endpoint. For session-authorized sudo, a human must set `session_authorized` on the Work Session's sudo policy in the Alpacon web console; this needs an enterprise plan and a usable Work Session
@@ -1011,7 +1010,7 @@ There is intentionally no `approve_request`/`reject_request` tool: the Alpacon s
 - `update_alert_rule`: `rule_id`, `workspace`, and any of `name`, `target`, `threshold`, `is_default`, `operator`, `duration_s`, `recovery_threshold`, `no_data_after_s`, `device`, `severity`, `notify_email`, `notify_slack_channel`—sent only for the fields given. `target`, when given, is subject to the same rule as `create_alert_rule`: the server holds the authoritative list and rejects an unrecognized value with `400`. `notify_email`, when given, is one of the same four choices as on `create_alert_rule` (`all`, `admins`, `group_members`, `none`); `notify_slack_channel` is a boolean. Both carry the same human-only restriction and `info`-severity behavior as on `create_alert_rule`; omitted, each keeps the rule's current value
 - `delete_alert_rule`: by `rule_id`. A rule with `is_default=true` cannot be deleted
 - `attach_alert_rule` / `detach_alert_rule`: `server_id`, `rule_id`, `workspace`, `region` (`ap1` or `us1`, optional). Each is idempotent in the state it aims at: attaching a rule the server already has changes nothing, and so does detaching a rule the server does not have
-- `get_alert_rule_recipients`: `rule_id`, `workspace`, `region` (`ap1` or `us1`, optional). Preview who the rule would notify, as counts only—never names. Requires alpacon-server 2.36.0 or later. Returns `email` (`mode`, `count`, `reasons` with `admins`/`group_members`/`owner`—these overlap each other and need not sum to `count`), `slack_channel` (`enabled`, `connected`—both stay as configured for an `info`-severity rule even though `info` posts nothing), and `event_subscriptions` (machine listeners, unaffected by either destination). Counted over the servers the rule is attached to that the caller can see and that the rule can actually fire on; a `404` while the rule itself reads fine through `get_alert_rules` means every one of its servers is outside what the caller can see, not that the rule is gone, while a rule attached to no server answers zeros
+- `get_alert_rule_recipients`: `rule_id`, `workspace`, `region` (`ap1` or `us1`, optional). Preview who the rule would notify, as counts only—never names. Requires alpacon-server 2.36.0 or later. Returns `email` (`mode`, `count`, `reasons` with `admins`/`group_members`/`owner`—these overlap each other and need not sum to `count`), `slack_channel` (`enabled`, `connected`—both stay as configured for an `info`-severity rule even though `info` posts nothing), and `event_subscriptions` (machine listeners, unaffected by either destination). Counted over the servers the rule is attached to that the caller can see and that the rule can actually fire on; a `404` while the rule itself reads fine through `get_alert_rules` means every one of its servers is outside what the caller can see, not that the rule is gone, while a rule attached to no server answers zeros. On alpacon-server 2.47.0 or later, `email.reasons.owner` counts users with direct `server:maintainer` bindings; the server keeps the key name for compatibility
 - `preview_alert_rule`: `workspace`, `rule_id` (optional), `servers` (optional UUID list, up to 20), `window_s` (optional; `60` to `604800`, default `86400`), any of `target`, `threshold`, `operator`, `duration_s`, `recovery_threshold`, `no_data_after_s`, `device`, `severity`, `notify_email`, `notify_slack_channel` (the `create_alert_rule` fields minus `name` and `is_default`, sent only when given), `region` (`ap1` or `us1`, optional). Replays the rule over the window's realtime samples with the live evaluator's own logic, one tick every 60 seconds, and stores nothing. Without `rule_id` the fields describe a new rule and `servers` is required; with `rule_id` they override that rule's values (give none to preview it unchanged), its server overrides apply, and `servers` defaults to its attached servers. Returns `window` (`start`, `end`), `sample_interval_s`, `summary` (`episodes`, `would_interrupt`, `open_at_end`, `longest_s`), `servers` (one row per server and device: `server`, `device`, `samples`, `episodes` with `condition`, `raised_at`, `resolved_at`, `peak`, `outlived_hold`, `would_interrupt`), `recipients` (the `get_alert_rule_recipients` shape, over the replayed servers), and `not_reproduced`. Refused with `400` and an `error_code`: `metrics_alert_rule_preview_window_too_long` (`window_s` over seven days), `metrics_alert_rule_preview_too_many_servers` (over 20 servers, or servers × `window_s` over 5 × 604800), `metrics_alert_rule_preview_too_many_samples` (over 300,000 samples), `metrics_alert_rule_preview_servers_required` (neither `rule_id` nor `servers`), and `server_not_found` (an entry in `servers` is unknown or out of reach). A `404` means no rule with `rule_id`, or every server it is attached to is outside what the caller can see. `notify_email` and `notify_slack_channel` carry the same human-only restriction as on `create_alert_rule`
 
 Creating and updating a rule need a paid plan; reading, attaching and detaching work on any plan. A
@@ -1042,6 +1041,8 @@ The `command` and `path` a rule matches on must not be empty or whitespace-only.
 - `list_server_acls` / `create_server_acl` (`server_id` + token id) / `update_server_acl` / `delete_server_acl`
 - `bulk_server_acl`: `workspace`, `action` (add or remove), `server_ids` (array), token id, `region` (`ap1` or `us1`, optional)
 - `list_file_acls` / `create_file_acl` (`path`, `action`) / `update_file_acl` / `delete_file_acl`
+
+For command and file ACLs, an empty `username` on an API token's rule matches only the system account whose name equals the token user's Alpacon username; on a service token's rule, which has no user, it allows any system account. `*` also allows any system account; a specific username restricts the rule to that account. On update, omitting `username` keeps its current value, while sending `""` restores that token-specific matching. An empty `groupname` allows any group.
 
 On a server that manages command ACLs on the command pre-approval ledger, `create_command_acl`, `update_command_acl`, and `delete_command_acl` are refused with 405 and `error_code` `command_acl_moved`; retrying the call does not help. A Command ACL admin then issues or revokes the entry under Pre-approved commands on the service token's page in the web console, or, on a server that registers them, with the [command pre-approval ledger tools](#-command-pre-approval-ledger-tools). The error hint, the tool descriptions and the 403 recovery hint name those tools only there: on stdio, and on streamable-http with `ALPACON_MCP_REMOTE_LEDGER=true`. A personal API token has no command list on the ledger. `list_command_acls` still answers there, but those rules no longer decide anything; a server without the ledger keeps accepting all four.
 
@@ -1108,11 +1109,15 @@ Remote mode (`ALPACON_MCP_AUTH_ENABLED=true`) only: Alpacon serves the MFA link 
 
 ## 📜 Certificate tools
 
-**Authorities:** `list_certificate_authorities`, `create_certificate_authority` (`name`, `domain`, `organization`, `server_id`, `owner`, `root_valid_days`, `default_valid_days`, `max_valid_days`, `key_algorithm` (`rsa` or `ecdsa`), `key_size` (2048 or 4096 for RSA, 256 or 384 for ECDSA), `install`), `get_certificate_authority`, `update_certificate_authority` (`default_valid_days`, `max_valid_days`, `owner`), `delete_certificate_authority` (only a CA that has never received a sign request; otherwise the server answers 400 with `cert_authority_cannot_be_deleted` and keeps the CA and its sign requests, certificates, and revoke requests. Retiring such a CA means removing its whole host with `unregister_server`, which takes the host out of the workspace, so do it only when the host itself is to be retired; a still-connected host needs `auto=True`, which also removes its Alpamon agent. Once the host is gone the CA leaves the list and takes no new sign requests; requests already pending are not cancelled).
+**Authorities:** `list_certificate_authorities`, `create_certificate_authority` (`name`, `domain`, `organization`, `server_id`, `root_valid_days`, `default_valid_days`, `max_valid_days`, `key_algorithm` (`rsa` or `ecdsa`), `key_size` (2048 or 4096 for RSA, 256 or 384 for ECDSA), `install`), `get_certificate_authority`, `update_certificate_authority` (`default_valid_days`, `max_valid_days`), `delete_certificate_authority` (only a CA that has never received a sign request; otherwise the server answers 400 with `cert_authority_cannot_be_deleted` and keeps the CA and its sign requests, certificates, and revoke requests. Retiring such a CA means removing its whole host with `unregister_server`, which takes the host out of the workspace, so do it only when the host itself is to be retired; a still-connected host needs `auto=True`, which also removes its Alpamon agent. Once the host is gone the CA leaves the list and takes no new sign requests; requests already pending are not cancelled).
+
+CA creation and update require alpacon-server 2.47.0 or later. These tools no longer accept or send `owner`. Through MCP, an obsolete `owner` argument is discarded; an update containing only `owner`, or no settings, returns `No update data provided` without an HTTP request. Use an earlier MCP release against an older server that requires the field.
+
+Manage access to the CA host means an admin account, the host's `server:maintainer` binding, or an owner or manager role in a live group containing the host. Creating, updating, or deleting a CA, and approving, denying, or retrying a sign or revoke request, requires that access. Canceling a pending sign or revoke request also allows its original requester. CA ownership grants none of these permissions.
 
 **Signing requests:** `list_sign_requests`, `create_sign_request` (`domain_list` for DNS names, `ip_list` for IP addresses, `valid_days`), `get_sign_request`, `approve_sign_request`, `deny_sign_request`, `retry_sign_request` (for a CSR stuck in signing), `delete_sign_request` (cancels a pending CSR).
 
-**Certificates:** `list_certificates` (`authority_id` filter), `get_certificate`, `revoke_certificate` (`reason`, an RFC 5280 code: 0 unspecified, 1 key compromise, 2 CA compromise, 3 affiliation changed, 4 superseded, 5 cessation of operation, 6 certificate hold, 9 privilege withdrawn, 10 AA compromise; `requested_reason`, free text; auto-approved when the caller owns the CA or is an admin, otherwise it waits for approval).
+**Certificates:** `list_certificates` (`authority_id` filter), `get_certificate`, `revoke_certificate` (`reason`, an RFC 5280 code: 0 unspecified, 1 key compromise, 2 CA compromise, 3 affiliation changed, 4 superseded, 5 cessation of operation, 6 certificate hold, 9 privilege withdrawn, 10 AA compromise; `requested_reason`, free text; filing requires the certificate's original requester or manage access to the CA host. Auto-approval requires manage access to that host and either an admin account or an `approver` binding over its live groups; an API token also needs `revoke_request:approve`. Otherwise an admitted request waits for approval).
 
 **Revocation requests:** `list_revoke_requests`, `get_revoke_request`, `approve_revoke_request`, `deny_revoke_request`, `retry_revoke_request`, `cancel_revoke_request`.
 
@@ -1122,11 +1127,11 @@ Remote mode (`ALPACON_MCP_AUTH_ENABLED=true`) only: Alpacon serves the MFA link 
 
 - `list_webhooks`: `workspace`, `provider` (one of `slack`, `discord`, `teams`, `telegram`, `custom`), `region` (`ap1` or `us1`, optional), `page`, `page_size`
 - `get_webhook` / `delete_webhook`: by `webhook_id`
-- `create_webhook`: `workspace`, `name`, `url`, `owner` (user UUID, required), `provider` (optional), `ssl_verify`, `enabled`, `region` (`ap1` or `us1`, optional). `provider` is one of `slack`, `discord`, `teams`, `telegram`, `custom`, and is detected from the URL when omitted
+- `create_webhook`: `workspace`, `name`, `url`, `provider` (optional), `ssl_verify`, `enabled`, `region` (`ap1` or `us1`, optional). `provider` is one of `slack`, `discord`, `teams`, `telegram`, `custom`, and is detected from the URL when omitted
 - `update_webhook`: `webhook_id`, `workspace`, and any of `name`, `url`, `ssl_verify`, `enabled`
 - `list_event_subscriptions` / `create_event_subscription` (`channel`, `event_type`, `target_id`) / `delete_event_subscription`. `event_type` includes `command_fin`, `servers_commit`, `sudo`, and (with the workspace's metrics extension enabled) `metric_threshold_crossed` / `metric_threshold_resolved`, which pair through the `alert_id` they carry; subscribing to every server (an omitted `target_id`) needs an admin account
 
-Webhook tools need an admin account, and creating or updating a webhook needs a paid plan.
+Webhook tools need an admin account, and creating or updating a webhook needs a paid plan. `create_webhook` requires alpacon-server 2.39.0 or later and no longer accepts or sends `owner`; MCP discards an obsolete `owner` argument. Use an earlier MCP release against a server older than 2.39.0 that still requires the field.
 
 ---
 

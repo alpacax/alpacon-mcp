@@ -47,6 +47,21 @@ def _unwrap_error(
     return out
 
 
+def test_server_reach_error_names_admin_without_obsolete_owner():
+    envelope = {
+        'error': 'HTTP Error',
+        'status_code': HTTPStatus.FORBIDDEN,
+        'response': json.dumps({'code': 'permission_denied', 'gate': 'server_reach'}),
+    }
+
+    response = _unwrap_error(envelope, default_message='Failed to read server')
+
+    assert response['status'] == 'error'
+    assert response['status_code'] == HTTPStatus.FORBIDDEN
+    assert 'workspace admin' in response['message']
+    assert 'owner' not in response['message']
+
+
 class TestSudoDenialNextActions:
     """Falling through to _DEFAULT_NEXT_ACTION would tell the agent to wait on an
     approval request that, for some of these codes, does not exist.
@@ -76,6 +91,9 @@ class TestSudoDenialNextActions:
         assert 'work_session_update' in text
         # Saying otherwise sends the agent down a path it cannot finish.
         assert 'queue' in text
+        assert 'even for an admin' in text
+        assert 'advisory' in text
+        assert 'title' in text
 
     def test_scope_not_allowed_wording_is_shared(self):
         # One denial, two transports; one string so the wording cannot drift.
@@ -117,6 +135,13 @@ class TestWorkSessionGateResponse:
         assert out['status'] == 'error'
         assert out['code'] == code
         assert out['next_action']
+
+    def test_expired_session_is_replaced_not_extended(self):
+        out = work_session_gate_response('work_session_expired')
+
+        assert 'work_session_create' in out['next_action']
+        assert 'cannot be extended' in out['next_action']
+        assert 'with work_session_extend' not in out['next_action']
 
     def test_kwargs_are_passed_through(self):
         out = work_session_gate_response(
@@ -203,6 +228,19 @@ class TestUnwrapHttpResultGate:
         assert out['error_code'] == 'command_inline_credential'
         assert 'env' in out['message']
         assert 'audit log' in out['message']
+
+    def test_hint_starts_its_own_sentence_after_a_default_message(self):
+        envelope = {
+            'error': 'HTTP Error',
+            'status_code': HTTPStatus.BAD_REQUEST,
+            'response': '{"code":"command_inline_credential"}',
+        }
+
+        out = unwrap_http_result(envelope, default_message='Command execution failed')
+
+        assert out is not None
+        assert out['status_code'] == HTTPStatus.BAD_REQUEST
+        assert out['message'].startswith('Command execution failed. ')
 
     def test_unhinted_code_has_no_hint_text_appended(self):
         out = _unwrap_error(
@@ -968,7 +1006,7 @@ class TestUnwrapHttpResultRefusalFields:
 
         assert out['status'] == 'error'
         assert out['hint'] == server_hint
-        assert out['message'] == f'HTTP 405 {server_hint}'
+        assert out['message'] == f'HTTP 405. {server_hint}'
         assert COMMAND_ACL_MOVED_HINT not in out['message']
 
     def test_server_hint_outranks_the_stdio_code_hint(self, monkeypatch):
@@ -984,7 +1022,7 @@ class TestUnwrapHttpResultRefusalFields:
         )
 
         assert out['status_code'] == HTTPStatus.METHOD_NOT_ALLOWED
-        assert out['message'] == 'HTTP 405 Ask.'
+        assert out['message'] == 'HTTP 405. Ask.'
         assert COMMAND_ACL_MOVED_STDIO_HINT not in out['message']
 
     def test_stdio_code_hint_outranks_the_gate_hint(self, monkeypatch):
@@ -1001,7 +1039,7 @@ class TestUnwrapHttpResultRefusalFields:
 
         assert out['status_code'] == HTTPStatus.METHOD_NOT_ALLOWED
         assert out['gate'] == 'command_acl'
-        assert out['message'] == f'HTTP 405 {COMMAND_ACL_MOVED_STDIO_HINT}'
+        assert out['message'] == f'HTTP 405. {COMMAND_ACL_MOVED_STDIO_HINT}'
 
     def test_server_hint_replaces_the_local_gate_hint(self):
         out = _unwrap_error(
@@ -1009,7 +1047,7 @@ class TestUnwrapHttpResultRefusalFields:
             default_message='failed',
         )
 
-        assert out['message'] == 'HTTP 403 Ask.'
+        assert out['message'] == 'HTTP 403. Ask.'
         assert REFUSAL_GATE_HINT['role'] not in out['message']
 
     def test_next_rides_the_result_as_sent(self):
@@ -1051,7 +1089,7 @@ class TestUnwrapHttpResultRefusalFields:
             'status': 'error',
             'status_code': HTTPStatus.BAD_REQUEST,
             'error_code': 'command_inline_credential',
-            'message': f'HTTP 400 {INLINE_CREDENTIAL_HINT}',
+            'message': f'HTTP 400. {INLINE_CREDENTIAL_HINT}',
         }
 
     def test_unknown_and_malformed_fields_are_ignored(self):

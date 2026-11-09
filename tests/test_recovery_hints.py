@@ -8,6 +8,7 @@ from utils.recovery_hints import (
     enrich_error_response,
     get_recovery_hints,
 )
+from utils.types import ToolResponse
 
 
 class TestDetectErrorDomain:
@@ -371,3 +372,54 @@ class TestEnrichSkipsWhenTheRefusalSaysMore:
             'Creating and updating a webhook needs a paid plan.'
             in enriched['recovery_hints']
         )
+
+
+class TestServerScopedHints:
+    """A tool error echoing server_id is about that server; its message may not say so."""
+
+    SERVER_ID = '550e8400-e29b-41d4-a716-446655440123'
+
+    def _refusal(self, status: HTTPStatus, message: str, **fields: str) -> ToolResponse:
+        return {'status': 'error', 'status_code': status, 'message': message, **fields}
+
+    def test_a_404_with_a_server_id_points_at_list_servers(self):
+        response = self._refusal(
+            HTTPStatus.NOT_FOUND, 'Failed to get OS version', server_id=self.SERVER_ID
+        )
+
+        enriched = enrich_error_response(response, tool_name='get_os_version')
+
+        assert enriched['related_tools'] == ['list_servers']
+
+    def test_a_403_with_a_server_id_points_at_server_acls(self):
+        response = self._refusal(
+            HTTPStatus.FORBIDDEN, 'Failed to restart agent', server_id=self.SERVER_ID
+        )
+
+        enriched = enrich_error_response(response, tool_name='restart_agent')
+
+        assert enriched['related_tools'] == ['list_server_acls', 'create_server_acl']
+
+    def test_a_server_id_does_not_outrank_the_command_domain(self):
+        response = self._refusal(
+            HTTPStatus.FORBIDDEN, 'Command execution failed', server_id=self.SERVER_ID
+        )
+
+        enriched = enrich_error_response(response, tool_name='execute_command')
+
+        assert enriched['related_tools'] == ['list_command_acls', 'create_command_acl']
+
+    def test_an_omitted_optional_server_id_stays_general(self):
+        response = self._refusal(HTTPStatus.NOT_FOUND, 'Failed to list events')
+        response['server_id'] = None
+
+        enriched = enrich_error_response(response, tool_name='list_events')
+
+        assert 'related_tools' not in enriched
+
+    def test_no_server_id_stays_general(self):
+        response = self._refusal(HTTPStatus.NOT_FOUND, 'Failed to get OS version')
+
+        enriched = enrich_error_response(response, tool_name='get_os_version')
+
+        assert 'related_tools' not in enriched

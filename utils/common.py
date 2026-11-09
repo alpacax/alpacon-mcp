@@ -37,13 +37,19 @@ except importlib.metadata.PackageNotFoundError:
 # MCP User-Agent for identification
 MCP_USER_AGENT = f'alpacon-mcp/{MCP_VERSION} (MCP-Server; persistent-pool) Python/{platform.python_version()}'
 
+WORK_SESSION_PURPOSE_APPROVAL_HINT = (
+    "MCP edits to a session's title or description and additions to its scopes are "
+    'queued for human approval even for an admin or group manager, unless the workspace '
+    'uses advisory execution control. Wait until the change applies before retrying.'
+)
+
 # One string for the two transports the same denial arrives on—an HTTP error
 # envelope (lowercase code) and the sudo plugin's terminal line (uppercase)—so
 # the guidance cannot drift apart.
 _SCOPE_NOT_ALLOWED_NEXT_ACTION = (
     'The attached Work Session does not include the scope for this operation. '
-    'Add the scope with work_session_update (may require approval) or create a '
-    'new session with the right scope, then retry.'
+    'Add the scope with work_session_update or create a new session with the '
+    'right scope. ' + WORK_SESSION_PURPOSE_APPROVAL_HINT
 )
 
 # The human-resolvable next action differs by category: SUDO_APPROVAL_REQUIRED /
@@ -110,12 +116,9 @@ _NEXT_ACTION_BY_CATEGORY: dict[str, str] = {
         'This command was judged off-purpose for the Work Session and an '
         'approval request was created. Either wait for a human reviewer to '
         'approve it out-of-band, or restate in prose what the session is '
-        'actually for with work_session_update(description=...) and retry—'
-        'never put the command text there; the description is a purpose '
-        'statement for the approver and nothing in it is executed. Restating is '
-        'not a shortcut around approval: the server queues a description change '
-        'for its own approval unless you are an admin or hold owner/manager on '
-        'every server in the session.'
+        'actually for with work_session_update(description=...). Never put the '
+        'command text there. The description is a purpose statement for the '
+        'approver and nothing in it is executed. ' + WORK_SESSION_PURPOSE_APPROVAL_HINT
     ),
     'WORK_SESSION_SCOPE_NOT_ALLOWED': _SCOPE_NOT_ALLOWED_NEXT_ACTION,
     'WORK_SESSION_EXTENSION_PENDING': (
@@ -380,8 +383,8 @@ REFUSAL_GATE_HINT: dict[str, str] = {
         'token that carries the scope; you cannot add one yourself.'
     ),
     'server_reach': (
-        'This credential cannot reach the server. Ask its owner or a workspace '
-        'admin for access; list_servers shows the servers you can reach.'
+        'This credential cannot reach the server. Ask a workspace admin for '
+        'access; list_servers shows the servers you can reach.'
     ),
     'command_acl': (
         'No command pre-approval admits this. A Command ACL admin grants it under '
@@ -667,8 +670,9 @@ def work_session_gate_response(
             )
         case 'work_session_expired':
             next_action = (
-                'The attached Work Session has expired. Extend it with '
-                'work_session_extend, or create a new one, then retry.'
+                'The attached Work Session has expired, and an expired session '
+                'cannot be extended. Create a new one with work_session_create, get '
+                'it approved, then retry.'
             )
         case 'work_session_scope_not_allowed':
             next_action = _SCOPE_NOT_ALLOWED_NEXT_ACTION
@@ -846,7 +850,8 @@ def unwrap_http_result(
     if hint is None:
         hint = refusal_hint(refusal.get('gate'), refusal.get('missing'))
     if hint is not None:
-        message = f'{message} {hint}'
+        separator = ' ' if message.endswith('.') else '. '
+        message = f'{message}{separator}{hint}'
 
     return remember_console_link(error_response(message, **error_kwargs), body)
 
