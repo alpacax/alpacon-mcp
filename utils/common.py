@@ -864,6 +864,8 @@ def unwrap_http_result(
                 if isinstance(entry, dict)
                 and isinstance(text := entry.get('message'), str)
                 and text
+                # Servers before the named refusal send DRF's default text.
+                and text != 'Invalid input.'
             ]
             if messages:
                 message = f'{message}: {" ".join(messages)}'

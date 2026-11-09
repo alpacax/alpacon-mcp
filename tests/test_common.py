@@ -1171,3 +1171,28 @@ def test_environment_refusal_with_server_message_adds_no_second_hint():
         default_message='Command execution failed',
     )
     assert result['message'] == f'Command execution failed: {server}'
+
+
+@pytest.mark.parametrize('code', ['command_dangerous_env', 'command_invalid_env'])
+def test_environment_refusal_from_a_current_server_keeps_local_guidance(code):
+    # The body today's server sends: the code with DRF's default message.
+    result = _unwrap_error(
+        {
+            'error': 'HTTP Error',
+            'status_code': 400,
+            'response': json.dumps(
+                {
+                    'code': code,
+                    'field_errors': {
+                        'non_field_errors': [
+                            {'code': code, 'message': 'Invalid input.'}
+                        ]
+                    },
+                }
+            ),
+        },
+        default_message='Command execution failed',
+    )
+    assert result['error_code'] == code
+    assert 'Invalid input.' not in result['message']
+    assert 'inside the command' in result['message']
