@@ -10,7 +10,7 @@ Complete reference for all Alpacon MCP Server tools and capabilities.
 - **Every other `*_id` is checked before the request is built.** A value must be a string of letters, digits, `.`, `_`, `~`, or `-`, and must not be `.` or `..`. Most of these identifiers are interpolated into the endpoint path, where a `/` or a `..` retargets the request; the ones that only reach a query parameter or a request body are held to the same rule, because the check goes by the argument name rather than by where the value ends up. Anything else—a `/`, a `?`, a `#`, a percent-encoded spelling of one, or a value that is not a string at all—comes back as a validation error naming the field, and no request is sent. `work_session_id` is the one exception: its surrounding whitespace is stripped on purpose, so the rule would reject values the `ALPACON_WORK_SESSION` route accepts.
 - **`limit` and `page_size` must be positive integers.** Both name a page size and reach the API as `page_size`, where a zero or a negative asks for a page that cannot exist. Either one comes back as a validation error naming the field, and no request is sent. Omitting the argument still gets the tool's own default.
 - **MFA step-up**: in hosted mode a call can return `status="mfa_required"` with an `mfa_url`; see [MFA step-up required](#mfa-step-up-required).
-- **Work Session gate**: OAuth/browser callers must run command execution and file transfers inside an active Work Session; static API and service tokens bypass it. Blocked calls return `status="pending_approval"` or a `status="error"` with a `code` and `next_action`—see [Work session tools](#-work-session-tools).
+- **Work Session gate**: Personal API tokens and OAuth/browser callers use an active, approved Work Session for command execution and REST file-transfer creation. Service tokens retain their endpoint-specific authorization rules. Ordinary reads and Work Session requests keep their existing permissions; a session does not grant interactive channel access to a token. Blocked calls return `status="pending_approval"` or a `status="error"` with a `code` and `next_action`—see [Work session tools](#-work-session-tools).
 
 ## 📋 Response structure
 
@@ -447,7 +447,7 @@ Execute a command on a server and wait for the result, or with `wait: false` ret
 - `scheduled_at` (string, optional): ISO 8601 datetime for scheduled execution
 - `data` (string, optional): Stdin data
 - `timeout` (integer, default: 300): Timeout in seconds
-- `work_session_id` (string, optional): Work Session to link the call to for audit; required for MCP OAuth and browser-login callers, optional for static API and service tokens; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
+- `work_session_id` (string, optional): Work Session to link the call to for audit; an active, approved session is needed for personal API tokens and MCP OAuth/browser callers when creating commands or REST file transfers; service tokens retain their endpoint-specific authorization rules; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
 - `purpose` (string, optional): What this particular command is for (ADR 0052). The assessor judges the command with it in hand, so one that would otherwise queue for a human may clear on its own. State a fact local to this host that the Work Session description does not already imply; general knowledge adds nothing the assessor lacks, and a purpose cannot lower a command's intrinsic risk. Trimmed to 2000 characters rather than refused, and the response then carries `purpose_truncated: true`
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `wait` (boolean, default: true): `false` submits the command and returns its `command_id` at once without polling; read the result later with `check_command_status`
@@ -533,7 +533,7 @@ human, which a `bash /path` line on `execute_command` never is.
 - `run_after` (array, optional): Command IDs to wait for before executing
 - `scheduled_at` (string, optional): ISO 8601 datetime for scheduled execution
 - `timeout` (integer, default: 300): Timeout in seconds
-- `work_session_id` (string, optional): Work Session to link the call to for audit; required for MCP OAuth and browser-login callers, optional for static API and service tokens; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins. With `write_file` or `read_from_server`, the transfer is linked to it too
+- `work_session_id` (string, optional): Work Session to link the call to for audit; an active, approved session is needed for personal API tokens and MCP OAuth/browser callers when creating commands or REST file transfers; service tokens retain their endpoint-specific authorization rules; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins. With `write_file` or `read_from_server`, the transfer is linked to it too
 - `purpose` (string, optional): Same semantics as on `execute_command`
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
@@ -650,7 +650,7 @@ Execute a command on multiple servers simultaneously. The tool only submits: rea
 - `groupname` (string, default: "alpacon"): Group name
 - `env` (object, optional): Environment variables
 - `parallel` (boolean, default: true): Execute in parallel; `false` runs the servers one after another
-- `work_session_id` (string, optional): Work Session to link the call to for audit; required for MCP OAuth and browser-login callers, optional for static API and service tokens; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
+- `work_session_id` (string, optional): Work Session to link the call to for audit; an active, approved session is needed for personal API tokens and MCP OAuth/browser callers when creating commands or REST file transfers; service tokens retain their endpoint-specific authorization rules; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
 - `purpose` (string, optional): What this particular command is for (ADR 0052). The assessor judges the command with it in hand, so one that would otherwise queue for a human may clear on its own. State a fact local to this host that the Work Session description does not already imply; general knowledge adds nothing the assessor lacks, and a purpose cannot lower a command's intrinsic risk. Trimmed to 2000 characters rather than refused, and the response then carries `purpose_truncated: true`. This tool never waits, so it is never asked for a purpose after the fact—stating it up front is the only chance
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
@@ -697,7 +697,7 @@ Create a new WebFTP session for file transfer.
 - `server_id` (string): Server UUID
 - `workspace` (string): Workspace name
 - `username` (string, optional): Username for FTP access (defaults to the authenticated user)
-- `work_session_id` (string, optional): Work Session to link the call to for audit; required for MCP OAuth and browser-login callers, optional for static API and service tokens; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
+- `work_session_id` (string, optional): Work Session to link the call to for audit; an active, approved session is needed for personal API tokens and MCP OAuth/browser callers when creating commands or REST file transfers; service tokens retain their endpoint-specific authorization rules; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 ### `webftp_sessions_list`
@@ -717,7 +717,7 @@ Upload a local file to a server using S3 presigned URLs.
 - `remote_file_path` (string): Absolute path on server
 - `workspace` (string): Workspace name
 - `username` (string, optional): Username (defaults to authenticated user)
-- `work_session_id` (string, optional): Work Session to link the call to for audit; required for MCP OAuth and browser-login callers, optional for static API and service tokens; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
+- `work_session_id` (string, optional): Work Session to link the call to for audit; an active, approved session is needed for personal API tokens and MCP OAuth/browser callers when creating commands or REST file transfers; service tokens retain their endpoint-specific authorization rules; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `allow_overwrite` (boolean, default: true): Allow overwriting existing files
 
@@ -738,7 +738,7 @@ A scoped API or service token without `command:read` (the `file_download` and `f
 - `workspace` (string): Workspace name
 - `resource_type` (string, default: "file"): "file" or "folder" (folders download as .zip)
 - `username` (string, optional): Username (defaults to authenticated user)
-- `work_session_id` (string, optional): Work Session to link the call to for audit; required for MCP OAuth and browser-login callers, optional for static API and service tokens; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
+- `work_session_id` (string, optional): Work Session to link the call to for audit; an active, approved session is needed for personal API tokens and MCP OAuth/browser callers when creating commands or REST file transfers; service tokens retain their endpoint-specific authorization rules; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 ### `webftp_upload_content`
@@ -753,7 +753,7 @@ On streamable-http, `file_content` is capped at 3 MiB of decoded (original) file
 - `workspace` (string): Workspace name
 - `file_name` (string, optional): Name to record for the upload
 - `username` (string, optional): Username (defaults to authenticated user)
-- `work_session_id` (string, optional): Work Session to link the call to for audit; required for MCP OAuth and browser-login callers, optional for static API and service tokens; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
+- `work_session_id` (string, optional): Work Session to link the call to for audit; an active, approved session is needed for personal API tokens and MCP OAuth/browser callers when creating commands or REST file transfers; service tokens retain their endpoint-specific authorization rules; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
 - `allow_overwrite` (boolean, default: true)
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
@@ -766,7 +766,7 @@ Upload several local files to one directory in a single operation.
 - `remote_directory` (string): Absolute directory on server that receives every file
 - `workspace` (string): Workspace name
 - `username` (string, optional): Username (defaults to authenticated user)
-- `work_session_id` (string, optional): Work Session to link the call to for audit; required for MCP OAuth and browser-login callers, optional for static API and service tokens; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
+- `work_session_id` (string, optional): Work Session to link the call to for audit; an active, approved session is needed for personal API tokens and MCP OAuth/browser callers when creating commands or REST file transfers; service tokens retain their endpoint-specific authorization rules; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
 - `allow_overwrite` (boolean, default: true): Allow overwriting existing files
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
@@ -779,7 +779,7 @@ Download several files or folders as one ZIP archive.
 - `local_file_path` (string): Absolute path for the local ZIP archive
 - `workspace` (string): Workspace name
 - `username` (string, optional): Username (defaults to authenticated user)
-- `work_session_id` (string, optional): Work Session to link the call to for audit; required for MCP OAuth and browser-login callers, optional for static API and service tokens; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
+- `work_session_id` (string, optional): Work Session to link the call to for audit; an active, approved session is needed for personal API tokens and MCP OAuth/browser callers when creating commands or REST file transfers; service tokens retain their endpoint-specific authorization rules; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 ### `webftp_check_status`
@@ -953,7 +953,7 @@ Send an email invitation to join the workspace (Auth0-enabled deployments). **Pa
 
 ## 🗂️ Work session tools
 
-A Work Session is the unit of authorized work: a scope, a set of servers, an expiry, and an audit trail. OAuth/browser callers must have one active before executing commands or transferring files; static API tokens and service tokens bypass the gate.
+A Work Session is the unit of authorized work: a scope, a set of servers, an expiry, and an audit trail. Personal API tokens and OAuth/browser callers use an active, approved session for command execution and REST file-transfer creation. Service tokens retain their endpoint-specific authorization rules; ordinary reads and Work Session requests keep their existing permissions.
 
 ### `work_session_create`
 Open a session. **Parameters:** `workspace`, `scopes` (array; agents may request `command` for `execute_command` and `execute_file`, `webftp` for file transfers, `tunnel` for port forwarding, and `sudo` for privilege elevation—request `sudo` only when the work genuinely requires root, since a sudo invocation no policy covers is denied at once), `servers` (array of UUIDs), `expires_at` (ISO 8601), `description`, `title` (optional), `target_account_username` (optional; the OS account commands will run as, such as `root`—set it when you intend to run as another account so it is approved with the session, then pass the same account as `username` to `execute_command` and `execute_file`; running directly as `root` is declared here, while the `sudo` scope is for elevation from another account; sent only when given), `region` (`ap1` or `us1`, optional). Only `title`, `target_account_username` and `region` may be omitted—a session with no expiry or no stated reason is not a session anyone can approve.

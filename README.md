@@ -25,7 +25,7 @@ An MCP (Model Context Protocol) server that connects AI assistants to Alpacon. E
 ## 🌟 Core features
 
 ### 🔐 **Session-scoped control**
-- Work Sessions that scope commands and file transfers to an approved, auditable window for OAuth and browser callers (static API and service tokens bypass the gate)
+- Work Sessions that scope command execution and REST file-transfer creation to an active, approved, auditable window for personal API tokens and OAuth/browser callers; service tokens retain their endpoint-specific authorization rules
 - Authenticate once, access every authorized server
 - Role-based access control (RBAC) with time-limited permissions
 - Full audit trail for every AI operation
@@ -466,7 +466,7 @@ Install the MCP extension and add to settings:
 - **work_session_records**: One page of one websh terminal recording in the session, keyed by the `id` of a `websh_session` item on the timeline; follow `data.next` as `cursor`, since a short page is not the end
 - **work_session_close** / **work_session_analyze**: Close a session and run AI security analysis
 
-OAuth/browser callers must scope command execution and file transfers under an active Work Session; static API tokens bypass the gate.
+Personal API tokens and OAuth/browser callers use an active, approved Work Session for command execution and REST file-transfer creation. Service tokens retain their endpoint-specific authorization rules. Ordinary reads and Work Session requests keep their existing permissions; a Work Session does not grant interactive channel access to a token.
 
 ### 🔔 Alert management
 - **list_alerts**: List alerts with optional filtering

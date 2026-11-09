@@ -103,9 +103,11 @@ Things the code will not tell you at a glance:
   with `outcome_unknown: true`, and such an error gets no recovery hints.
   The upstream API takes no idempotency key, so a resent
   `/api/events/commands/` POST runs the command twice.
-- **The WorkSession gate applies to OAuth/browser callers only.** Static API and
-  service tokens bypass it, so a flow that works in stdio mode can be blocked in
-  remote mode. `ALPACON_WORK_SESSION` supplies a default session id; an explicit
+- **Personal API tokens need an active, approved Work Session for command execution
+  and REST file-transfer creation, as OAuth/browser callers do.** Service tokens
+  retain their endpoint-specific authorization rules. This guidance grants no
+  interactive channel access and changes no read or session-request permission.
+  `ALPACON_WORK_SESSION` supplies a default session id; an explicit
   `work_session_id` argument wins.
 - **API token tools reject static API tokens.** List/get receive an upstream
   403 for `source='api'` tokens. Create/update/delete/duplicate/rotate use

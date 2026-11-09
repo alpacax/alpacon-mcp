@@ -28,8 +28,10 @@ SESSION_ID_DESCRIPTION = (
 )
 
 WORK_SESSION_ID_DESCRIPTION = (
-    'Work Session to link this call to for audit. The server requires one for MCP '
-    'OAuth and browser-login callers; static API and service tokens may omit it. '
+    'Work Session to link this call to for audit. An active, approved Work Session '
+    'is required for command execution and REST file-transfer creation with '
+    'personal API tokens, MCP OAuth or browser login. Service tokens do not '
+    'require a Work Session for those operations; endpoint permissions still apply. '
     "Omitted, it falls back to ALPACON_WORK_SESSION in this MCP server's "
     'environment; an explicit value wins.'
 )
