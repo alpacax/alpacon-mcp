@@ -133,6 +133,7 @@ class TestSudoDenialHint:
         assert 'queue' in hint
         assert 'even for an admin' in hint
         assert 'advisory' in hint
+        assert 'title' in hint
 
     def test_session_missing(self):
         out = {'result': 'Alpacon denied this sudo command (SUDO_SESSION_MISSING).\n'}
@@ -170,6 +171,7 @@ class TestSudoDenialHint:
         assert 'queue' in hint
         assert 'even for an admin' in hint
         assert 'advisory' in hint
+        assert 'title' in hint
 
     def test_workspace_sudo_with_mfa_disabled(self):
         out = {

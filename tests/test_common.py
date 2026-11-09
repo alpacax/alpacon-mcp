@@ -93,6 +93,7 @@ class TestSudoDenialNextActions:
         assert 'queue' in text
         assert 'even for an admin' in text
         assert 'advisory' in text
+        assert 'title' in text
 
     def test_scope_not_allowed_wording_is_shared(self):
         # One denial, two transports; one string so the wording cannot drift.

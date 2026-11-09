@@ -38,8 +38,8 @@ except importlib.metadata.PackageNotFoundError:
 MCP_USER_AGENT = f'alpacon-mcp/{MCP_VERSION} (MCP-Server; persistent-pool) Python/{platform.python_version()}'
 
 WORK_SESSION_PURPOSE_APPROVAL_HINT = (
-    "MCP edits to a session's description or additions to its scopes are queued "
-    'for human approval even for an admin or group manager, unless the workspace '
+    "MCP edits to a session's title or description and additions to its scopes are "
+    'queued for human approval even for an admin or group manager, unless the workspace '
     'uses advisory execution control. Wait until the change applies before retrying.'
 )
 

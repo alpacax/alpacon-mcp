@@ -48,6 +48,15 @@ async def test_guarded_execution_covers_intent_deviation():
 
 
 @pytest.mark.asyncio
+async def test_guarded_execution_says_purpose_edits_queue_even_for_admins():
+    text = await _render('guarded_execution', {'work_session_id': 'sess-123'})
+
+    assert 'title or description edit' in text
+    assert 'even for an admin' in text
+    assert 'advisory execution control' in text
+
+
+@pytest.mark.asyncio
 async def test_guarded_execution_names_both_denial_fields():
     # pending_approval_response carries `category`, Work Session gate errors carry
     # `code`, and every other coded error carries `error_code`. Naming only some

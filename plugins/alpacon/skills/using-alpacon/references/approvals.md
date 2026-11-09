@@ -27,11 +27,11 @@ Do not prefix a command with `sudo` unless it needs root and the Work Session ha
 Categories inside `sudo_denial`:
 
 - `SUDO_APPROVAL_REQUIRED`: an approval request was created. Rerun after a reviewer approves it.
-- `SUDO_INTENT_DEVIATION`: the command was judged off-purpose for the session, and a request was created. Wait for the reviewer. If the session description understated the work it was always meant to cover, you may restate that purpose in prose with `work_session_update(description=...)`; never put command text there. The change itself may wait for approval, so a reworded purpose is not a way around the reviewer.
+- `SUDO_INTENT_DEVIATION`: the command was judged off-purpose for the session, and a request was created. Wait for the reviewer. If the session description understated the work it was always meant to cover, you may restate that purpose in prose with `work_session_update(description=...)`; never put command text there. The change itself is queued for approval, even for an admin or group manager, unless the workspace uses advisory execution control, so a reworded purpose is not a way around the reviewer.
 - `SUDO_PRESENCE_REQUIRED`: a person must complete a fresh MFA check. Rerun after they do.
 - `SUDO_NO_WORKSESSION_POLICY`: no session-authorized sudo policy on the session covers this command. A person must set `session_authorized` on a Work Session sudo policy in the web console. `request_sudo_policy` cannot ask for a session-authorized policy, so it does not unblock this command. Rerun once the policy is live.
 - `SUDO_POLICY_MFA_REQUIRED`: a policy covers the command but cannot be used without a person present. A person must change the policy in the web console; nothing is waiting until they do.
-- `WORK_SESSION_SCOPE_NOT_ALLOWED`: the session lacks the `sudo` scope. Add it with `work_session_update(scopes=[...])`, keeping the existing scopes; the change may wait for approval.
+- `WORK_SESSION_SCOPE_NOT_ALLOWED`: the session lacks the `sudo` scope. Add it with `work_session_update(scopes=[...])`, keeping the existing scopes; the addition is queued for approval, even for an admin, unless the workspace uses advisory execution control.
 
 Hard denials (`sudo_hint` only) include `SUDO_RISK_DENIED`, `SUDO_COMMAND_NOT_AUTHORIZED`, `SUDO_SESSION_MISSING`, `SUDO_NO_AUTHORITY`, and `WORKSPACE_SUDO_WITH_MFA_DISABLED`.
 
