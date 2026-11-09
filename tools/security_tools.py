@@ -1,5 +1,9 @@
 """Security ACL tools for Alpacon MCP server."""
 
+from typing import Annotated
+
+from pydantic import Field
+
 from utils.api_call import http_call_response
 from utils.common import (
     build_list_params,
@@ -35,6 +39,16 @@ _BULK_MAX_SERVERS = 100
 
 _BOTH_TOKENS_ERROR = 'Provide either api_token_id or service_token_id, not both'
 _TOKEN_REQUIRED_ERROR = 'Either api_token_id or service_token_id must be provided'
+_ACL_USERNAME_DESCRIPTION = (
+    'System account matched by the rule. For an API token, an empty value '
+    "matches only the system account named like the token user's Alpacon "
+    'username. For a service token, which has no user, an empty value allows any '
+    "system account. '*' allows any system account, and any other value matches "
+    'that username exactly.'
+)
+_ACL_USERNAME_UPDATE_DESCRIPTION = (
+    f'{_ACL_USERNAME_DESCRIPTION} Omit to leave the current value unchanged.'
+)
 
 
 def _token_binding_error(
@@ -147,13 +161,13 @@ async def create_command_acl(
     command: str,
     api_token_id: str | None = None,
     service_token_id: str | None = None,
-    username: str = '',
+    username: Annotated[str, Field(description=_ACL_USERNAME_DESCRIPTION)] = '',
     groupname: str = '',
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Create a rule bound to exactly one of `api_token_id`, `service_token_id`.
-    Empty `username` means token owner only, '*' any user; empty `groupname`, any."""
+    """Create a rule bound to one token; empty username is owner-only for an API
+    token and unrestricted for a service token."""
     if not command.strip():
         return empty_value_error('command')
     if err := _token_binding_error(api_token_id, service_token_id):
@@ -189,13 +203,15 @@ async def update_command_acl(
     acl_id: str,
     workspace: str,
     command: str | None = None,
-    username: str | None = None,
+    username: Annotated[
+        str | None, Field(description=_ACL_USERNAME_UPDATE_DESCRIPTION)
+    ] = None,
     groupname: str | None = None,
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Update a rule; the token binding is fixed, so delete and recreate to rebind.
-    Pass '' to clear `username` or `groupname`; omit to leave it unchanged."""
+    """Update a rule without rebinding its token; omit a field to keep it unchanged.
+    Empty username uses the bound token type's documented behavior."""
     if command is not None and not command.strip():
         return empty_value_error('command')
 
@@ -502,13 +518,13 @@ async def create_file_acl(
     action: str,
     api_token_id: str | None = None,
     service_token_id: str | None = None,
-    username: str = '',
+    username: Annotated[str, Field(description=_ACL_USERNAME_DESCRIPTION)] = '',
     groupname: str = '',
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Create a rule for a `path` pattern bound to exactly one of the two token ids.
-    `action` is upload, download or *; empty `username` means token owner, '*' any."""
+    """Create a path rule bound to one token; empty username is owner-only for an API
+    token and unrestricted for a service token."""
     if not path.strip():
         return empty_value_error('path')
     if action not in VALID_FILE_ACL_ACTIONS:
@@ -549,13 +565,15 @@ async def update_file_acl(
     workspace: str,
     path: str | None = None,
     action: str | None = None,
-    username: str | None = None,
+    username: Annotated[
+        str | None, Field(description=_ACL_USERNAME_UPDATE_DESCRIPTION)
+    ] = None,
     groupname: str | None = None,
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Update a rule; the token binding is fixed, so delete and recreate to rebind.
-    Pass '' to clear `username` or `groupname`; omit to leave it unchanged."""
+    """Update a rule without rebinding its token; omit a field to keep it unchanged.
+    Empty username uses the bound token type's documented behavior."""
     if path is not None and not path.strip():
         return empty_value_error('path')
     if action is not None and action not in VALID_FILE_ACL_ACTIONS:

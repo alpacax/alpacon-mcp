@@ -505,7 +505,9 @@ async def delete_alert_rule(
         'rule attached to no server answers zeros, not a 404. The response holds email (mode, count, reasons: admins, '
         'group_members, owner), slack_channel (enabled, connected), and '
         'event_subscriptions, a count of machine listeners that neither '
-        'destination affects. Related: get_alert_rules, '
+        'destination affects. On alpacon-server 2.47.0 or later, reasons.owner '
+        'counts users with a direct server:maintainer binding; the key keeps '
+        'its old name for compatibility. Related: get_alert_rules, '
         'create_alert_rule, update_alert_rule (set the destinations).'
     ),
     annotations=READ_ONLY,

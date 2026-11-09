@@ -2,7 +2,7 @@
  "tools": [
   {
    "name": "approve_sign_request",
-   "description": "Approve a pending certificate signing request (CSR). The CA will then issue the certificate. Use list_sign_requests to find pending CSRs. Requires admin or CA owner privileges.",
+   "description": "Approve a pending certificate signing request (CSR). The CA will then issue the certificate. Use list_sign_requests to find pending CSRs. Requires manage access to the server that hosts the CA. Manage access means an admin account, a user with the server:maintainer role on that server, or an owner or manager of a group containing it.",
    "inputSchema": {
     "properties": {
      "csr_id": {

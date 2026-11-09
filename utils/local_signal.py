@@ -272,7 +272,7 @@ class Signal:
             subject = f'Work Session {self.session}' if self.session else 'Work Session'
             body = (
                 f'{subject} is paused after a critical denial. '
-                'The owner or an approver can resume or end it.'
+                'Open the web console for the available recovery actions.'
             )
         elif self.kind == 'approval_pending' and self.target in (
             'work_session',

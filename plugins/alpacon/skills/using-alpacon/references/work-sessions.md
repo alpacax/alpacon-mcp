@@ -37,7 +37,7 @@ A command or transfer the session does not cover fails before it runs with `stat
 - `work_session_required`: no session attached. Create one and pass its id.
 - `work_session_not_usable`: the session is finished. Create a new one.
 - `work_session_expired`: the session ran out. Create a new one; its `next_action` may suggest extending, but an expired session cannot be extended.
-- `work_session_scope_not_allowed`: the scope is missing. Add it with `work_session_update(scopes=[...])`, keeping the existing scopes; the change may wait for approval.
+- `work_session_scope_not_allowed`: the scope is missing. Add it with `work_session_update(scopes=[...])`, keeping the existing scopes; the addition is queued for approval, even for an admin, unless the workspace uses advisory execution control.
 - `work_session_server_not_allowed`: the server is not in the session. Add it with `work_session_update(servers=[...])`, keeping the existing servers.
 - `work_session_assignee_mismatch`: the session belongs to someone else. Use your own.
 

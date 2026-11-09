@@ -90,8 +90,10 @@ here is judged in real time and recorded. Follow this discipline.
    is for with `work_session_update(description=...)`—never paste the command text into
    the description, which is read by the approver and never executed.
    `WORK_SESSION_SCOPE_NOT_ALLOWED` means you may add the missing scope with
-   `work_session_update(scopes=[...])`. Either edit is normally queued for its own
-   approval, so it is a correction, not a way around the reviewer.
+   `work_session_update(scopes=[...])`. A title or description edit or an added scope
+   made through MCP is queued for its own approval, even for an admin or group manager,
+   unless the workspace uses advisory execution control, so it is a correction, not a
+   way around the reviewer.
 
 5. When the work is done, call `work_session_close` to mark it completed and trigger the
    AI security analysis over the session.

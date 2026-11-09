@@ -1278,7 +1278,7 @@ async def list_latest_metrics(
     Args:
         workspace: Workspace name. Required parameter
         region: Region (ap1, us1). Auto-detected if not provided
-        search: Free-text search across server name, version, owner, and group name (optional)
+        search: Free-text search across server name, version, remote IP, and group name (optional)
         groups: Filter by group ID(s) (optional)
         tag: Filter by tag(s) in "key:value" form (optional)
         is_connected: Filter by live agent connection state (optional)
