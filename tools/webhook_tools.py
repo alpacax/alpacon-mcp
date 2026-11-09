@@ -7,7 +7,7 @@ from pydantic import Field
 from utils.api_call import http_call_response
 from utils.common import build_list_params, exclude_none
 from utils.decorators import mcp_tool_handler
-from utils.error_handler import format_validation_error, validate_uuid_format
+from utils.error_handler import format_validation_error
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
 from utils.types import ToolResponse
@@ -21,9 +21,6 @@ _PROVIDERS_SENTENCE = (
     'or omitted to let the server detect it from the URL.'
 )
 _PROVIDERS_FILTER_SENTENCE = f'provider must be one of: {_PROVIDERS_LIST}.'
-_OWNER_SENTENCE = "owner must be a user's UUID; a username is rejected."
-
-_OWNER_DESCRIPTION = "A user's UUID; a username is rejected."
 _PROVIDER_FILTER_DESCRIPTION = f'Filter by provider: {_PROVIDERS_LIST}.'
 _PROVIDER_DESCRIPTION = (
     f'One of {_PROVIDERS_LIST}, or omitted to let the server detect it from the URL.'
@@ -230,8 +227,9 @@ async def get_webhook(
 @mcp_tool_handler(
     description=(
         'Create a webhook endpoint to receive HTTP callbacks when subscribed '
-        'events occur. Requires a name, a URL, and an owner. Needs an admin '
-        'account, and creating or updating a webhook needs a paid plan.'
+        'events occur. Requires a name and a URL. Needs an admin account, and '
+        'creating or updating a webhook needs a paid plan. Requires '
+        'alpacon-server 2.39.0 or later.'
     ),
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'webhook create endpoint callback'},
@@ -240,18 +238,13 @@ async def create_webhook(
     workspace: str,
     name: str,
     url: str,
-    owner: Annotated[str, Field(description=_OWNER_DESCRIPTION)],
     provider: Annotated[str | None, Field(description=_PROVIDER_DESCRIPTION)] = None,
     ssl_verify: bool = True,
     enabled: bool = True,
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """`owner` must be a user UUID; `provider` is checked against WEBHOOK_PROVIDERS and
-    detected from the URL when omitted."""
-    if not validate_uuid_format(owner):
-        return format_validation_error('owner', owner, _OWNER_SENTENCE)
-
+    """Validate provider; the server detects it from the URL when omitted."""
     if provider is not None and provider not in WEBHOOK_PROVIDERS:
         return format_validation_error('provider', provider, _PROVIDERS_SENTENCE)
 
@@ -260,7 +253,6 @@ async def create_webhook(
     webhook_data: dict[str, object] = {
         'name': name,
         'url': url,
-        'owner': owner,
         'ssl_verify': ssl_verify,
         'enabled': enabled,
         **exclude_none(provider=provider),

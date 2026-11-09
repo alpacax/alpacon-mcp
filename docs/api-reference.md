@@ -1107,7 +1107,9 @@ Remote mode (`ALPACON_MCP_AUTH_ENABLED=true`) only: Alpacon serves the MFA link 
 
 ## 📜 Certificate tools
 
-**Authorities:** `list_certificate_authorities`, `create_certificate_authority` (`name`, `domain`, `organization`, `server_id`, `owner`, `root_valid_days`, `default_valid_days`, `max_valid_days`, `key_algorithm` (`rsa` or `ecdsa`), `key_size` (2048 or 4096 for RSA, 256 or 384 for ECDSA), `install`), `get_certificate_authority`, `update_certificate_authority` (`default_valid_days`, `max_valid_days`, `owner`), `delete_certificate_authority` (only a CA that has never received a sign request; otherwise the server answers 400 with `cert_authority_cannot_be_deleted` and keeps the CA and its sign requests, certificates, and revoke requests. Retiring such a CA means removing its whole host with `unregister_server`, which takes the host out of the workspace, so do it only when the host itself is to be retired; a still-connected host needs `auto=True`, which also removes its Alpamon agent. Once the host is gone the CA leaves the list and takes no new sign requests; requests already pending are not cancelled).
+**Authorities:** `list_certificate_authorities`, `create_certificate_authority` (`name`, `domain`, `organization`, `server_id`, `root_valid_days`, `default_valid_days`, `max_valid_days`, `key_algorithm` (`rsa` or `ecdsa`), `key_size` (2048 or 4096 for RSA, 256 or 384 for ECDSA), `install`), `get_certificate_authority`, `update_certificate_authority` (`default_valid_days`, `max_valid_days`), `delete_certificate_authority` (only a CA that has never received a sign request; otherwise the server answers 400 with `cert_authority_cannot_be_deleted` and keeps the CA and its sign requests, certificates, and revoke requests. Retiring such a CA means removing its whole host with `unregister_server`, which takes the host out of the workspace, so do it only when the host itself is to be retired; a still-connected host needs `auto=True`, which also removes its Alpamon agent. Once the host is gone the CA leaves the list and takes no new sign requests; requests already pending are not cancelled).
+
+CA creation and update require alpacon-server 2.47.0 or later. These tools no longer accept or send `owner`. Through MCP, an obsolete `owner` argument is discarded; an update containing only `owner`, or no settings, returns `No update data provided` without an HTTP request. Use an earlier MCP release against an older server that requires the field.
 
 **Signing requests:** `list_sign_requests`, `create_sign_request` (`domain_list` for DNS names, `ip_list` for IP addresses, `valid_days`), `get_sign_request`, `approve_sign_request`, `deny_sign_request`, `retry_sign_request` (for a CSR stuck in signing), `delete_sign_request` (cancels a pending CSR).
 
@@ -1121,11 +1123,11 @@ Remote mode (`ALPACON_MCP_AUTH_ENABLED=true`) only: Alpacon serves the MFA link 
 
 - `list_webhooks`: `workspace`, `provider` (one of `slack`, `discord`, `teams`, `telegram`, `custom`), `region` (`ap1` or `us1`, optional), `page`, `page_size`
 - `get_webhook` / `delete_webhook`: by `webhook_id`
-- `create_webhook`: `workspace`, `name`, `url`, `owner` (user UUID, required), `provider` (optional), `ssl_verify`, `enabled`, `region` (`ap1` or `us1`, optional). `provider` is one of `slack`, `discord`, `teams`, `telegram`, `custom`, and is detected from the URL when omitted
+- `create_webhook`: `workspace`, `name`, `url`, `provider` (optional), `ssl_verify`, `enabled`, `region` (`ap1` or `us1`, optional). `provider` is one of `slack`, `discord`, `teams`, `telegram`, `custom`, and is detected from the URL when omitted
 - `update_webhook`: `webhook_id`, `workspace`, and any of `name`, `url`, `ssl_verify`, `enabled`
 - `list_event_subscriptions` / `create_event_subscription` (`channel`, `event_type`, `target_id`) / `delete_event_subscription`. `event_type` includes `command_fin`, `servers_commit`, `sudo`, and (with the workspace's metrics extension enabled) `metric_threshold_crossed` / `metric_threshold_resolved`, which pair through the `alert_id` they carry; subscribing to every server (an omitted `target_id`) needs an admin account
 
-Webhook tools need an admin account, and creating or updating a webhook needs a paid plan.
+Webhook tools need an admin account, and creating or updating a webhook needs a paid plan. `create_webhook` requires alpacon-server 2.39.0 or later and no longer accepts or sends `owner`; MCP discards an obsolete `owner` argument. Use an earlier MCP release against a server older than 2.39.0 that still requires the field.
 
 ---
 

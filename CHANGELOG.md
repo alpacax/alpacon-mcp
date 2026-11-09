@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   listed and revoked.
 
 ### Removed
+- **Breaking:** removed `owner` from `create_certificate_authority`, `update_certificate_authority`, and `create_webhook` schemas and request payloads ([#470](https://github.com/alpacax/alpacon-mcp/issues/470)), superseding the earlier webhook owner requirement recorded below. CA creation and update now require alpacon-server 2.47.0 or later, and webhook creation requires 2.39.0 or later; use an earlier MCP release with older servers that require `owner`. MCP discards obsolete `owner` input, an owner-only CA update returns `No update data provided` without a request, and response shapes are unchanged.
 - **Breaking:** the SSE transport and the `alpacon-mcp-sse` console script are removed. SSE is deprecated in the MCP specification. Use `alpacon-mcp` (stdio) for local clients, or `alpacon-mcp-http` (streamable HTTP with OAuth) for remote access.
 
 ### Fixed

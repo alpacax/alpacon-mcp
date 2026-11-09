@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import pytest
+from mcp.types import CallToolResult
 
 from server import mcp
 from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture, published_rule
@@ -17,9 +18,19 @@ from tools.webhook_tools import (
     update_webhook,
 )
 
-OWNER_ID = '550e8400-e29b-41d4-a716-446655440999'
+LEGACY_OWNER = 'alice'
 
 mock_http_client = http_client_fixture('tools.webhook_tools')
+
+
+@pytest.mark.asyncio
+async def test_create_webhook_schema_does_not_advertise_owner():
+    tools = {tool.name: tool for tool in await mcp.list_tools()}
+
+    schema = tools['create_webhook'].input_schema
+
+    assert 'owner' not in schema['properties']
+    assert 'owner' not in schema.get('required', [])
 
 
 @pytest.mark.asyncio
@@ -77,7 +88,6 @@ mock_http_client = http_client_fixture('tools.webhook_tools')
                 'workspace': 'testworkspace',
                 'name': 'alerts',
                 'url': 'https://example.com/webhook',
-                'owner': OWNER_ID,
                 'region': 'ap1',
             },
             'post',
@@ -280,7 +290,7 @@ class TestWebhooks:
         )
 
     @pytest.mark.asyncio
-    async def test_create_always_sends_owner(
+    async def test_create_webhook_sends_ownerless_payload(
         self, mock_http_client, mock_token_manager
     ):
         mock_http_client.post.return_value = {'id': 'wh-1'}
@@ -289,7 +299,6 @@ class TestWebhooks:
             workspace='testworkspace',
             name='alerts to slack',
             url='https://hooks.slack.com/services/x',
-            owner=OWNER_ID,
             region='ap1',
         )
 
@@ -302,7 +311,6 @@ class TestWebhooks:
             data={
                 'name': 'alerts to slack',
                 'url': 'https://hooks.slack.com/services/x',
-                'owner': OWNER_ID,
                 'ssl_verify': True,
                 'enabled': True,
             },
@@ -316,7 +324,6 @@ class TestWebhooks:
             workspace='testworkspace',
             name='n',
             url='https://example.test/hook',
-            owner=OWNER_ID,
             provider='mattermost',
         )
 
@@ -335,7 +342,6 @@ class TestWebhooks:
             workspace='testworkspace',
             name='n',
             url='https://example.test/hook',
-            owner=OWNER_ID,
             provider='custom',
         )
 
@@ -347,7 +353,6 @@ class TestWebhooks:
             data={
                 'name': 'n',
                 'url': 'https://example.test/hook',
-                'owner': OWNER_ID,
                 'ssl_verify': True,
                 'enabled': True,
                 'provider': 'custom',
@@ -355,27 +360,39 @@ class TestWebhooks:
         )
 
     @pytest.mark.asyncio
-    async def test_create_without_owner_is_a_type_error(self):
-        with pytest.raises(TypeError):
-            await create_webhook(  # type: ignore[call-arg]
-                workspace='testworkspace', name='n', url='https://example.test/hook'
-            )
-
-    @pytest.mark.asyncio
-    async def test_create_rejects_a_username_as_owner(
+    async def test_sdk_drops_legacy_owner_from_webhook_create(
         self, mock_http_client, mock_token_manager
     ):
-        result = await create_webhook(
-            workspace='testworkspace',
-            name='n',
-            url='https://example.test/hook',
-            owner='alice',
+        mock_http_client.post.return_value = {'id': 'wh-1'}
+
+        result = await mcp.call_tool(
+            'create_webhook',
+            {
+                'workspace': 'testworkspace',
+                'name': 'n',
+                'url': 'https://example.test/hook',
+                'owner': LEGACY_OWNER,
+                'provider': 'custom',
+                'region': 'ap1',
+            },
         )
 
-        assert result['status'] == 'error'
-        assert result['error_code'] == 'validation'
-        assert result['field'] == 'owner'
-        mock_http_client.post.assert_not_called()
+        assert isinstance(result, CallToolResult)
+        assert result.structured_content is not None
+        assert result.structured_content['status'] == 'success'
+        mock_http_client.post.assert_awaited_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/notifications/webhooks/',
+            token='test-token',
+            data={
+                'name': 'n',
+                'url': 'https://example.test/hook',
+                'ssl_verify': True,
+                'enabled': True,
+                'provider': 'custom',
+            },
+        )
 
     @pytest.mark.asyncio
     async def test_list_rejects_an_unknown_provider_before_calling(
@@ -395,7 +412,7 @@ class TestWebhooks:
 
         await mcp.call_tool(
             'list_webhooks',
-            {'workspace': 'testworkspace', 'region': 'ap1', 'owner': OWNER_ID},
+            {'workspace': 'testworkspace', 'region': 'ap1', 'owner': LEGACY_OWNER},
         )
 
         assert mock_http_client.get.call_args.kwargs['params'] == {}
@@ -515,7 +532,6 @@ class TestGetWebhook:
             'slack, discord, teams, telegram, custom',
             'must be one of',
         ),
-        ('create_webhook', 'owner', 'username is rejected', 'owner must be'),
         ('create_webhook', 'provider', 'detect it from the URL', 'provider must be'),
     ],
 )

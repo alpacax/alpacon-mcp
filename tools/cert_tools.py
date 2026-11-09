@@ -66,7 +66,15 @@ async def list_certificate_authorities(
 
 
 @mcp_tool_handler(
-    description='Create a new certificate authority (CA) for signing certificates within the workspace. Requires a name, root domain, organization, the server (agent) that hosts the CA, and an owner user. Optionally specify validity periods (root/default/max valid days) and whether to install automatically. Related: list_certificate_authorities (view existing CAs), create_sign_request (request certificate from CA).',
+    description=(
+        'Create a new certificate authority (CA) for signing certificates within '
+        'the workspace. Requires a name, root domain, organization, and the '
+        'server (agent) that hosts the CA. Optionally specify validity periods '
+        '(root/default/max valid days) and whether to install automatically. '
+        'Requires alpacon-server 2.47.0 or later. '
+        'Related: list_certificate_authorities (view existing CAs), '
+        'create_sign_request (request certificate from CA).'
+    ),
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'certificate CA authority create TLS SSL'},
 )
@@ -76,7 +84,6 @@ async def create_certificate_authority(
     domain: str,
     organization: str,
     server_id: ServerId,
-    owner: str,
     root_valid_days: int | None = None,
     default_valid_days: int | None = None,
     max_valid_days: int | None = None,
@@ -97,7 +104,6 @@ async def create_certificate_authority(
         'domain': domain,
         'organization': organization,
         'agent': server_id,
-        'owner': owner,
         **exclude_none(
             root_valid_days=root_valid_days,
             default_valid_days=default_valid_days,
@@ -154,7 +160,13 @@ async def get_certificate_authority(
 
 
 @mcp_tool_handler(
-    description='Update an existing certificate authority (CA) configuration. Allows partial updates—only provided fields will be changed. Updatable fields are default_valid_days, max_valid_days, and owner. The CA name, domain, hosting server (agent), and key parameters are immutable after creation. Requires admin or CA owner privileges.',
+    description=(
+        'Update an existing certificate authority (CA) configuration. Allows '
+        'partial updates—only provided fields will be changed. Updatable fields '
+        'are default_valid_days and max_valid_days. The CA name, domain, hosting '
+        'server (agent), and key parameters are immutable after creation. '
+        'Requires admin or CA owner privileges and alpacon-server 2.47.0 or later.'
+    ),
     annotations=IDEMPOTENT_WRITE,
     meta={'anthropic/searchHint': 'certificate CA authority update patch'},
 )
@@ -163,18 +175,15 @@ async def update_certificate_authority(
     workspace: str,
     default_valid_days: int | None = None,
     max_valid_days: int | None = None,
-    owner: str | None = None,
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Partially update a CA (default_valid_days, max_valid_days, owner);
-    errors when no field is given."""
+    """Update a CA's supported validity settings; error when no field is given."""
     token = kwargs.get('token')
 
     patch_data: dict[str, object] = exclude_none(
         default_valid_days=default_valid_days,
         max_valid_days=max_valid_days,
-        owner=owner,
     )
 
     if not patch_data:
