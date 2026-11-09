@@ -21,6 +21,10 @@ _REVOKE_REASON_DESCRIPTION = (
     '6=certificate hold, 9=privilege withdrawn, 10=AA compromise.'
 )
 _REQUESTED_REASON_DESCRIPTION = 'Free-text reason for the revocation request.'
+_CA_HOST_MANAGE_DESCRIPTION = (
+    'Manage access means an admin account, a user with the server:maintainer role '
+    'on that server, or an owner or manager of a group containing it.'
+)
 
 # ===============================
 # CERTIFICATE AUTHORITY TOOLS
@@ -71,7 +75,8 @@ async def list_certificate_authorities(
         'the workspace. Requires a name, root domain, organization, and the '
         'server (agent) that hosts the CA. Optionally specify validity periods '
         '(root/default/max valid days) and whether to install automatically. '
-        'Requires alpacon-server 2.47.0 or later. '
+        'Requires manage access to the server that hosts the CA and '
+        f'alpacon-server 2.47.0 or later. {_CA_HOST_MANAGE_DESCRIPTION} '
         'Related: list_certificate_authorities (view existing CAs), '
         'create_sign_request (request certificate from CA).'
     ),
@@ -162,10 +167,11 @@ async def get_certificate_authority(
 @mcp_tool_handler(
     description=(
         'Update an existing certificate authority (CA) configuration. Allows '
-        'partial updates—only provided fields will be changed. Updatable fields '
+        'partial updates. Only provided fields will be changed. Updatable fields '
         'are default_valid_days and max_valid_days. The CA name, domain, hosting '
-        'server (agent), and key parameters are immutable after creation. '
-        'Requires admin or CA owner privileges and alpacon-server 2.47.0 or later.'
+        'server (agent), and key parameters are immutable after creation. Requires '
+        'manage access to the server that hosts the CA and alpacon-server 2.47.0 '
+        f'or later. {_CA_HOST_MANAGE_DESCRIPTION}'
     ),
     annotations=IDEMPOTENT_WRITE,
     meta={'anthropic/searchHint': 'certificate CA authority update patch'},
@@ -361,7 +367,13 @@ async def get_sign_request(
 
 
 @mcp_tool_handler(
-    description='Cancel a certificate signing request (CSR). Only requested (pending) CSRs can be canceled; the CSR transitions to the canceled state. CSRs already being processed or completed cannot be canceled. Requires admin, CA owner, or the original requester.',
+    description=(
+        'Cancel a certificate signing request (CSR). Only requested (pending) '
+        'CSRs can be canceled; the CSR transitions to the canceled state. CSRs '
+        'already being processed or completed cannot be canceled. Requires the '
+        'original requester or manage access to the server that hosts the CA. '
+        f'{_CA_HOST_MANAGE_DESCRIPTION}'
+    ),
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'certificate CSR signing request delete remove'},
 )
@@ -386,7 +398,7 @@ async def delete_sign_request(
 
 
 @mcp_tool_handler(
-    description='Approve a pending certificate signing request (CSR). The CA will then issue the certificate. Use list_sign_requests to find pending CSRs. Requires admin or CA owner privileges.',
+    description=f'Approve a pending certificate signing request (CSR). The CA will then issue the certificate. Use list_sign_requests to find pending CSRs. Requires manage access to the server that hosts the CA. {_CA_HOST_MANAGE_DESCRIPTION}',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'certificate CSR signing request approve'},
 )
@@ -412,7 +424,7 @@ async def approve_sign_request(
 
 
 @mcp_tool_handler(
-    description='Deny a certificate signing request (CSR) still awaiting a decision. The API refuses any other CSR with cert_request_in_progress, including one already being processed. The requester will be notified of the decision. Requires admin or CA owner privileges.',
+    description=f'Deny a certificate signing request (CSR) still awaiting a decision. The API refuses any other CSR with cert_request_in_progress, including one already being processed. The requester will be notified of the decision. Requires manage access to the server that hosts the CA. {_CA_HOST_MANAGE_DESCRIPTION}',
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'certificate CSR signing request deny reject'},
 )
@@ -440,7 +452,7 @@ async def deny_sign_request(
 # IDEMPOTENT_WRITE: retrying converges to the same end state, but each call
 # re-dispatches a live sign-request command to the CA (not a no-op replay).
 @mcp_tool_handler(
-    description='Retry a certificate signing request (CSR) that is stuck in the signing (processing) state. This re-sends the request to the CA. Only CSRs in the signing state can be retried. Requires admin or CA owner privileges.',
+    description=f'Retry a certificate signing request (CSR) that is stuck in the signing (processing) state. This re-sends the request to the CA. Only CSRs in the signing state can be retried. Requires manage access to the server that hosts the CA. {_CA_HOST_MANAGE_DESCRIPTION}',
     annotations=IDEMPOTENT_WRITE,
     meta={'anthropic/searchHint': 'certificate CSR signing request retry'},
 )
@@ -549,7 +561,15 @@ async def get_certificate(
 
 
 @mcp_tool_handler(
-    description='Create a certificate revocation request to invalidate an issued certificate. Requires the certificate ID. If the caller is the CA owner or an admin the request is auto-approved and the certificate is revoked immediately; otherwise it waits for approval.',
+    description=(
+        'Create a certificate revocation request to invalidate an issued '
+        'certificate. The certificate requester or a caller with manage access '
+        'to the server that hosts the CA may file it. It is auto-approved only '
+        'when the caller has that manage access and is either an admin account or '
+        "holds an approver role binding over the CA host's live groups; an API "
+        'token also needs revoke_request:approve. Otherwise it waits for approval. '
+        f'{_CA_HOST_MANAGE_DESCRIPTION}'
+    ),
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'certificate revoke invalidate'},
 )
@@ -563,8 +583,7 @@ async def revoke_certificate(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Create a revocation request; the CA owner or an admin gets it
-    auto-approved and revoked at once, anyone else waits for approval."""
+    """Create a revocation request under the CA host access and approver rules."""
     token = kwargs.get('token')
 
     data: dict[str, object] = {
@@ -662,7 +681,7 @@ async def get_revoke_request(
 
 
 @mcp_tool_handler(
-    description='Approve a pending certificate revocation request. The certificate will be revoked and added to the CRL (Certificate Revocation List) after approval. Requires admin or CA owner privileges.',
+    description=f'Approve a pending certificate revocation request. The certificate will be revoked and added to the CRL (Certificate Revocation List) after approval. Requires manage access to the server that hosts the CA. {_CA_HOST_MANAGE_DESCRIPTION}',
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'certificate revoke request approve'},
 )
@@ -688,7 +707,7 @@ async def approve_revoke_request(
 
 
 @mcp_tool_handler(
-    description='Deny a pending certificate revocation request. The certificate will remain valid. Requires admin or CA owner privileges.',
+    description=f'Deny a pending certificate revocation request. The certificate will remain valid. Requires manage access to the server that hosts the CA. {_CA_HOST_MANAGE_DESCRIPTION}',
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'certificate revoke request deny reject'},
 )
@@ -716,7 +735,7 @@ async def deny_revoke_request(
 # IDEMPOTENT_WRITE: retrying converges to the same end state, but each call
 # re-dispatches a live revoke-certificate command to the CA (not a no-op replay).
 @mcp_tool_handler(
-    description='Retry a certificate revocation request that is stuck in the revoking state. This re-sends the request to the CA. Only requests in the revoking state can be retried. Requires admin or CA owner privileges.',
+    description=f'Retry a certificate revocation request that is stuck in the revoking state. This re-sends the request to the CA. Only requests in the revoking state can be retried. Requires manage access to the server that hosts the CA. {_CA_HOST_MANAGE_DESCRIPTION}',
     annotations=IDEMPOTENT_WRITE,
     meta={'anthropic/searchHint': 'certificate revoke request retry'},
 )
@@ -742,7 +761,7 @@ async def retry_revoke_request(
 
 
 @mcp_tool_handler(
-    description='Cancel a pending certificate revocation request. Use this to withdraw a revocation request before it is approved; the request transitions to the canceled state and the certificate remains valid. Only requested (pending) revocation requests can be canceled. Requires admin, CA owner, or the original requester.',
+    description=f'Cancel a pending certificate revocation request. Use this to withdraw a revocation request before it is approved; the request transitions to the canceled state and the certificate remains valid. Only requested (pending) revocation requests can be canceled. Requires the original requester or manage access to the server that hosts the CA. {_CA_HOST_MANAGE_DESCRIPTION}',
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'certificate revoke request cancel withdraw'},
 )

@@ -1111,9 +1111,11 @@ Remote mode (`ALPACON_MCP_AUTH_ENABLED=true`) only: Alpacon serves the MFA link 
 
 CA creation and update require alpacon-server 2.47.0 or later. These tools no longer accept or send `owner`. Through MCP, an obsolete `owner` argument is discarded; an update containing only `owner`, or no settings, returns `No update data provided` without an HTTP request. Use an earlier MCP release against an older server that requires the field.
 
+Manage access to the CA host means an admin account, the host's `server:maintainer` binding, or an owner or manager role in a live group containing the host. Creating, updating, or deleting a CA, and approving, denying, or retrying a sign or revoke request, requires that access. Canceling a pending sign or revoke request also allows its original requester. CA ownership grants none of these permissions.
+
 **Signing requests:** `list_sign_requests`, `create_sign_request` (`domain_list` for DNS names, `ip_list` for IP addresses, `valid_days`), `get_sign_request`, `approve_sign_request`, `deny_sign_request`, `retry_sign_request` (for a CSR stuck in signing), `delete_sign_request` (cancels a pending CSR).
 
-**Certificates:** `list_certificates` (`authority_id` filter), `get_certificate`, `revoke_certificate` (`reason`, an RFC 5280 code: 0 unspecified, 1 key compromise, 2 CA compromise, 3 affiliation changed, 4 superseded, 5 cessation of operation, 6 certificate hold, 9 privilege withdrawn, 10 AA compromise; `requested_reason`, free text; auto-approved when the caller owns the CA or is an admin, otherwise it waits for approval).
+**Certificates:** `list_certificates` (`authority_id` filter), `get_certificate`, `revoke_certificate` (`reason`, an RFC 5280 code: 0 unspecified, 1 key compromise, 2 CA compromise, 3 affiliation changed, 4 superseded, 5 cessation of operation, 6 certificate hold, 9 privilege withdrawn, 10 AA compromise; `requested_reason`, free text; filing requires the certificate's original requester or manage access to the CA host. Auto-approval requires manage access to that host and either an admin account or an `approver` binding over its live groups; an API token also needs `revoke_request:approve`. Otherwise an admitted request waits for approval).
 
 **Revocation requests:** `list_revoke_requests`, `get_revoke_request`, `approve_revoke_request`, `deny_revoke_request`, `retry_revoke_request`, `cancel_revoke_request`.
 

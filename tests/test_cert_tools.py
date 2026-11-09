@@ -112,6 +112,44 @@ async def test_sdk_ca_create_sends_ownerless_payload(
     )
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ('tool_name', 'required_access'),
+    [
+        ('create_certificate_authority', 'manage access'),
+        ('update_certificate_authority', 'manage access'),
+        ('delete_sign_request', 'original requester or manage access'),
+        ('approve_sign_request', 'manage access'),
+        ('deny_sign_request', 'manage access'),
+        ('retry_sign_request', 'manage access'),
+        ('revoke_certificate', 'certificate requester or a caller with manage access'),
+        ('approve_revoke_request', 'manage access'),
+        ('deny_revoke_request', 'manage access'),
+        ('retry_revoke_request', 'manage access'),
+        ('cancel_revoke_request', 'original requester or manage access'),
+    ],
+)
+async def test_ca_action_description_states_host_access_not_ca_owner(
+    tool_name, required_access
+):
+    descriptions = await tool_descriptions()
+
+    description = descriptions[tool_name]
+
+    assert required_access in description
+    assert 'CA owner' not in description
+
+
+@pytest.mark.asyncio
+async def test_revoke_description_states_auto_approval_requirements():
+    descriptions = await tool_descriptions()
+
+    description = descriptions['revoke_certificate']
+
+    assert "approver role binding over the CA host's live groups" in description
+    assert 'API token also needs revoke_request:approve' in description
+
+
 class TestCertificateAuthorities:
     @pytest.mark.asyncio
     async def test_list_certificate_authorities_success(
