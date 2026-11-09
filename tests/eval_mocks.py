@@ -6,7 +6,7 @@
 import asyncio
 import json
 import sys
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -34,13 +34,20 @@ CSR_ID = '3f2a1b0c-9d8e-4f7a-b6c5-d4e3f2a1b0c9'
 SID2 = '2b7d4e91-5c3a-4f86-9e0b-7a1c6d2f8e53'
 CMD_PATCH = 'd7e8f9a0-2468-4ace-9bdf-13579bdf2468'
 UPLOAD_ID = 'f1e2d3c4-b5a6-4978-8a9b-0c1d2e3f4a5b'
+SID3 = '9f3c1d7a-4e2b-4a68-b5c9-1d2e3f4a5b6c'
 PATCH_CASE = 'remediate-stops-on-first-failure/mocks/alpacon'
+SECOND_CASE = 'remediate-stops-at-second-failure/mocks/alpacon'
 PATCH_SESSION = {
     'servers': [SID, SID2],
     'scopes': ['command', 'webftp'],
     'target_account_username': 'root',
     'description': 'Upgrade openssh-server for CVE-2026-31337 on web-01 and web-02; no restarts.',
 }
+SECOND_SESSION = PATCH_SESSION | {
+    'servers': [SID, SID2, SID3],
+    'description': 'Upgrade openssh-server for CVE-2026-31337 on web-01 to web-03; no restarts.',
+}
+SERVER_NAMES = {SID: 'web-01', SID2: 'web-02', SID3: 'web-03'}
 SERVER = {'id': SID, 'name': 'web-01'}
 ECHO = 'ECHO-INPUT-COMMAND'
 
@@ -141,6 +148,40 @@ def _s3_accepts(call: Call) -> Call:
             return await call()
 
     return run
+
+
+def _rollout_mocks(case: str, session: dict[str, Sequence[str]]) -> list[Mock]:
+    servers = [
+        {
+            'id': sid,
+            'name': name,
+            'is_connected': True,
+            'os_name': 'Ubuntu',
+            'os_version': '24.04',
+        }
+        for sid, name in SERVER_NAMES.items()
+        if sid in session['servers']
+    ]
+    row = session_row(WSID, 'active', **session)
+    return [
+        Mock(
+            f'{case}/list_servers.md',
+            {('GET', '/api/servers/servers/'): page(servers)},
+            lambda: server_tools.list_servers(workspace=WS, region=REGION),
+        ),
+        Mock(
+            f'{case}/work_session_get.md',
+            {('GET', f'{SESSIONS}{WSID}/'): httpx.Response(200, json=row)},
+            lambda: work_session_tools.work_session_get(
+                session_id=WSID, workspace=WS, region=REGION
+            ),
+        ),
+        Mock(
+            f'{case}/work_session_list.md',
+            {('GET', SESSIONS): page([row])},
+            lambda: work_session_tools.work_session_list(workspace=WS, region=REGION),
+        ),
+    ]
 
 
 MOCKS: list[Mock] = [
@@ -362,40 +403,8 @@ MOCKS: list[Mock] = [
             server_id=SID, command='free -m', workspace=WS, region=REGION
         ),
     ),
-    Mock(
-        f'{PATCH_CASE}/list_servers.md',
-        {
-            ('GET', '/api/servers/servers/'): page(
-                [
-                    {
-                        'id': sid,
-                        'name': name,
-                        'is_connected': True,
-                        'os_name': 'Ubuntu',
-                        'os_version': '24.04',
-                    }
-                    for sid, name in ((SID, 'web-01'), (SID2, 'web-02'))
-                ]
-            )
-        },
-        lambda: server_tools.list_servers(workspace=WS, region=REGION),
-    ),
-    Mock(
-        f'{PATCH_CASE}/work_session_get.md',
-        {
-            ('GET', f'{SESSIONS}{WSID}/'): httpx.Response(
-                200, json=session_row(WSID, 'active', **PATCH_SESSION)
-            )
-        },
-        lambda: work_session_tools.work_session_get(
-            session_id=WSID, workspace=WS, region=REGION
-        ),
-    ),
-    Mock(
-        f'{PATCH_CASE}/work_session_list.md',
-        {('GET', SESSIONS): page([session_row(WSID, 'active', **PATCH_SESSION)])},
-        lambda: work_session_tools.work_session_list(workspace=WS, region=REGION),
-    ),
+    *_rollout_mocks(PATCH_CASE, PATCH_SESSION),
+    *_rollout_mocks(SECOND_CASE, SECOND_SESSION),
     Mock(  # every run of the recipe fails, so only the first server may see one
         f'{PATCH_CASE}/execute_file.md',
         {
@@ -412,7 +421,7 @@ MOCKS: list[Mock] = [
                 200,
                 json=command_row(
                     CMD_PATCH,
-                    '/bin/bash /var/tmp/alpacon-CVE-2026-31337.sh',
+                    '/bin/bash /root/alpacon-CVE-2026-31337.sh',
                     success=False,
                     exit_code=100,
                     result='before=1:9.6p1-3ubuntu13.4\n'
@@ -424,7 +433,7 @@ MOCKS: list[Mock] = [
         _s3_accepts(
             lambda: command_tools.execute_file(
                 server_id=SID,
-                path='/var/tmp/alpacon-CVE-2026-31337.sh',  # noqa: S108 - a path on the mocked host
+                path='/root/alpacon-CVE-2026-31337.sh',
                 content='#!/bin/bash\nset -eu\n',
                 write_file=True,
                 workspace=WS,
@@ -438,8 +447,13 @@ MOCKS: list[Mock] = [
     ),
 ]
 
-# Written by hand: the remote JWT read has no HTTP call to drive.
-HAND_WRITTEN = {f'{SHARED}/list_workspaces.md'}
+# Written by hand: the remote JWT read has no HTTP call to drive, and a fixed mock cannot vary by server.
+HAND_WRITTEN = {
+    f'{SHARED}/list_workspaces.md',
+    f'{PATCH_CASE}/execute_command.md',
+    f'{SECOND_CASE}/execute_command.md',
+    f'{SECOND_CASE}/execute_file.md',  # an agent responder: each server answers differently
+}
 
 
 def _transport(routes: Routes) -> httpx.MockTransport:
