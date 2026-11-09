@@ -43,6 +43,7 @@ python -c "from server import mcp; print('ok')"   # import smoke check
 ```
 
 ## Non-obvious invariants
+Published client guidance must distinguish a server release requirement from enforcement added by this client.
 
 The legacy Auth0 environment variable names still work as fallbacks and will be removed in a later release; see `docs/configuration.md` for the mapping.
 

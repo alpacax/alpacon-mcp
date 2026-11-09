@@ -25,6 +25,8 @@ An MCP (Model Context Protocol) server that connects AI assistants to Alpacon. E
 ## 🌟 Core features
 
 ### 🔐 **Session-scoped control**
+The personal-token Work Session requirement needs an Alpacon server release that enforces it. This MCP release changes guidance; it does not add server-side enforcement.
+
 - Work Sessions that scope command execution and REST file-transfer creation to an active, approved, auditable window for personal API tokens and OAuth/browser callers; service tokens retain their endpoint-specific authorization rules
 - Authenticate once, access every authorized server
 - Role-based access control (RBAC) with time-limited permissions
