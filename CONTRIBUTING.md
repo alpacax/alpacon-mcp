@@ -196,7 +196,7 @@ async def test_list_servers_success():
 
 ### Plugin skill evals
 
-`plugins/alpacon/evals/` holds `claude plugin eval` cases for the plugin's skills. Their mock answers are the real tools' results for canned HTTP answers: after changing a tool's result or schema, run `python -m tests.eval_mocks` to rewrite them, and `pytest tests/test_plugin_evals.py` fails until you do. A grader can only watch a tool its case offers, and a mock file is what offers one. To run the cases (each run is a paid model call): `claude plugin eval plugins/alpacon --ablation none --threshold 0.67`.
+`plugins/alpacon/evals/` holds `claude plugin eval` cases for the plugin's skills. A case uses either `prompt.md` plus `graders/*.md`, or one `case.yaml` containing `execution.prompt` and a `graders` list; the tests discover both formats. Their mock answers are the real tools' results for canned HTTP answers: after changing a tool's result or schema, run `python -m tests.eval_mocks` to rewrite them, and `pytest tests/test_plugin_evals.py` fails until you do. A grader can only watch a tool its case offers, and a mock file is what offers one. To run the cases (each run is a paid model call): `claude plugin eval plugins/alpacon --ablation none --threshold 0.67`.
 
 ## 🔧 Adding new features
 
