@@ -341,6 +341,190 @@
    }
   },
   {
+   "name": "execute_file",
+   "description": "Run a script on a server as a verified file, writing it there first in the same call when write_file is true, or reading its bytes from there when read_from_server is true: the reviewer and the assessor judge the exact bytes you submit, and the agent executes the file only if the bytes on the host's disk hash to the same digest. Prefer this over execute_command for anything longer than a one-off line—a script, a heredoc, a \"bash /tmp/deploy.sh\" line. Why: once an approver marks a verified file standing, an unchanged re-run of it (same bytes, same server, same account, same args) is admitted without paging a human; a \"bash /path\" shell line never can be, because nothing about the path proves what runs. What approving means: it authorizes exactly these bytes, on this server, as this account, with these arguments—not \"this file is safe\". One changed byte re-queues human review. The environment, libraries, interpreter version, and anything the script fetches or executes at runtime are not verified and stay the executor's responsibility; only this first entrypoint is. How to use: for any script or heredoc, pass write_file=true with the script as content—the one-step form. This call then writes content to path on the host through WebFTP and submits those same bytes for review only once the host reports the file written. An existing file at path is refused (error_code file_write_failed, saying the file already exists) unless you also pass overwrite=true; to re-run a script already on the host, use read_from_server instead of writing it again. overwrite requires write_file (error_code file_exec_invalid_options otherwise). A new file is owned by username and that account's own group, or by groupname when you pass one other than the default; an existing file replaced with overwrite keeps its owner and mode, and must be writable by username. The account also needs write access to the directory for a new file. No execute bit is needed, because the interpreter runs the file. The write happens before the run is reviewed, as a webftp_upload_content call would, so a run that is later denied leaves the new file in place. Waiting for the write (up to about a minute) comes before, and on top of, timeout. If the write fails, nothing is submitted: error_code file_write_failed (fix the cause, such as the path or the account's permissions, and re-run; a server refusal that names its own code, such as a Work Session gate, keeps that code instead) or file_write_timeout (the host did not report the file written within about a minute; re-run once the host is reachable). For a script that already exists on the host—the usual \"bash /opt/deploy.sh\"—pass read_from_server=true and omit content: the call downloads the file at path as username through WebFTP and submits those exact bytes, so you never copy the script by hand. read_from_server cannot be combined with write_file or content (error_code file_exec_invalid_options). If the read fails, nothing is submitted: error_code file_read_failed (the file is missing, the account cannot read it, or it is not UTF-8 text; a server refusal that names its own code keeps that code) or file_read_timeout; an empty file is refused with file_exec_empty_content and one over 64 KB with file_exec_content_too_large. Waiting for the read (up to about a minute) also comes before timeout. The agent still hashes the on-disk file at execution, so a file changed after the read fails closed. write_file and read_from_server both default to false: then the file must already exist at path on the target host, and content is what the reviewer judges; it is never shipped to the host. Put composition inside the script: pipes, redirection, &&, and environment variables are reviewed there. Free-text composition around a verified file (a pipe into it, an env prefix, extra shell) is not possible on this lane, by design—a one-off composition belongs on execute_command. Refusals to act on rather than retry, each returned as error_code: file_exec_unsupported_agent (the agent on that server did not report support for this lane: if it runs alpamon older than 2.8.3, upgrade it to 2.8.3 or newer or use execute_command; if it already runs 2.8.3 or newer, its build has no file lane on that platform, such as Windows, so upgrading does not help—use execute_command), file_exec_assessor_disabled (this deployment has the command assessor off, so the lane is unavailable—use execute_command), file_exec_invalid_path (path or interpreter is not absolute), file_exec_content_too_large, file_exec_empty_content, file_exec_line_too_long (interpreter + path + args exceed the command line ceiling—shorten args), file_exec_invalid_reuse_days (reuse_days is outside 1 to 366—fix it or omit it), file_exec_reuse_exceeds_max (reuse_days is above the workspace's ceiling—resubmit with a shorter duration or none). None of these has a request waiting behind it, so do not wait on them. Otherwise the run follows the same rules as execute_command: a sudo inside the script is denied at once and reported in sudo_denial or sudo_hint, so rerun after a person clears a sudo_denial, a status of pending_approval with category COMMAND_AWAITING_APPROVAL means a human decides out-of-band and the script then runs on its own, purpose_required is answered with state_command_purpose, and the result carries stdout, stderr, and exit code. When to use: deploy or maintenance scripts, anything you would otherwise run as \"bash file\" or feed through a heredoc, a script already on the host whose \"bash /path\" line was held for approval, and any script you expect to run again unchanged. Related: execute_command (one-off shell line), webftp_upload_content (put a file on the host without running it), state_command_purpose, list_commands.",
+   "inputSchema": {
+    "properties": {
+     "server_id": {
+      "description": "Server UUID, never a server name; list_servers maps a name to its UUID.",
+      "title": "Server Id",
+      "type": "string"
+     },
+     "path": {
+      "description": "Absolute path of the script on the host, e.g. /opt/deploy.sh; a relative path is refused.",
+      "title": "Path",
+      "type": "string"
+     },
+     "workspace": {
+      "description": "Workspace name, as list_workspaces returns it.",
+      "title": "Workspace",
+      "type": "string"
+     },
+     "content": {
+      "default": "",
+      "description": "Whenever you pass it, pass the full contents, byte-for-byte as they are on disk: do not strip a trailing newline or normalize line endings, because the agent hashes the on-disk file with no normalization and a mismatch fails closed. Whether passed or read from the host, it is capped at 64 KB and must be non-empty.",
+      "title": "Content",
+      "type": "string"
+     },
+     "interpreter": {
+      "default": "/bin/bash",
+      "description": "Absolute path of the interpreter, e.g. /bin/bash; a bare \"bash\" is refused.",
+      "title": "Interpreter",
+      "type": "string"
+     },
+     "args": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Args"
+     },
+     "reuse_days": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "Integer, 1 to 366: how many days the approver should let this exact file be rerun without a new review. Standing approvals always expire: the workspace sets a ceiling of 1 to 366 days (default 90), and you may propose a shorter period than that, never a longer one. It is a proposal, not a grant: the approver may decline reuse, and a workspace ceiling lowered after submission can shorten it; the approver cannot choose another period for you. A proposal above the workspace ceiling is refused with file_exec_reuse_exceeds_max, never shortened. Propose a duration when you expect to rerun the same unchanged script (same bytes, server, account, args) within that window, sized to how long you expect to need it. Omitting it proposes no duration and does not make the run one-shot: if the approver opts in, they may still grant reuse up to the workspace ceiling.",
+      "title": "Reuse Days"
+     },
+     "write_file": {
+      "default": false,
+      "title": "Write File",
+      "type": "boolean"
+     },
+     "overwrite": {
+      "default": false,
+      "title": "Overwrite",
+      "type": "boolean"
+     },
+     "read_from_server": {
+      "default": false,
+      "title": "Read From Server",
+      "type": "boolean"
+     },
+     "username": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "Pass it whenever ownership matters; omitted, the writing account is the server's WebFTP default.",
+      "title": "Username"
+     },
+     "groupname": {
+      "default": "alpacon",
+      "title": "Groupname",
+      "type": "string"
+     },
+     "run_after": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Run After"
+     },
+     "scheduled_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Scheduled At"
+     },
+     "timeout": {
+      "default": 300,
+      "description": "Seconds to wait for the result, default 300 (5 minutes).",
+      "title": "Timeout",
+      "type": "integer"
+     },
+     "work_session_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "Work Session to link this call to for audit. The server requires one for MCP OAuth and browser-login callers; static API and service tokens may omit it. Omitted, it falls back to ALPACON_WORK_SESSION in this MCP server's environment; an explicit value wins.",
+      "title": "Work Session Id"
+     },
+     "purpose": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "What this run is for.",
+      "title": "Purpose"
+     },
+     "region": {
+      "anyOf": [
+       {
+        "enum": [
+         "ap1",
+         "us1"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "Region, ap1 or us1. Omit it to use the workspace's region: read from the JWT in remote mode and from token.json in local mode. The call fails when that region cannot be determined; pass region when several regions match.",
+      "title": "Region"
+     }
+    },
+    "required": [
+     "server_id",
+     "path",
+     "workspace"
+    ],
+    "title": "execute_fileArguments",
+    "type": "object"
+   },
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false
+   }
+  },
+  {
    "name": "list_commands",
    "description": "List recent command execution history with status, output, and timestamps. Filterable by server ID. An entry whose output is a sudo denial also carries sudo_hint and, when a human can clear it, a structured sudo_denial block. When to use: reviewing past commands, finding a command whose id you do not have, such as after a lost submission (for a known command_id use check_command_status), or browsing the results of an execute_command_multi_server batch. An entry the server refused because its line carries a script body (rejection_cause use_file_execution) also carries error_code use_file_execution and a next_action: rerun that script with execute_file (write_file=true) on that entry's server and account only. A rejected entry also carries rejection_hint, saying whom to ask; do not resubmit it. Related: check_command_status (one command by id), execute_command (run a command and wait), execute_file.",
    "inputSchema": {

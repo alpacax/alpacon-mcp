@@ -1,9 +1,12 @@
 """The plugin's eval mocks stay what the tools return, and every guarded tool is offered."""
 
+from collections.abc import Mapping
 from pathlib import Path
+from typing import cast
 from unittest.mock import patch
 
 import pytest
+import yaml  # type: ignore[import-untyped]
 
 from tests.eval_mocks import (
     EVALS,
@@ -18,12 +21,35 @@ from tests.eval_mocks import (
 
 PLUGIN_TOOL_PREFIX = 'mcp__plugin_alpacon_alpacon__'
 REGENERATE = 'regenerate with `python -m tests.eval_mocks`'
-CASES = sorted(p.parent for p in EVALS.glob('*/prompt.md'))
 
 
-def frontmatter(path: Path) -> dict[str, str]:
+def case_directories(root: Path) -> list[Path]:
+    return sorted(
+        {
+            p.parent
+            for name in ('prompt.md', 'case.yaml')
+            for p in root.glob(f'*/{name}')
+        }
+    )
+
+
+CASES = case_directories(EVALS)
+
+
+def frontmatter(path: Path) -> Mapping[str, object]:
     _, head, _ = path.read_text().split('---\n', 2)
     return dict(line.split(': ', 1) for line in head.splitlines() if ': ' in line)
+
+
+def case_graders(case: Path) -> list[Mapping[str, object]]:
+    graders: list[Mapping[str, object]] = []
+    if (case / 'case.yaml').exists():
+        config = cast(
+            dict[str, object], yaml.safe_load((case / 'case.yaml').read_text())
+        )
+        graders.extend(cast(list[Mapping[str, object]], config.get('graders', [])))
+    graders.extend(frontmatter(g) for g in sorted((case / 'graders').glob('*.md')))
+    return graders
 
 
 def mock_files() -> set[str]:
@@ -80,10 +106,11 @@ def test_every_mock_file_is_generated_or_listed_as_hand_written():
 def test_every_tool_a_grader_watches_is_offered_in_its_case(case: Path):
     # Given the case's tool graders on plugin tools
     watched = {
-        fm['tool'].removeprefix(PLUGIN_TOOL_PREFIX)
-        for g in sorted((case / 'graders').glob('*.md'))
-        if (fm := frontmatter(g)).get('type') == 'tool_used'
-        and fm.get('tool', '').startswith(PLUGIN_TOOL_PREFIX)
+        tool.removeprefix(PLUGIN_TOOL_PREFIX)
+        for grader in case_graders(case)
+        if grader.get('type') == 'tool_used'
+        and isinstance(tool := grader.get('tool'), str)
+        and tool.startswith(PLUGIN_TOOL_PREFIX)
     }
 
     # When the tools the case offers are listed (a mock file is what offers one)
@@ -95,3 +122,54 @@ def test_every_tool_a_grader_watches_is_offered_in_its_case(case: Path):
     assert watched <= offered, (
         f'graders watch tools with no mock: {sorted(watched - offered)}'
     )
+
+
+def test_case_discovery_finds_both_formats_without_duplicating_mixed_cases(
+    tmp_path: Path,
+):
+    for name, files in {
+        'markdown': ['prompt.md'],
+        'yaml': ['case.yaml'],
+        'mixed': ['prompt.md', 'case.yaml'],
+        'not-a-case': ['notes.md'],
+    }.items():
+        case = tmp_path / name
+        case.mkdir()
+        for file in files:
+            (case / file).touch()
+
+    cases = case_directories(tmp_path)
+
+    assert [case.name for case in cases] == ['markdown', 'mixed', 'yaml']
+
+
+@pytest.mark.parametrize('layout', ['markdown', 'yaml', 'mixed'])
+def test_mock_coverage_checks_graders_in_each_case_format(tmp_path: Path, layout: str):
+    if layout in ('yaml', 'mixed'):
+        (tmp_path / 'case.yaml').write_text(
+            'schema_version: "1.1"\nname: fixture\ngraders:\n'
+            '  - name: yaml-check\n    type: tool_used\n'
+            f'    tool: {PLUGIN_TOOL_PREFIX}missing_tool\n'
+        )
+    if layout in ('markdown', 'mixed'):
+        (tmp_path / 'graders').mkdir()
+        (tmp_path / 'graders/check.md').write_text(
+            f'---\ntype: tool_used\ntool: {PLUGIN_TOOL_PREFIX}missing_tool\n---\n'
+        )
+
+    with pytest.raises(AssertionError, match='missing_tool'):
+        test_every_tool_a_grader_watches_is_offered_in_its_case(tmp_path)
+
+
+def test_mixed_case_keeps_yaml_and_markdown_graders(tmp_path: Path):
+    (tmp_path / 'case.yaml').write_text(
+        'graders:\n  - name: yaml-check\n    type: tool_used\n    tool: yaml_tool\n'
+    )
+    (tmp_path / 'graders').mkdir()
+    (tmp_path / 'graders/check.md').write_text(
+        '---\ntype: tool_used\ntool: markdown_tool\n---\n'
+    )
+
+    graders = case_graders(tmp_path)
+
+    assert [grader['tool'] for grader in graders] == ['yaml_tool', 'markdown_tool']
