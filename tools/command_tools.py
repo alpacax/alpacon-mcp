@@ -449,8 +449,10 @@ def _attach_sudo_denial(
     target['sudo_hint'] = hint
     # Only the category is disclosed—never the risk score or reasoning.
     if code in _SUDO_HUMAN_APPROVAL_CODES:
-        held = (_held_approval(record, command_id) if command_id else None) or {}
-        target['sudo_denial'] = pending_approval_response(hint, category=code, **held)
+        held = _held_approval(record, command_id) if command_id else None
+        target['sudo_denial'] = pending_approval_response(
+            hint, category=code, **(held or {})
+        )
 
 
 #: What a finished file-lane command's ``error_phase`` means (ADR 0053). The
