@@ -5625,6 +5625,29 @@ async def test_execute_command_late_environment_denial(
     assert response['command_id'] == 'cmd-env-denied'
 
 
+@pytest.mark.parametrize('denial_code', [['command_invalid_env'], {'a': 1}])
+@pytest.mark.asyncio
+async def test_execute_command_unhashable_denial_code_keeps_normal_result(
+    mock_http_client, mock_token_manager, denial_code
+):
+    mock_http_client.post.return_value = {'id': 'cmd-odd-code'}
+    mock_http_client.get.return_value = {
+        'id': 'cmd-odd-code',
+        'status': 'denied',
+        'denial_code': denial_code,
+        'result': 'refused',
+        'handled_at': '2026-11-09T10:00:00Z',
+    }
+    response = await execute_command(
+        server_id=VALID_SERVER_ID,
+        command='true',
+        workspace='testworkspace',
+        region='ap1',
+    )
+    assert response.get('denial_code') != denial_code
+    assert response['command_id'] == 'cmd-odd-code'
+
+
 @pytest.mark.asyncio
 async def test_execute_command_description_explains_environment_policy():
     description = (await tool_descriptions())['execute_command']

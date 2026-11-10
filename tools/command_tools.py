@@ -1795,7 +1795,10 @@ def _settled_response(
 
     if (
         status in _COMMAND_REFUSED
-        and (denial_code := result.get('denial_code')) in COMMAND_ENV_REFUSAL_HINTS
+        and isinstance(
+            denial_code := result.get('denial_code'), str
+        )  # unhashable otherwise
+        and denial_code in COMMAND_ENV_REFUSAL_HINTS
     ):
         reason = result.get('result')
         message = (
