@@ -418,14 +418,14 @@ def _held_approval(
             'held': carried,
             'wait_hint': _HELD_EXPIRED_HINT.format(expires_at=expires_at),
         }
-    carried |= exclude_none(status_path=_held_status_path(held.get('status_path')))
+    status_path = exclude_none(status_path=_held_status_path(held.get('status_path')))
     deadline_text = (
         f'It must be decided by {expires_at}.'
         if deadline is not None
         else 'The server reports no deadline for the decision.'
     )
     return {
-        'held': carried,
+        'held': {**carried, **status_path},
         'wait_hint': _HELD_WAIT_HINT.format(
             deadline=deadline_text, command_id=command_id
         ),
