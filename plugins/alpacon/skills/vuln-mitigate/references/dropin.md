@@ -1,6 +1,6 @@
 # Drop-in script
 
-The script `execute_file` runs writes one file and changes nothing else. It must:
+The script that `execute_file` runs writes one file and changes nothing else. It must:
 
 - Write a dedicated drop-in (`99-<cve-id>-mitigation.ini`) and never edit an existing configuration file, so a re-run gives the same result and removal is deleting one file.
 - Run the config test after writing, then read the value in effect back, and on either failure put the previous state back and exit non-zero, saying so when the put-back itself fails. A drop-in that fails its test would break the next restart, and a syntax test alone passes when a file loaded later (`zz-custom.ini`) overrides the setting.
@@ -36,6 +36,7 @@ esac
 backup="$dropin.prev"
 if [ -e "$backup" ] || [ -L "$backup" ]; then echo "$backup exists from an earlier run; inspect and remove it first" >&2; exit 1; fi
 if [ -L "$dropin" ]; then echo "$dropin is a symlink; not writing through it" >&2; exit 1; fi
+if [ -e "$dropin" ] && [ ! -f "$dropin" ]; then echo "$dropin is not a regular file; not touching it" >&2; exit 1; fi
 if [ -e "$dropin" ] && [ -n "$(find "$dropin" -links +1 -print)" ]; then
   echo "$dropin is hard-linked elsewhere; not writing through it" >&2
   exit 1
@@ -101,6 +102,7 @@ echo "vulnerable=still-present"
 - On every run, rerun included, the script searches every directory in `pooldirs` (one per line) for an uncommented pool-level `php_admin_value` or `php_admin_flag` of any name in `settings` (one name per line). A hit or a read error stops the run (the search follows symlinked pool files), because `php-fpm8.1 -i` never shows pool overrides and one would make the drop-in useless for that pool. List every directory the FPM configuration includes (`grep -rnE '^[[:space:]]*include' /etc/php/8.1/fpm/php-fpm.conf /etc/php/8.1/fpm/pool.d`, which also finds an include inside a pool file; run it again on every directory it names until no new one appears): one outside the list is not searched. The search reads every file in a listed directory, a `.disabled` or `.dpkg-dist` copy included, so a stale copy there stops the run: that is the safe side, and a person removes the copy.
 - `baseline` holds the lines the read command printed for these settings when the person reviewed them. The script refuses to write when the value on disk no longer matches, so a list merged earlier never overwrites a newer one; read again, merge again, and get a new review.
 - A `.prev` left by an earlier run is refused rather than reused as this run's rollback copy.
+- A drop-in path that is not a regular file (a directory, a FIFO, a device) is refused before anything is copied or read.
 - A drop-in path that is a symlink, or a file with more than one hard link, is refused: writing through it would change another file, and the rollback could not restore it. The read-back checks the files on disk, as `php-fpm8.1 -i` does, not the running workers.
 - An existing drop-in with different content is replaced whole, and the backup is deleted on success. The file is this skill's own, named for the CVE; step 2 shows its current content so the person sees what the new script drops.
 - Edit the variables (`fpm` is the binary the test and the read-back run) and the `want` block for another version or service; keep the structure.
