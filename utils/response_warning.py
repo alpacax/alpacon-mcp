@@ -1,6 +1,5 @@
 """Carry response warnings to the outermost tool result without changing API data."""
 
-import json
 from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
 from datetime import UTC
@@ -33,10 +32,14 @@ _warning: ContextVar[list[str] | None] = ContextVar('response_warning', default=
 
 
 def record(headers: httpx.Headers) -> None:
-    if headers.get('Alpacon-Warning') != 'work_session_required_soon':
+    warnings = {part.strip() for part in headers.get('Alpacon-Warning', '').split(',')}
+    if 'work_session_required_soon' not in warnings:
         return
     try:
-        sunset = parsedate_to_datetime(headers.get('Sunset', '')).astimezone(UTC)
+        sunset = parsedate_to_datetime(headers.get('Sunset', ''))
+        if sunset.tzinfo is None:
+            sunset = sunset.replace(tzinfo=UTC)
+        sunset = sunset.astimezone(UTC)
     except (ValueError, TypeError, OverflowError):
         date = 'the date announced by the server'
     else:
@@ -78,18 +81,15 @@ def with_response_warning[**P, R](
                         'content': [
                             *result.content,
                             TextContent(type='text', text=f'Warning: {message}'),
-                        ]
+                        ],
+                        'structured_content': (
+                            {**result.structured_content, 'warning': message}
+                            if isinstance(result.structured_content, dict)
+                            else result.structured_content
+                        ),
                     }
                 ),
             )
-        return cast(
-            ToolResult[R],
-            CallToolResult(
-                content=[
-                    TextContent(type='text', text=json.dumps(result)),
-                    TextContent(type='text', text=f'Warning: {message}'),
-                ]
-            ),
-        )
+        return result
 
     return wrapper

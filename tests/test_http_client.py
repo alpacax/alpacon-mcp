@@ -2,8 +2,9 @@
 
 import asyncio
 import inspect
-import json
 import logging
+import os
+import time
 from collections.abc import Mapping
 from http import HTTPStatus
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
@@ -16,6 +17,7 @@ from mcp.types import (
     LATEST_PROTOCOL_VERSION,
     CallToolRequestParams,
     CallToolResult,
+    InputRequiredResult,
     TextContent,
 )
 
@@ -1116,7 +1118,15 @@ class TestClientErrorMessage:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('warning', [None, 'unknown', 'work_session_required_soon'])
+@pytest.mark.parametrize(
+    'warning',
+    [
+        None,
+        'unknown',
+        'work_session_required_soon',
+        'other, work_session_required_soon',
+    ],
+)
 async def test_work_session_warning_reaches_tool_result(make_client, caplog, warning):
     headers = {'Sunset': 'Wed, 03 Feb 2027 00:00:00 GMT'}
     if warning is not None:
@@ -1140,7 +1150,7 @@ async def test_work_session_warning_reaches_tool_result(make_client, caplog, war
     with caplog.at_level(logging.WARNING):
         result = await tool()
     assert result['data'] == [payload, payload]
-    if warning == 'work_session_required_soon':
+    if warning is not None and 'work_session_required_soon' in warning:
         message = (
             'Starting February 3, 2027, this personal API token will need a Work '
             'Session for this action. Open a Work Session, or use a service token '
@@ -1226,8 +1236,13 @@ async def test_work_session_required_403_preserves_server_hint(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('shape', ['text', 'list', 'call_result'])
-async def test_work_session_warning_preserves_other_result_shapes(make_client, shape):
+@pytest.mark.parametrize(
+    'shape',
+    ['text', 'list', 'input_required', 'call_result', 'call_result_no_structure'],
+)
+async def test_work_session_warning_preserves_other_result_shapes(
+    make_client, caplog, shape
+):
     client = make_client(
         httpx.MockTransport(
             lambda request: httpx.Response(
@@ -1240,9 +1255,15 @@ async def test_work_session_warning_preserves_other_result_shapes(make_client, s
             )
         )
     )
-    originals: dict[str, str | list[int] | CallToolResult] = {
+    originals: dict[str, str | list[int] | InputRequiredResult | CallToolResult] = {
         'text': 'original',
         'list': [1, 2],
+        'input_required': InputRequiredResult(
+            input_requests={}, request_state='sealed-state'
+        ),
+        'call_result_no_structure': CallToolResult(
+            content=[TextContent(type='text', text='original')],
+        ),
         'call_result': CallToolResult(
             content=[TextContent(type='text', text='original')],
             structured_content={'data': 'original'},
@@ -1255,18 +1276,25 @@ async def test_work_session_warning_preserves_other_result_shapes(make_client, s
         await client.request('GET', SERVERS_URL)
         return original
 
-    result = await tool()
-    assert isinstance(result, CallToolResult)
-    assert len(result.content) == 2
-    assert isinstance(result.content[-1], TextContent)
-    assert isinstance(result.content[0], TextContent)
-    assert result.content[-1].text.startswith('Warning: Starting December 1, 2026,')
+    with caplog.at_level(logging.WARNING):
+        result = await tool()
+    message = next(r.message for r in caplog.records if 'Starting ' in r.message)
+    assert message.startswith('Starting December 1, 2026,')
     if isinstance(original, CallToolResult):
+        assert isinstance(result, CallToolResult)
+        assert len(result.content) == 2
+        assert result.content[-1] == TextContent(
+            type='text', text=f'Warning: {message}'
+        )
         assert result.content[0] == original.content[0]
-        assert result.structured_content == original.structured_content
+        if original.structured_content is None:
+            assert result.structured_content is None
+        else:
+            assert result.structured_content == {'data': 'original', 'warning': message}
+            assert original.structured_content == {'data': 'original'}
         assert len(original.content) == 1
     else:
-        assert json.loads(result.content[0].text) == original
+        assert result is original
 
     @with_error_handling
     async def next_tool():
@@ -1283,8 +1311,12 @@ async def test_work_session_warning_preserves_other_result_shapes(make_client, s
         ('not a date', 'the date announced by the server'),
         ('Wed, 03 Feb 10000 00:00:00 GMT', 'the date announced by the server'),
         ('Wed, 03 Feb 2027 00:30:00 +0200', 'February 2, 2027'),
+        ('Tue, 01 Dec 2026 00:00:00 -0000', 'December 1, 2026'),
+        ('Tue Dec  1 00:00:00 2026', 'December 1, 2026'),
+        ('Tue, 01 Dec 2026 00:00:00', 'December 1, 2026'),
     ],
 )
+@pytest.mark.skipif(not hasattr(time, 'tzset'), reason='Requires time.tzset')
 async def test_work_session_warning_sunset(make_client, sunset, date):
     headers = {'Alpacon-Warning': 'work_session_required_soon'}
     if sunset is not None:
@@ -1299,7 +1331,17 @@ async def test_work_session_warning_sunset(make_client, sunset, date):
     async def tool():
         return await client.request('GET', SERVERS_URL)
 
-    result = await tool()
+    previous_tz = os.environ.get('TZ')
+    try:
+        os.environ['TZ'] = 'Asia/Seoul'
+        time.tzset()
+        result = await tool()
+    finally:
+        if previous_tz is None:
+            os.environ.pop('TZ', None)
+        else:
+            os.environ['TZ'] = previous_tz
+        time.tzset()
     assert result['warning'].startswith(f'Starting {date}, this personal API token')
 
 
