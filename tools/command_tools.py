@@ -12,6 +12,7 @@ from pydantic import Field, Strict, TypeAdapter
 
 from utils.command_rejection import attach_rejection
 from utils.common import (
+    COMMAND_ENV_REFUSAL_HINTS,
     FILE_EXEC_INLINE_CREDENTIAL_HINT,
     FILE_EXEC_REFUSAL_HINTS,
     INLINE_CREDENTIAL_HINT,
@@ -437,9 +438,8 @@ def _attach_sudo_denial(
     *,
     command_id: str | None = None,
 ) -> None:
-    """Attach denial guidance read from `source` onto `target`; `source`
-    defaults to `target`. A command detail passes `command_id` so its `held`
-    is read; a list row has none."""
+    """Attach denial guidance read from `source` (default `target`) onto `target`.
+    Pass `command_id` for a command detail so its `held` is read."""
     record = target if source is None else source
     denial = _sudo_denial(record)
     if not denial:
@@ -1791,9 +1791,9 @@ def _settled_response(
     """The tool answer for a command row, or None while it has nothing to report yet."""
     status = result.get('status', '')
 
-    if status in _COMMAND_REFUSED and (denial_code := result.get('denial_code')) in (
-        'command_dangerous_env',
-        'command_invalid_env',
+    if (
+        status in _COMMAND_REFUSED
+        and (denial_code := result.get('denial_code')) in COMMAND_ENV_REFUSAL_HINTS
     ):
         reason = result.get('result')
         message = (
