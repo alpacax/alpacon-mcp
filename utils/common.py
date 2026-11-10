@@ -831,9 +831,38 @@ def unwrap_http_result(
 
     code = http_error_code(result)
     if code is not None and is_work_session_gate_code(code):
-        return remember_console_link(
-            work_session_gate_response(code, **error_kwargs), body
-        )
+        response = work_session_gate_response(code, **error_kwargs)
+        if code == 'work_session_required' and body is not None:
+            fields = body.get('field_errors')
+            entries = (
+                fields.get('non_field_errors') if isinstance(fields, dict) else None
+            )
+            messages = (
+                [
+                    text
+                    for entry in entries
+                    if isinstance(entry, dict)
+                    and isinstance(text := entry.get('message'), str)
+                    and text
+                    and text != 'Invalid input.'
+                ]
+                if isinstance(entries, list)
+                else []
+            )
+            explanations = [*messages, body.get('detail'), body.get('message')]
+            explanation = next(
+                (
+                    text
+                    for text in explanations
+                    if isinstance(text, str) and text and text != 'Invalid input.'
+                ),
+                None,
+            )
+            if explanation:
+                response['message'] = ' '.join(messages) if messages else explanation
+            if (hint := refusal.get('hint')) and hint not in response['message']:
+                response['message'] = f'{response["message"]} {hint}'
+        return remember_console_link(response, body)
 
     # A plan-limit refusal gets its own actionable result, ahead of the
     # generic _ERROR_CODE_HINT lookup below. The contract is 402-specific

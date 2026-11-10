@@ -1,6 +1,8 @@
 """Unit tests for the HTTP client: GET, POST, PATCH, DELETE, and error handling."""
 
+import asyncio
 import inspect
+import json
 import logging
 from collections.abc import Mapping
 from http import HTTPStatus
@@ -19,7 +21,8 @@ from mcp.types import (
 
 from tests.conftest import HTTP_VERBS
 from utils import mfa_step_up, request_signal
-from utils.common import unwrap_http_result
+from utils.common import unwrap_http_result, work_session_gate_response
+from utils.decorators import with_error_handling
 from utils.error_handler import MfaStepUpRequired, UpstreamAuthError
 from utils.http_client import AlpaconHTTPClient, http_client
 from utils.recovery_hints import _detect_error_domain, enrich_error_response
@@ -1110,3 +1113,214 @@ class TestClientErrorMessage:
         assert refusal['message'] == (
             f'Server error after {client.max_retries} attempts'
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('warning', [None, 'unknown', 'work_session_required_soon'])
+async def test_work_session_warning_reaches_tool_result(make_client, caplog, warning):
+    headers = {'Sunset': 'Wed, 03 Feb 2027 00:00:00 GMT'}
+    if warning is not None:
+        headers['Alpacon-Warning'] = warning
+    payload = {'items': [{'id': 'unchanged'}]}
+    client = make_client(
+        httpx.MockTransport(
+            lambda request: httpx.Response(200, json=payload, headers=headers)
+        )
+    )
+
+    @with_error_handling
+    async def inner():
+        return await client.request('GET', SERVERS_URL)
+
+    @with_error_handling
+    async def tool():
+        first, second = await asyncio.gather(inner(), inner())
+        return {'data': [first, second]}
+
+    with caplog.at_level(logging.WARNING):
+        result = await tool()
+    assert result['data'] == [payload, payload]
+    if warning == 'work_session_required_soon':
+        message = (
+            'Starting February 3, 2027, this personal API token will need a Work '
+            'Session for this action. Open a Work Session, or use a service token '
+            'for automation.'
+        )
+        assert result['warning'] == message
+        assert sum(record.message == message for record in caplog.records) == 1
+    else:
+        assert result == {'data': [payload, payload]}
+        assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ('explanation_fields', 'expected'),
+    [
+        ({'detail': 'Detail explanation.'}, 'Detail explanation.'),
+        ({'message': 'Message explanation.'}, 'Message explanation.'),
+        (
+            {
+                'field_errors': {
+                    'non_field_errors': [{'message': 'Field explanation.'}]
+                },
+                'detail': 'Detail explanation.',
+                'message': 'Message explanation.',
+            },
+            'Field explanation.',
+        ),
+        (
+            {
+                'field_errors': {'non_field_errors': [{'message': 'Invalid input.'}]},
+                'detail': 'Detail explanation.',
+                'message': 'Message explanation.',
+            },
+            'Detail explanation.',
+        ),
+        (
+            {
+                'field_errors': {'non_field_errors': [{'message': 'Invalid input.'}]},
+                'detail': 'Invalid input.',
+                'message': 'Message explanation.',
+            },
+            'Message explanation.',
+        ),
+        (
+            {
+                'field_errors': {'non_field_errors': [{'message': 'Invalid input.'}]},
+                'detail': 'Invalid input.',
+                'message': 'Invalid input.',
+            },
+            None,
+        ),
+        (
+            {
+                'detail': 'Explanation. Open a Work Session, or use a service token for automation.'
+            },
+            'Explanation.',
+        ),
+    ],
+)
+async def test_work_session_required_403_preserves_server_hint(
+    make_client, explanation_fields, expected
+):
+    hint = 'Open a Work Session, or use a service token for automation.'
+    body = {
+        'code': 'work_session_required',
+        'hint': hint,
+        **explanation_fields,
+    }
+    client = make_client(
+        httpx.MockTransport(lambda request: httpx.Response(403, json=body))
+    )
+    result = await client.request('POST', SERVERS_URL)
+    refusal = unwrap_http_result(result, default_message='Action failed')
+    assert refusal is not None
+    assert refusal['status_code'] == 403
+    assert refusal['code'] == 'work_session_required'
+    assert refusal['hint'] == hint
+    if expected is None:
+        expected = work_session_gate_response('work_session_required')['message']
+    assert refusal['message'] == f'{expected} {hint}'
+    assert refusal['message'].count(hint) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('shape', ['text', 'list', 'call_result'])
+async def test_work_session_warning_preserves_other_result_shapes(make_client, shape):
+    client = make_client(
+        httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                json={'ok': True},
+                headers={
+                    'Alpacon-Warning': 'work_session_required_soon',
+                    'Sunset': 'Tue, 01 Dec 2026 00:00:00 GMT',
+                },
+            )
+        )
+    )
+    originals: dict[str, str | list[int] | CallToolResult] = {
+        'text': 'original',
+        'list': [1, 2],
+        'call_result': CallToolResult(
+            content=[TextContent(type='text', text='original')],
+            structured_content={'data': 'original'},
+        ),
+    }
+    original = originals[shape]
+
+    @with_error_handling
+    async def tool():
+        await client.request('GET', SERVERS_URL)
+        return original
+
+    result = await tool()
+    assert isinstance(result, CallToolResult)
+    assert len(result.content) == 2
+    assert isinstance(result.content[-1], TextContent)
+    assert isinstance(result.content[0], TextContent)
+    assert result.content[-1].text.startswith('Warning: Starting December 1, 2026,')
+    if isinstance(original, CallToolResult):
+        assert result.content[0] == original.content[0]
+        assert result.structured_content == original.structured_content
+        assert len(original.content) == 1
+    else:
+        assert json.loads(result.content[0].text) == original
+
+    @with_error_handling
+    async def next_tool():
+        return {'data': 'next call'}
+
+    assert await next_tool() == {'data': 'next call'}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ('sunset', 'date'),
+    [
+        (None, 'the date announced by the server'),
+        ('not a date', 'the date announced by the server'),
+        ('Wed, 03 Feb 10000 00:00:00 GMT', 'the date announced by the server'),
+        ('Wed, 03 Feb 2027 00:30:00 +0200', 'February 2, 2027'),
+    ],
+)
+async def test_work_session_warning_sunset(make_client, sunset, date):
+    headers = {'Alpacon-Warning': 'work_session_required_soon'}
+    if sunset is not None:
+        headers['Sunset'] = sunset
+    client = make_client(
+        httpx.MockTransport(
+            lambda request: httpx.Response(200, json={'ok': True}, headers=headers)
+        )
+    )
+
+    @with_error_handling
+    async def tool():
+        return await client.request('GET', SERVERS_URL)
+
+    result = await tool()
+    assert result['warning'].startswith(f'Starting {date}, this personal API token')
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('status', [400, 403, 500, 502])
+async def test_failed_response_does_not_record_warning(make_client, caplog, status):
+    client = make_client(
+        httpx.MockTransport(
+            lambda request: httpx.Response(
+                status,
+                json={'code': 'refused'},
+                headers={'Alpacon-Warning': 'work_session_required_soon'},
+            )
+        )
+    )
+
+    @with_error_handling
+    async def tool():
+        return await client.request('GET', SERVERS_URL)
+
+    with caplog.at_level(logging.WARNING):
+        result = await tool()
+    assert 'warning' not in result
+    assert not [r for r in caplog.records if 'Starting ' in r.message]
