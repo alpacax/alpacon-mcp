@@ -2483,3 +2483,127 @@ async def test_work_session_pending_through_other_tools_uses_session_identity(
     assert title == 'Alpacon: approval pending'
     assert body.startswith('Work Session session-1 is waiting for approval.')
     assert ' more.' not in body
+
+
+def test_assignee_confirmation_text_is_the_persons_own():
+    url = 'https://example.ap1.alpacon.io/commands/1'
+    signal = local_signal.Signal(
+        'approval_pending',
+        argv0='systemctl',
+        server='web-1',
+        account='root',
+        session='session-1',
+        lane='assignee',
+        console_url=url,
+        workspace_url='https://example.ap1.alpacon.io',
+    )
+    assert signal.text() == (
+        'Alpacon: your confirmation needed',
+        'systemctl on web-1 as root is waiting for your own confirmation. '
+        'Session session-1. Confirm it yourself in the web console. ' + url,
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('tool_name', ['execute_command', 'check_command_status'])
+@pytest.mark.parametrize(
+    'lane, title, body',
+    [
+        (
+            'assignee',
+            'Alpacon: your confirmation needed',
+            (
+                'Command is waiting for your own confirmation. '
+                'Confirm it yourself in the web console.'
+            ),
+        ),
+        (
+            'single_approver',
+            'Alpacon: approval pending',
+            (
+                'Command is waiting for approval. Open the approval or wait for an '
+                'approver.'
+            ),
+        ),
+        (
+            None,
+            'Alpacon: approval pending',
+            (
+                'Command is waiting for approval. Open the approval or wait for an '
+                'approver.'
+            ),
+        ),
+    ],
+)
+async def test_held_command_notification_by_lane(
+    monkeypatch, desktop_notifications, tool_name, lane, title, body
+):
+    url = 'https://example.ap1.alpacon.io/commands/1'
+    row: dict[str, object] = {
+        'id': 'cmd-1',
+        'status': 'awaiting_approval',
+        'handled_at': None,
+        'console_url': url,
+    }
+    if lane is not None:
+        row['approval_lane'] = lane
+    monkeypatch.setattr(
+        command_tools, '_get_command_result', AsyncMock(return_value=row)
+    )
+
+    async def poll(workspace='example', region='ap1', command_id='cmd-1'):
+        return await command_tools._poll_command_result(
+            'cmd-1', 'example', 1, 'ap1', None
+        )
+
+    # The hook reads the tool name at decoration.
+    poll.__name__ = tool_name
+    call = with_error_handling(poll)
+    with local_signal.stdio_transport():
+        result = await call()
+    await drain_signals()
+    assert 'console_url' not in result
+    desktop_notifications.assert_called_once()
+    sent_title, sent_body, link = desktop_notifications.call_args.args
+    assert (sent_title, sent_body) == (title, f'{body} {url}')
+    assert link == url
+
+
+@pytest.mark.asyncio
+async def test_assignee_confirmation_keeps_the_rate_limit(desktop_notifications):
+    pending = {'status': 'pending_approval', 'approval_lane': 'assignee'}
+    with local_signal.stdio_transport():
+        for command_id in ('cmd-1', 'cmd-2', 'cmd-3'):
+            local_signal.signal_result(
+                {**pending, 'command_id': command_id, 'work_session_id': 's1'},
+                {},
+                tool_name='execute_command',
+            )
+    await drain_signals()
+    desktop_notifications.assert_called_once()
+
+
+@pytest.mark.parametrize('shape', ['http', 'row', 'details', 'flat'])
+def test_a_changed_rule_is_a_denial(shape):
+    row = {
+        'status': 'rejected',
+        'rejection_gate': 'approval',
+        'rejection_cause': 'approval_rule_changed',
+    }
+    if shape == 'http':
+        result = {
+            'status': 'error',
+            'status_code': 403,
+            'gate': 'approval',
+            'rejection_cause': 'approval_rule_changed',
+        }
+    elif shape == 'row':
+        result = {'status': 'success', 'data': row}
+    elif shape == 'details':
+        result = {'status': 'error', 'details': row}
+    else:
+        result = {**row, 'status': 'error'}
+    signal = local_signal._from_result(result, {}, 'execute_command')
+    assert signal is not None
+    assert signal.kind == 'denied'
+    assert signal.text()[0] == 'Alpacon: command denied'

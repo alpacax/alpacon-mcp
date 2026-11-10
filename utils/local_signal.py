@@ -249,6 +249,8 @@ class Signal:
     session_id: str = ''
     console_url: str = ''
     workspace_url: str = ''
+    # `assignee` when the session's assignee confirms the held command (ADR 0114).
+    lane: str = ''
 
     def __post_init__(self) -> None:
         if not _ACCOUNT.fullmatch(self.account):
@@ -299,6 +301,7 @@ class Signal:
                 subject += f' on {self.server}'
             if self.account:
                 subject += f' as {self.account}'
+            assignee = self.kind == 'approval_pending' and self.lane == 'assignee'
             if self.kind == 'denied':
                 title = (
                     'Alpacon: file transfer denied'
@@ -308,12 +311,17 @@ class Signal:
                 gate = f' by the {self.gate} gate' if self.gate else ''
                 action = 'proceed' if self.target == 'file_transfer' else 'run'
                 body = f'{subject} was refused{gate} and did not {action}.'
+            elif assignee:
+                title = 'Alpacon: your confirmation needed'
+                body = f'{subject} is waiting for your own confirmation.'
             else:
                 title = 'Alpacon: approval pending'
                 body = f'{subject} is waiting for approval.'
             if self.session:
                 body += f' Session {self.session}.'
-            if self.kind == 'approval_pending':
+            if assignee:
+                body += ' Confirm it yourself in the web console.'
+            elif self.kind == 'approval_pending':
                 body += ' Open the approval or wait for an approver.'
         suffix = f' +{folded} more.' if folded else ''
         body = body[: _MAX_BODY - len(suffix)] + suffix
@@ -625,6 +633,7 @@ def _from_result(
         session_id=session_id,
         console_url=console_url,
         workspace_url=workspace_url,
+        lane=_string(result, 'approval_lane'),
     )
 
 

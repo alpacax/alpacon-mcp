@@ -5528,3 +5528,137 @@ async def test_execute_command_description_explains_environment_policy():
     description = (await tool_descriptions())['execute_command']
     assert 'PATH, LD_*' in description
     assert 'refused by the server; set them inside the command instead' in description
+
+
+class TestAssigneeLane:
+    """A held command the session's assignee decides (ADR 0114)."""
+
+    @staticmethod
+    def _held(**fields: object) -> dict[str, object]:
+        return {
+            'id': 'cmd-a1',
+            'status': 'awaiting_approval',
+            'handled_at': None,
+            'console_url': 'https://example.ap1.alpacon.io/commands/cmd-a1',
+            **fields,
+        }
+
+    @staticmethod
+    async def _execute(row: dict[str, object]) -> ToolResponse:
+        with (
+            patch('tools.command_tools._submit_command', return_value={'id': 'cmd-a1'}),
+            patch('tools.command_tools._get_command_result', return_value=row),
+        ):
+            return await execute_command(
+                server_id=VALID_SERVER_ID,
+                command='systemctl restart nginx',
+                workspace='testworkspace',
+                region='ap1',
+                timeout=10,
+            )
+
+    @staticmethod
+    async def _check(row: dict[str, object]) -> ToolResponse:
+        with patch('tools.command_tools._get_command_result', return_value=row):
+            return await check_command_status(
+                command_id='cmd-a1', workspace='testworkspace', region='ap1'
+            )
+
+    @pytest.mark.asyncio
+    async def test_the_assignee_lane_tells_the_model_the_user_confirms(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await self._execute(self._held(approval_lane='assignee'))
+
+        assert result['status'] == 'pending_approval'
+        assert result['category'] == 'COMMAND_AWAITING_APPROVAL'
+        assert result['approvable_by_agent'] is False
+        assert result['requires_human_approval'] is True
+        assert result['approval_lane'] == 'assignee'
+        assert result['command_id'] == 'cmd-a1'
+        next_action = result['next_action']
+        assert 'confirm this command themselves in the Alpacon web console' in (
+            next_action
+        )
+        assert 'Tell the user and wait' in next_action
+        assert 'approv' not in next_action.lower()
+        # The shell-lane file hint that may follow is about later runs.
+        notice = result['message'].split(' If this command runs a script')[0]
+        assert 'confirm it themselves in the Alpacon web console' in notice
+        assert 'approv' not in notice.lower()
+
+    @pytest.mark.asyncio
+    async def test_the_assignee_lane_carries_no_judgment_or_console_link(
+        self, mock_http_client, mock_token_manager
+    ):
+        row = self._held(
+            approval_lane='assignee',
+            risk_score=42,
+            reasoning='low confidence on the target',
+        )
+
+        result = await self._execute(row)
+
+        text = json.dumps(result)
+        assert 'console_url' not in result
+        assert 'alpacon.io/commands' not in text
+        assert 'low confidence on the target' not in text
+        assert 'risk_score' not in text
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('lane', [None, 'single_approver', 'auto_approve', ''])
+    async def test_any_other_lane_keeps_the_approver_result(
+        self, lane, mock_http_client, mock_token_manager
+    ):
+        baseline = await self._execute(self._held())
+        fields = {} if lane is None else {'approval_lane': lane}
+
+        result = await self._execute(self._held(**fields))
+
+        assert result == baseline
+        assert 'approval_lane' not in result
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('lane', ['assignee', 'single_approver', None])
+    async def test_check_command_status_matches_execute_command(
+        self, lane, mock_http_client, mock_token_manager
+    ):
+        fields = {} if lane is None else {'approval_lane': lane}
+        row = self._held(**fields)
+
+        executed = await self._execute(row)
+        checked = await self._check(row)
+
+        # Only execute_command knows it sent a shell line, so the message's
+        # file-lane hint is its own; every field the lane decides is shared.
+        for key in (
+            'status',
+            'category',
+            'requires_human_approval',
+            'approvable_by_agent',
+            'next_action',
+            'command_id',
+        ):
+            assert checked[key] == executed[key]
+        assert checked.get('approval_lane') == executed.get('approval_lane')
+        assert checked['message'] in executed['message']
+
+    @pytest.mark.asyncio
+    async def test_a_changed_rule_says_sending_it_again_applies_the_current_rule(
+        self, mock_http_client, mock_token_manager
+    ):
+        row = _rejected_row(
+            rejection_cause='approval_rule_changed', rejection_gate='approval'
+        )
+
+        result = await self._execute(row)
+
+        expected = (
+            'The approval rule changed while the command waited, so it was closed '
+            'without running. Sending it again applies the current rule, which may '
+            'ask a different person to decide. Ask the user whether to send it again.'
+        )
+        assert result['status'] == 'error'
+        assert result['rejection_cause'] == 'approval_rule_changed'
+        assert result['rejection_hint'] == expected
+        assert result['message'] == f'Command failed with status: rejected. {expected}'

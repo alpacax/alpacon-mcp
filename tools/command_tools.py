@@ -96,6 +96,22 @@ _FILE_READ_POLL_INTERVAL = 1.0
 #: instruction itself lives in one place so one copy cannot be reworded alone.
 DO_NOT_RESUBMIT = 'Do not resubmit the command'
 
+# A held command whose `approval_lane` is `assignee` is the session assignee's to
+# confirm, not an approver's (ADR 0114). Neither text names a judgment detail.
+_ASSIGNEE_CONFIRMATION_MESSAGE = (
+    "Command is waiting for the user's own confirmation. As this Work "
+    "Session's assignee, the user must confirm it themselves in the Alpacon "
+    'web console; it then runs automatically. Tell the user, wait, then '
+    f'retrieve the result with check_command_status. {DO_NOT_RESUBMIT}: a '
+    'resubmission is held again and may double-execute the command.'
+)
+_ASSIGNEE_CONFIRMATION_NEXT_ACTION = (
+    'The user must confirm this command themselves in the Alpacon web console; '
+    'you cannot confirm it. Tell the user and wait, then retrieve the result '
+    'with check_command_status. Do not re-run: a resubmission is held again '
+    'and may double-execute the command.'
+)
+
 _PURPOSE_DESCRIPTION = (
     'What this particular command is for, in one or two sentences; pass it whenever '
     'the command is not trivially routine. State a fact local to this host that the '
@@ -1718,19 +1734,32 @@ def _settled_response(
         # HITL verification gate: a human must approve out-of-band
         # (ADR 0015); polling would only burn the timeout window.
         case 'awaiting_approval':
-            response = pending_approval_response(
-                'Command is awaiting human approval. A human must '
-                'approve it out-of-band (Alpacon web console or Slack); '
-                'it then runs automatically. Wait, then retrieve the '
-                f'result with check_command_status. {DO_NOT_RESUBMIT}: a '
-                'resubmission needs its own approval and may '
-                'double-execute the command.',
-                category='COMMAND_AWAITING_APPROVAL',
-                command_id=command_id,
-                region=region,
-                workspace=workspace,
-                **echo,
-            )
+            if result.get('approval_lane') == 'assignee':
+                response = pending_approval_response(
+                    _ASSIGNEE_CONFIRMATION_MESSAGE,
+                    category='COMMAND_AWAITING_APPROVAL',
+                    command_id=command_id,
+                    region=region,
+                    workspace=workspace,
+                    **echo,
+                )
+                # Set after the builder, whose category default it replaces.
+                response['next_action'] = _ASSIGNEE_CONFIRMATION_NEXT_ACTION
+                response['approval_lane'] = 'assignee'
+            else:
+                response = pending_approval_response(
+                    'Command is awaiting human approval. A human must '
+                    'approve it out-of-band (Alpacon web console or Slack); '
+                    'it then runs automatically. Wait, then retrieve the '
+                    f'result with check_command_status. {DO_NOT_RESUBMIT}: a '
+                    'resubmission needs its own approval and may '
+                    'double-execute the command.',
+                    category='COMMAND_AWAITING_APPROVAL',
+                    command_id=command_id,
+                    region=region,
+                    workspace=workspace,
+                    **echo,
+                )
             _attach_file_execution_suggestion(
                 response,
                 result,
