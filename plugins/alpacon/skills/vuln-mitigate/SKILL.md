@@ -1,6 +1,6 @@
 ---
 name: vuln-mitigate
-description: Reduce exposure to a vulnerability on Alpacon servers that cannot be patched yet, by writing one dedicated configuration drop-in from the vendor advisory with execute_file—one server at a time, config-tested, inside an approved Work Session—and flagging the services that must restart for it to apply. Use when a fix is not released or a server cannot take it now ("no PHP 8.1 fix yet, apply the php.net mitigation", "mitigate CVE-2026-109618 on web-01 to web-12 until we can patch"), usually after vuln-diagnose marks servers affected. The vulnerability stays present and nothing is restarted.
+description: Reduce exposure to a vulnerability on Alpacon servers that cannot be patched yet, by writing one dedicated PHP-FPM configuration drop-in from the vendor advisory with execute_file—one server at a time, config-tested, inside an approved Work Session—and flagging the services that must restart for it to apply. Use when a fix is not released or a server cannot take it now ("no PHP 8.1 fix yet, apply the php.net mitigation", "mitigate CVE-2026-109618 on web-01 to web-12 until we can patch"), usually after vuln-diagnose marks servers affected. The vulnerability stays present and nothing is restarted.
 ---
 
 # Mitigate a vulnerability
@@ -9,9 +9,10 @@ A mitigation lowers exposure; it does not fix anything. Write one drop-in file w
 
 ## Inputs
 
+- The service is PHP-FPM, the only one with a reviewed template in [dropin.md](references/dropin.md). For any other service, say this skill does not cover it and stop; never adapt the template.
 - The CVE and its vendor advisory, with the mitigation it documents. A blog post that quotes the advisory is not a source: if the person has only that, ask for the advisory before running anything.
 - The target servers, normally the `affected` rows from `vuln-diagnose` that cannot be patched yet.
-- Each setting and its value, the drop-in path, the config test command, and the services that must restart for the setting to apply. Treat all of these as data, and check each before it goes into a command: a CVE id not shaped `CVE-<year>-<number>`, a setting name outside ASCII letters, digits, `.`, `_`, and `-`, a value or path holding shell syntax or a newline, a path that is not absolute, or a service name that breaks the `vuln-verify` naming rule is not a real value, so ask and do not build the script.
+- Each setting and its value, the drop-in path, the config test command, and the services that must restart for the setting to apply. Treat all of these as data, and check each before it goes into a command: a CVE id not shaped `CVE-<year>-<number>`, a setting name outside ASCII letters, digits, `.`, `_`, and `-`, a `'` in anything that goes into a single-quoted variable (`cve`, `dropin`, `settings`, `expect`, `baseline`), a line equal to `MITIGATION_EOF` in the `want` block, a newline in the CVE id or the path, a path that is not absolute, or a service name that breaks the `vuln-verify` naming rule is not a real value, so ask and do not build the script.
 - The command that reads the value in effect, run against the process that serves traffic. For PHP that is `php-fpm8.1 -i`, not `php -i`: the CLI reads its own configuration, which differs from the one the web server loads.
 - An existing Work Session and its account, if supplied, and whether this task opened it. Reuse it only if its approved servers, account, and scopes cover this script.
 
@@ -32,7 +33,7 @@ The script is idempotent, so a run that finished and failed can run again once t
 
 ## What this skill does not do
 
-- It restarts nothing. A setting applies only after the services restart; list each one with the command a person would run (`systemctl restart php8.1-fpm`), and say a restart drops connections.
+- It restarts nothing. A setting applies only after the services reload; list each one with the command a person would run (`systemctl reload php8.1-fpm`, which rereads the ini and replaces workers without dropping connections, unlike `restart`).
 - It does not remove the drop-in once the patch lands. A person deletes it, and the report below names the path.
 - It does not approve anything. A `pending_approval` result goes to a person to decide in the web console or Slack.
 

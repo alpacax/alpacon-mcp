@@ -7,7 +7,7 @@ The script that `execute_file` runs writes one file and changes nothing else. It
 - Take the settings and values from the vendor advisory only. The template below holds `REPLACE` placeholders and refuses to run until every one is filled in; the setting shown is never a real mitigation.
 - Merge a deny list (`disable_functions`) with the value read in step 2 instead of replacing it: the drop-in loads later and wins, so a replacement silently re-enables whatever the old list blocked. An allow list (`open_basedir`) goes the other way: a union with the old value keeps every path the advisory wants closed, so set the advised value itself. Show the person the merged list, or what the advised allow list removes.
 - Restart nothing and print the services that need one.
-- Hold each substituted value as data, checked against the rules in the skill's inputs: a value that contains the line `MITIGATION_EOF` would end the heredoc early and run what follows.
+- Hold each substituted value as data, checked against the rules in the skill's inputs: a `'` in a single-quoted variable ends the quote, and a line equal to `MITIGATION_EOF` in the `want` block ends the heredoc early, so either runs what follows.
 - Carry no password or token, since `execute_file` refuses inline credentials.
 
 The config test must load the drop-in. A test that never reads the file passes on a broken drop-in and proves nothing; ask the person which command loads it when you are unsure.
@@ -78,8 +78,7 @@ else
     exit 1
   }
   if [ -e "$dropin" ]; then cp -p -- "$dropin" "$backup"; fi
-  if printf '%s\n' "$want" > "$dropin" && chmod 644 "$dropin" && check; then
-    rm -f -- "$backup"
+  if printf '%s\n' "$want" > "$dropin" && chmod 644 "$dropin" && check && rm -f -- "$backup"; then
     echo "mitigation=applied"
   else
     if { if [ -e "$backup" ]; then mv -- "$backup" "$dropin"; else rm -f -- "$dropin"; fi; }; then
@@ -95,7 +94,7 @@ echo "restart_required=$restart"
 echo "vulnerable=still-present"
 ```
 
-- The write, the `chmod`, and the test share one condition, so a failure in any of them, a full disk included, rolls the drop-in back.
+- The write, the `chmod`, the test, and the backup removal share one condition, so a failure in any of them, a full disk included, rolls the drop-in back instead of leaving a `.prev` that blocks every rerun.
 - The backup ends in `.prev`, not `.ini`, so PHP never loads it.
 - The unchanged branch still runs the test, so a rerun reports a drop-in that has since stopped passing.
 - `expect` holds one whole line per setting, as the read command prints it once the setting is in effect (for example `memory_limit => -1 => -1`). Every line must appear exactly, and the check fails when the read command itself fails.
@@ -105,7 +104,7 @@ echo "vulnerable=still-present"
 - A drop-in path that is not a regular file (a directory, a FIFO, a device) is refused before anything is copied or read.
 - A drop-in path that is a symlink, or a file with more than one hard link, is refused: writing through it would change another file, and the rollback could not restore it. The read-back checks the files on disk, as `php-fpm8.1 -i` does, not the running workers.
 - An existing drop-in with different content is replaced whole, and the backup is deleted on success. The file is this skill's own, named for the CVE; step 2 shows its current content so the person sees what the new script drops.
-- Edit the variables (`fpm` is the binary the test and the read-back run) and the `want` block for another version or service; keep the structure.
+- For another PHP version, edit the variables (`fpm` is the binary the test and the read-back run) and the `want` block; keep the structure. The template covers PHP-FPM only: its config test, read-back, and pool search do not carry over to another service (sshd, sysctl, modprobe), so never adapt it to one.
 - Running as an ordinary account, the account must still be able to write the drop-in directory; do not add `sudo` to individual lines. If it cannot, use `root` as the session account instead.
 
 ## Reading the value in effect
