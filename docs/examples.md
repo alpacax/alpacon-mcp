@@ -64,7 +64,7 @@ These read the agent's collected inventory—no command execution, no ACL needed
 
 ## 🗂️ Working inside a Work Session
 
-When you reach Alpacon through OAuth (the hosted server at `mcp.alpacon.io`, or any browser-authenticated client), command execution and file transfers must happen inside an active Work Session. Static API tokens bypass this, so in stdio mode you can skip ahead.
+Personal API tokens, MCP OAuth and browser callers use an active, approved Work Session for command execution and REST file-transfer creation. The Alpacon server enforces this requirement; personal-token enforcement requires a server release that supports it. This MCP server adds no local authorization check. Service tokens retain their endpoint-specific authorization rules.
 
 ### The shape of the flow
 

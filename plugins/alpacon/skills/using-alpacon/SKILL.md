@@ -21,7 +21,7 @@ Alpacon is reached only through its MCP tools. Clients name them differently (`l
 
 ## Run commands inside a Work Session
 
-A browser sign-in, which the hosted server uses, must hold an active Work Session before `execute_command`, `execute_file`, or a WebFTP transfer.
+Personal API tokens, MCP OAuth and browser callers use an active, approved Work Session for command execution and REST file-transfer creation. The Alpacon server enforces this requirement; personal-token enforcement requires a server release that supports it. This MCP server adds no local authorization check. Service tokens retain their endpoint-specific authorization rules.
 
 1. Reuse a session that covers the task (`work_session_list`), or open one with `work_session_create`: the `scopes` (`command`; add `webftp` for transfers and for `execute_file` with `write_file` or `read_from_server`; `sudo` only to elevate), every target server UUID, `expires_at`, and a `description` that tells the approver which servers, what action, and what will not be touched. To run as another OS account such as `root`, set `target_account_username` here and pass the same account as `username` on each command.
 2. If it returns `status="pending_approval"`, tell the person the session waits for approval, then poll `work_session_get` until `data.status` is `active`. Stop on `rejected`, `cancelled`, `expired`, `revoked`, or `completed`.

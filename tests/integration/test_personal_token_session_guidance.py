@@ -7,6 +7,7 @@ import pytest
 from server import mcp
 from tools.command_tools import execute_command, execute_file
 from tools.webftp_tools import webftp_upload_content
+from tools.work_session_tools import work_session_create
 
 
 @pytest.mark.integration
@@ -33,12 +34,43 @@ async def test_personal_token_execution_guidance(tool_name: str) -> None:
     assert 'static API and service tokens may omit' not in description
     assert 'ALPACON_WORK_SESSION' in description
     assert 'an explicit value wins' in description
+    assert 'The Alpacon server enforces this' in description
+    assert 'personal-token enforcement requires a server release' in description
+    assert 'This MCP server adds no local authorization check' in description
     assert 'work_session_id' not in tool.input_schema.get('required', [])
     assert {'type': 'null'} in parameter['anyOf']
 
 
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_work_session_create_personal_token_guidance() -> None:
+    tools = await mcp.list_tools()
+    tool = next(tool for tool in tools if tool.name == work_session_create.__name__)
+    description = tool.description
+
+    assert description is not None
+    assert (
+        'is required for command execution and REST file-transfer creation with '
+        'personal API tokens' in description
+    )
+    assert 'The Alpacon server enforces this' in description
+    assert 'personal-token enforcement requires a server release' in description
+    assert 'This MCP server adds no local authorization check' in description
+    assert 'Service tokens retain their endpoint-specific authorization rules' in (
+        description
+    )
+
+
 @pytest.mark.parametrize(
-    'filename', ['README.md', 'docs/api-reference.md', 'docs/troubleshooting.md']
+    'filename',
+    [
+        'README.md',
+        'docs/api-reference.md',
+        'docs/troubleshooting.md',
+        'docs/examples.md',
+        'plugins/alpacon/skills/using-alpacon/SKILL.md',
+        'plugins/alpacon/skills/using-alpacon/references/work-sessions.md',
+    ],
 )
 def test_public_help_does_not_promise_a_static_token_session_bypass(
     filename: str,
@@ -49,5 +81,7 @@ def test_public_help_does_not_promise_a_static_token_session_bypass(
         'static api tokens and service tokens bypass the gate',
         'static api and service tokens bypass',
         'static api tokens bypass the gate',
+        'static api tokens bypass this',
+        'static api tokens are not gated',
     ):
         assert claim not in prose
