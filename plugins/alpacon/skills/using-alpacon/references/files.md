@@ -6,7 +6,7 @@ Send any script, heredoc, or `bash /path/to/file` line through `execute_file`, n
 
 - You have the script's text: pass `write_file=true` with the full text as `content`. One call writes it to `path` and submits it. An existing file is refused with `file_write_failed` unless you also pass `overwrite=true`.
 - The script is already on the host: pass `read_from_server=true` and no `content`. The call reads the file's bytes as `username` and submits those.
-- `write_file` and `read_from_server` move the file through WebFTP, so under a browser sign-in the Work Session needs both the `command` and `webftp` scopes. With `command` alone the transfer is refused with `code="work_session_scope_not_allowed"` and nothing runs.
+- `write_file` and `read_from_server` move the file through WebFTP, so the Work Session needs both the `command` and `webftp` scopes for personal API tokens and OAuth/browser callers. Personal-token enforcement requires an Alpacon server release that supports it, as described in [Work Sessions](work-sessions.md). With `command` alone the transfer is refused with `code="work_session_scope_not_allowed"` and nothing runs.
 - Both off: the file must already be at `path`, and `content` is only what the reviewer reads.
 - Pass `content` byte for byte. Do not strip a trailing newline or change line endings; a mismatch fails at run time.
 - `path` and `interpreter` are absolute (`/bin/bash`, not `bash`). Put pipes, redirection, and environment setup inside the script; nothing can be composed around the file.
@@ -60,7 +60,7 @@ A command line that carries a credential is refused with `command_inline_credent
 
 ## Move files with WebFTP
 
-Transfers need the `webftp` scope on the Work Session and its id as `work_session_id`.
+For personal API tokens and OAuth/browser callers, REST file-transfer creation needs the `webftp` scope on an active, approved Work Session and its id as `work_session_id`. The Alpacon server enforces this requirement; personal-token enforcement requires a server release that supports it. Service tokens retain their endpoint-specific authorization rules.
 
 - `webftp_upload_content` writes `file_content` to a path on the server. `file_content` must be base64-encoded; plain text is refused with `code="invalid_content"`. On the hosted server it accepts up to 3 MiB of decoded content; larger content is refused with `code="content_too_large"`.
 - `webftp_download_file` fetches a file or folder. On the hosted server it waits for the host to send the file, then returns a `download_url` valid for 24 hours instead of writing to your disk; hand the person the link or fetch it before it expires. A failed transfer returns `code="download_failed"`. `code="download_timeout"` means the host had not finished in time; check it later with `webftp_check_status`.

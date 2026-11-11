@@ -43,6 +43,12 @@ python -c "from server import mcp; print('ok')"   # import smoke check
 ```
 
 ## Non-obvious invariants
+Published client guidance, including tool descriptions, examples and plugin references,
+must distinguish a server release requirement from enforcement added by this client.
+The Alpacon server enforces personal-token Work Session admission; this MCP server
+adds no local authorization check.
+Regenerate the evaluation catalog after integrating base-branch changes that add
+mocked tools; a clean text merge can leave their shared parameter descriptions stale.
 
 The legacy Auth0 environment variable names still work as fallbacks and will be removed in a later release; see `docs/configuration.md` for the mapping.
 
@@ -103,9 +109,12 @@ Things the code will not tell you at a glance:
   with `outcome_unknown: true`, and such an error gets no recovery hints.
   The upstream API takes no idempotency key, so a resent
   `/api/events/commands/` POST runs the command twice.
-- **The WorkSession gate applies to OAuth/browser callers only.** Static API and
-  service tokens bypass it, so a flow that works in stdio mode can be blocked in
-  remote mode. `ALPACON_WORK_SESSION` supplies a default session id; an explicit
+- **Personal API tokens need an active, approved Work Session for command execution
+  and REST file-transfer creation, as OAuth/browser callers do.** Service tokens
+  retain their endpoint-specific authorization rules. This guidance grants no
+  interactive channel access and changes no read or session-request permission.
+  Keep the published README, API reference and troubleshooting guidance consistent,
+  including wrapped paragraphs. `ALPACON_WORK_SESSION` supplies a default session id; an explicit
   `work_session_id` argument wins.
 - **API token tools reject static API tokens.** List/get receive an upstream
   403 for `source='api'` tokens. Create/update/delete/duplicate/rotate use

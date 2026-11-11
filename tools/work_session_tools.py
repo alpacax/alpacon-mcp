@@ -125,8 +125,12 @@ _SESSION_DESCRIPTION = (
 @mcp_tool_handler(
     description=(
         'Create a Work Session to scope all infrastructure actions under an auditable, '
-        'approval-gated session. Every execute_command and file transfer should be linked '
-        'to a Work Session—the server enforces this for MCP OAuth and browser-based auth. '
+        'approval-gated session. An active, approved Work Session '
+        'is required for command execution and REST file-transfer creation with '
+        'personal API tokens, MCP OAuth or browser login. The Alpacon server enforces this; '
+        'personal-token enforcement requires a server release that supports it. '
+        'This MCP server adds no local authorization check. '
+        'Service tokens retain their endpoint-specific authorization rules. '
         'A new session usually lands in pending: this tool then returns '
         'status="pending_approval", and no command or file transfer runs in it until a '
         'human approves out-of-band (Alpacon web console or Slack). Do not open another '

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Work Session parameter and `work_session_create` guidance (#473) now directs personal API tokens to an active, approved session for command execution and REST file-transfer creation, with personal-token enforcement requiring an Alpacon server release that supports it. Service-token authorization, explicit session selection and `ALPACON_WORK_SESSION` fallback are unchanged. This changes descriptions only: clients receive no new parameter, response field or local authorization gate, and the Alpacon server remains responsible for admission.
+
 ### Added
 - When a personal API token makes a privileged call outside a Work Session, the result carries a `warning`, once per tool call, saying from which date (parsed from `Sunset`) that token will need a Work Session and how to fix it (open a Work Session, or use a service token for automation). Clients parsing dictionary results or dictionary structured content should accept the optional `warning` field; `CallToolResult` results also gain a final warning text block (#481). Other result types remain unchanged, with the warning logged only. A `work_session_required` refusal now includes the server's explanation and hint in its displayed message. The warning **requires an Alpacon server release that sends the `Alpacon-Warning` header**; this release can ship first, since without the header results are unchanged.
 - Command environment refusals (`command_dangerous_env`, `command_invalid_env`) return the server's explanation in `message` when the server sends one, and local recovery guidance otherwise (#475). A command refused at delivery returns its result with `denial_code`. Submitted environment values are never echoed.

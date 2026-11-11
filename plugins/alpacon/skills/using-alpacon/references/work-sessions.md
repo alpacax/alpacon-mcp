@@ -1,6 +1,6 @@
 # Work Sessions
 
-A Work Session is the approved window an agent works inside: which servers, which scopes, which OS account, until when. A browser sign-in, which the hosted server uses, must attach one to every command and file transfer. Static API tokens are not gated, so a flow that works with a token can be refused after a browser sign-in.
+A Work Session is the approved window an agent works inside: which servers, which scopes, which OS account, until when. Personal API tokens, MCP OAuth and browser callers use an active, approved Work Session for command execution and REST file-transfer creation. The Alpacon server enforces this requirement; personal-token enforcement requires a server release that supports it. This MCP server adds no local authorization check. Service tokens retain their endpoint-specific authorization rules; ordinary reads and Work Session requests keep their existing permissions.
 
 ## Open one session per task
 
