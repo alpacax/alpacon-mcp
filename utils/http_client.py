@@ -10,7 +10,7 @@ from urllib.parse import urljoin, urlsplit
 
 import httpx
 
-from utils import mfa_step_up, request_signal
+from utils import mfa_step_up, request_signal, response_warning
 from utils.common import MCP_USER_AGENT, is_auth_enabled
 from utils.declared_agent import declared_agent_headers
 from utils.error_handler import MfaStepUpRequired, UpstreamAuthError
@@ -253,6 +253,7 @@ class AlpaconHTTPClient:
 
                 # Check for success
                 response.raise_for_status()
+                response_warning.record(response.headers)
                 if not idempotent:
                     mfa_step_up.note_sent(f'{method.upper()} {urlsplit(url).path}')
 
