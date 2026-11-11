@@ -1,5 +1,7 @@
 """The token endpoint: proxies code and refresh exchanges to Auth0."""
 
+import re
+import unicodedata
 from http import HTTPStatus
 from urllib.parse import parse_qs
 
@@ -205,7 +207,7 @@ async def _proxy_token_request(
                 data=params,
                 headers=_FORM_HEADERS,
             )
-        return _token_response(response, grant_type, grant)
+        return _token_response(response, grant_type, grant, config['client_id'])
     except httpx.HTTPError as e:
         logger.error('Auth0 token request failed: %s', e)
         raise _OAuthRequestError(
@@ -218,14 +220,18 @@ async def _proxy_token_request(
 
 
 def _token_response(
-    response: httpx.Response, grant_type: str, grant: _OpenedSeal
+    response: httpx.Response,
+    grant_type: str,
+    grant: _OpenedSeal,
+    client_id: str = 'unknown',
 ) -> JSONResponse:
     """Auth0's answer with the ledger grant wrapped into the access token and the
     refresh token sealed, status kept."""
     try:
         response_data = response.json()
     except Exception:
-        logger.warning('Auth0 returned non-JSON response: %s', response.status_code)
+        if grant_type != _GRANT_REFRESH_TOKEN:
+            logger.warning('Auth0 returned non-JSON response: %s', response.status_code)
         response_data = {
             'error': _ERROR_SERVER_ERROR,
             'error_description': 'Auth0 returned unexpected response format',
@@ -255,7 +261,25 @@ def _token_response(
             grant.ledger if carried is not None else '',
         )
 
-    _log_token_response(response.status_code, response_data, grant_type)
+    if grant_type == _GRANT_REFRESH_TOKEN and response.status_code != HTTPStatus.OK:
+        data = response_data if isinstance(response_data, dict) else {}
+        sensitive_values = (grant.value,) + tuple(
+            value
+            for key in ('refresh_token', 'access_token', 'id_token', 'email', 'sub')
+            if isinstance(value := data.get(key), str) and value
+        )
+        logger.warning(
+            'Auth0 refresh failed - error: %s, error_description: %s, '
+            'status: %s, client_id: %s, rotating: unknown',
+            _refresh_log_value(data.get('error', 'unknown'), sensitive_values),
+            _refresh_log_value(
+                data.get('error_description', 'unknown'), sensitive_values
+            ),
+            response.status_code,
+            escape_for_log(client_id),
+        )
+    else:
+        _log_token_response(response.status_code, response_data, grant_type)
     return JSONResponse(
         response_data,
         status_code=response.status_code,
@@ -294,3 +318,17 @@ def _log_token_response(
             status_code,
             type(response_data).__name__,
         )
+
+
+def _refresh_log_value(value: object, sensitive_values: tuple[str, ...]) -> str:
+    if not isinstance(value, str):
+        return 'unknown'
+    for sensitive in sorted(sensitive_values, key=len, reverse=True):
+        if sensitive:
+            value = value.replace(sensitive, '[redacted]')
+    # Action denials can include an email or an Auth0 subject in their prose.
+    value = re.sub(r'[^\s@]+@[^\s@]+', '[redacted]', value)
+    value = re.sub(r'\b[\w-]+\|[^\s,;]+', '[redacted]', value)
+    return ''.join(c for c in value if not unicodedata.category(c).startswith('C'))[
+        :200
+    ]
