@@ -27,7 +27,7 @@ Personal API tokens, MCP OAuth and browser callers use an active, approved Work 
 2. If it returns `status="pending_approval"`, tell the person the session waits for approval, then poll `work_session_get` until `data.status` is `active`. Stop on `rejected`, `cancelled`, `expired`, `revoked`, or `completed`.
 3. Pass its id as `work_session_id` on every command and transfer. When the task is done, close a session you opened for it with `work_session_close`; leave a session you reused open.
 
-Give each non-routine command a `purpose` naming a fact about this host. A `status="purpose_required"` result is not an approval request: the command is already held under its `command_id`. Answer it with `state_command_purpose` within the deadline; if the deadline passes, read the command with `check_command_status` and do not resubmit it. Send a script or heredoc through `execute_file`, not `execute_command`.
+Give each non-routine command a `purpose` naming a fact about this host. A `status="purpose_required"` result is not an approval request: the command is already held under its `command_id`. Answer it with `state_command_purpose` within the deadline; if the deadline passes, read the command with `check_command_status` and do not resubmit it. Send a script or heredoc through `execute_file`, not `execute_command`. For container work, embed the program in a verified shell script and send it through stdin; see [files.md](references/files.md#multi-step-work-inside-a-container).
 
 ## Approvals belong to people
 

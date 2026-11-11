@@ -42,6 +42,7 @@ from utils.http_client import AlpaconHTTPClient, http_client
 from utils.logger import describe_for_log, get_logger
 from utils.notification_context import ConsoleLinks, capture_console_links
 from utils.recovery_hints import enrich_error_response
+from utils.response_warning import with_response_warning
 from utils.types import JsonValue, ToolErrorResponse, ToolResult
 from utils.workspace_resolver import resolve_workspace
 
@@ -659,7 +660,7 @@ def with_error_handling[**P, R](
         return cast(ToolResult[R], step_up)
 
     setattr(wrapper, ERROR_HANDLING_MARKER, True)
-    return wrapper
+    return with_response_warning(wrapper)
 
 
 def _summarize_log_value(value: object, _nested: bool = False) -> object:

@@ -1120,3 +1120,79 @@ class TestUnwrapHttpResultRefusalFields:
 
         assert out['gate'] == 'some_future_gate'
         assert out['message'] == 'HTTP 403'
+
+
+@pytest.mark.parametrize(
+    'fields',
+    [
+        None,
+        [],
+        {'non_field_errors': None},
+        {'non_field_errors': 'not a list'},
+        {'non_field_errors': [None, {}, {'message': 42}, {'message': ''}]},
+    ],
+)
+def test_environment_refusal_without_server_message_keeps_local_guidance(fields):
+    result = _unwrap_error(
+        {
+            'error': 'HTTP Error',
+            'status_code': 400,
+            'response': json.dumps(
+                {'code': 'command_dangerous_env', 'field_errors': fields}
+            ),
+        },
+        default_message='Command execution failed',
+    )
+    assert result['error_code'] == 'command_dangerous_env'
+    assert 'inside the command' in result['message']
+
+
+def test_environment_refusal_with_server_message_adds_no_second_hint():
+    server = (
+        'The command environment policy refuses `PATH`: these variables can '
+        'change which program runs. Remove them, or set them inside the '
+        'command (`env NAME=value cmd`).'
+    )
+    result = _unwrap_error(
+        {
+            'error': 'HTTP Error',
+            'status_code': 400,
+            'response': json.dumps(
+                {
+                    'code': 'command_dangerous_env',
+                    'field_errors': {
+                        'non_field_errors': [
+                            {'code': 'command_dangerous_env', 'message': server}
+                        ]
+                    },
+                }
+            ),
+        },
+        default_message='Command execution failed',
+    )
+    assert result['message'] == f'Command execution failed: {server}'
+
+
+@pytest.mark.parametrize('code', ['command_dangerous_env', 'command_invalid_env'])
+def test_environment_refusal_from_a_current_server_keeps_local_guidance(code):
+    # The body today's server sends: the code with DRF's default message.
+    result = _unwrap_error(
+        {
+            'error': 'HTTP Error',
+            'status_code': 400,
+            'response': json.dumps(
+                {
+                    'code': code,
+                    'field_errors': {
+                        'non_field_errors': [
+                            {'code': code, 'message': 'Invalid input.'}
+                        ]
+                    },
+                }
+            ),
+        },
+        default_message='Command execution failed',
+    )
+    assert result['error_code'] == code
+    assert 'Invalid input.' not in result['message']
+    assert 'inside the command' in result['message']
