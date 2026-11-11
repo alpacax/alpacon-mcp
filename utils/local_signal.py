@@ -84,7 +84,9 @@ _REFUSAL_GATES = frozenset(
         'block',
     }
 )
-_APPROVAL_LAPSES = frozenset({'approval_expired', 'approval_cancelled'})
+_APPROVAL_LAPSES = frozenset(
+    {'approval_expired', 'approval_cancelled', 'approval_rule_changed'}
+)
 _ARGV0 = re.compile(r'[A-Za-z0-9._+-]{1,64}')
 _ACCOUNT = re.compile(r'[a-z_][a-z0-9_.-]{0,31}\$?')
 _ASSIGNMENT = re.compile(r'[A-Za-z_][A-Za-z0-9_]*=')

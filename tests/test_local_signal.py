@@ -1192,7 +1192,9 @@ def test_work_session_code_without_gate_is_denied(code):
     assert local_signal._from_result(result, {}, 'execute_command') is None
 
 
-@pytest.mark.parametrize('cause', ['approval_expired', 'approval_cancelled'])
+@pytest.mark.parametrize(
+    'cause', ['approval_expired', 'approval_cancelled', 'approval_rule_changed']
+)
 @pytest.mark.parametrize('shape', ['http', 'row', 'details', 'flat'])
 def test_approval_lapse_never_denies(cause, shape):
     row = {'status': 'rejected', 'rejection_gate': 'approval', 'rejection_cause': cause}
@@ -2581,29 +2583,3 @@ async def test_assignee_confirmation_keeps_the_rate_limit(desktop_notifications)
             )
     await drain_signals()
     desktop_notifications.assert_called_once()
-
-
-@pytest.mark.parametrize('shape', ['http', 'row', 'details', 'flat'])
-def test_a_changed_rule_is_a_denial(shape):
-    row = {
-        'status': 'rejected',
-        'rejection_gate': 'approval',
-        'rejection_cause': 'approval_rule_changed',
-    }
-    if shape == 'http':
-        result = {
-            'status': 'error',
-            'status_code': 403,
-            'gate': 'approval',
-            'rejection_cause': 'approval_rule_changed',
-        }
-    elif shape == 'row':
-        result = {'status': 'success', 'data': row}
-    elif shape == 'details':
-        result = {'status': 'error', 'details': row}
-    else:
-        result = {**row, 'status': 'error'}
-    signal = local_signal._from_result(result, {}, 'execute_command')
-    assert signal is not None
-    assert signal.kind == 'denied'
-    assert signal.text()[0] == 'Alpacon: command denied'
