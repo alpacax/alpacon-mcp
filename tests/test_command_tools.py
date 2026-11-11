@@ -5606,6 +5606,25 @@ class TestAssigneeLane:
         assert 'risk_score' not in text
 
     @pytest.mark.asyncio
+    async def test_the_assignee_lane_carries_no_file_lane_hint(
+        self, mock_http_client, mock_token_manager
+    ):
+        row = self._held(
+            approval_lane='assignee',
+            file_execution_suggestion={
+                'path': '/opt/deploy.sh',
+                'interpreter': '/bin/bash',
+                'args': [],
+            },
+        )
+
+        result = await self._execute(row)
+
+        assert 'execute_file_suggestion' not in result
+        assert 'approv' not in result['message'].lower()
+        assert 'execute_file' not in result['message']
+
+    @pytest.mark.asyncio
     @pytest.mark.parametrize('lane', [None, 'single_approver', 'auto_approve', ''])
     async def test_any_other_lane_keeps_the_approver_result(
         self, lane, mock_http_client, mock_token_manager

@@ -314,7 +314,7 @@ class Signal:
                 action = 'proceed' if self.target == 'file_transfer' else 'run'
                 body = f'{subject} was refused{gate} and did not {action}.'
             elif assignee:
-                title = 'Alpacon: your confirmation needed'
+                title = 'Alpacon: confirmation pending'
                 body = f'{subject} is waiting for your own confirmation.'
             else:
                 title = 'Alpacon: approval pending'
@@ -322,7 +322,7 @@ class Signal:
             if self.session:
                 body += f' Session {self.session}.'
             if assignee:
-                body += ' Confirm it yourself in the web console.'
+                body += ' Confirm it yourself in the Alpacon web console.'
             elif self.kind == 'approval_pending':
                 body += ' Open the approval or wait for an approver.'
         suffix = f' +{folded} more.' if folded else ''

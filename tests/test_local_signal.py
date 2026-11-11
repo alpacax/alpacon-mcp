@@ -2500,9 +2500,9 @@ def test_assignee_confirmation_text_is_the_persons_own():
         workspace_url='https://example.ap1.alpacon.io',
     )
     assert signal.text() == (
-        'Alpacon: your confirmation needed',
+        'Alpacon: confirmation pending',
         'systemctl on web-1 as root is waiting for your own confirmation. '
-        'Session session-1. Confirm it yourself in the web console. ' + url,
+        'Session session-1. Confirm it yourself in the Alpacon web console. ' + url,
     )
 
 
@@ -2513,10 +2513,10 @@ def test_assignee_confirmation_text_is_the_persons_own():
     [
         (
             'assignee',
-            'Alpacon: your confirmation needed',
+            'Alpacon: confirmation pending',
             (
                 'Command is waiting for your own confirmation. '
-                'Confirm it yourself in the web console.'
+                'Confirm it yourself in the Alpacon web console.'
             ),
         ),
         (

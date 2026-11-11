@@ -1746,6 +1746,8 @@ def _settled_response(
                 # Set after the builder, whose category default it replaces.
                 response['next_action'] = _ASSIGNEE_CONFIRMATION_NEXT_ACTION
                 response['approval_lane'] = 'assignee'
+                # The file-lane hint speaks of approvers, so it is left off.
+                return remember_console_link(response, result)
             else:
                 response = pending_approval_response(
                     'Command is awaiting human approval. A human must '

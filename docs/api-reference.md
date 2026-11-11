@@ -489,7 +489,8 @@ The response keeps `status: "pending_approval"`, `category: "COMMAND_AWAITING_AP
 `approvable_by_agent: false`, and adds `approval_lane: "assignee"`. Its `message` and `next_action`
 say that the user must confirm the command themselves in the Alpacon web console and that the agent
 should tell the user and wait, then read the result with `check_command_status`. Neither carries a
-score, the reasoning, or the console link. Any other `approval_lane`, or none from an older server,
+score, the reasoning, or the console link, and the response carries neither the file-lane hint nor
+`execute_file_suggestion`, both of which speak of approvers. Any other `approval_lane`, or none from an older server,
 gives the response above unchanged. `check_command_status` and `state_command_purpose` answer a held
 command the same way.
 
@@ -1308,7 +1309,7 @@ A server `hint` is appended to `message` and replaces every local hint: the per-
 
 ### Local desktop signals
 
-When the MCP server runs locally over stdio, a command or file-transfer refusal raises `Alpacon: command denied` or `Alpacon: file transfer denied`, a result awaiting human approval raises `Alpacon: approval pending` (`Alpacon: your confirmation needed` when its `approval_lane` is `assignee`, saying the confirmation is the person's own, with the console link and the same rate limit), and a refusal with code `session_paused` raises `Alpacon: session paused`. A denial alone does not indicate a paused session. Approvals and session recovery still require a human; the notification does not grant access or retry an operation. `explain_approval_decision` only explains how a human decides and never notifies. Sudo policy requests are described as sudo policy requests waiting for approval, rather than Work Session waits.
+When the MCP server runs locally over stdio, a command or file-transfer refusal raises `Alpacon: command denied` or `Alpacon: file transfer denied`, a result awaiting human approval raises `Alpacon: approval pending` (`Alpacon: confirmation pending` when its `approval_lane` is `assignee`, saying the confirmation is the person's own, with the console link and the same rate limit), and a refusal with code `session_paused` raises `Alpacon: session paused`. A denial alone does not indicate a paused session. Approvals and session recovery still require a human; the notification does not grant access or retry an operation. `explain_approval_decision` only explains how a human decides and never notifies. Sudo policy requests are described as sudo policy requests waiting for approval, rather than Work Session waits.
 
 Refusal notifications are limited to `execute_command`, `execute_command_multi_server`, `execute_file`, `check_command_status`, `state_command_purpose`, `webftp_upload_file`, `webftp_upload_content`, `webftp_download_file`, `webftp_bulk_upload`, `webftp_bulk_download`, `restart_agent`, `upgrade_agent`, `install_pam`, `update_information`, `install_system_package`, `remove_system_package`, `install_python_package`, and `remove_python_package` (`DENIAL_TOOLS` in `utils/local_signal.py`), and the gates `server_reach`, `command_preapproval`, `command_acl`, `file_acl`, `risk`, `approval`, `sudo`, `work_session`, and `block`. Approval expiry or cancellation, authentication and MFA errors, and missing presence, role, token scope, or authentication do not raise refusal notifications. Reading history through a `list_*` tool never notifies, including entries with sudo approval guidance. A pending `sudo_denial` read through `check_command_status`, `execute_command`, `execute_command_multi_server`, `execute_file`, or `state_command_purpose` does notify.
 
