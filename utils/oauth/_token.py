@@ -263,18 +263,11 @@ def _token_response(
 
     if grant_type == _GRANT_REFRESH_TOKEN and response.status_code != HTTPStatus.OK:
         data = response_data if isinstance(response_data, dict) else {}
-        sensitive_values = (grant.value,) + tuple(
-            value
-            for key in ('refresh_token', 'access_token', 'id_token', 'email', 'sub')
-            if isinstance(value := data.get(key), str) and value
-        )
         logger.warning(
             'Auth0 refresh failed - error: %s, error_description: %s, '
             'status: %s, client_id: %s, rotating: unknown',
-            _refresh_log_value(data.get('error', 'unknown'), sensitive_values),
-            _refresh_log_value(
-                data.get('error_description', 'unknown'), sensitive_values
-            ),
+            _refresh_log_error(data.get('error')),
+            _refresh_log_value(data.get('error_description')),
             response.status_code,
             escape_for_log(client_id),
         )
@@ -320,15 +313,19 @@ def _log_token_response(
         )
 
 
-def _refresh_log_value(value: object, sensitive_values: tuple[str, ...]) -> str:
+def _refresh_log_error(value: object) -> str:
+    if isinstance(value, str) and re.fullmatch(r'[a-z_]{1,64}', value):
+        return value
+    return 'unknown'
+
+
+def _refresh_log_value(value: object) -> str:
     if not isinstance(value, str):
         return 'unknown'
-    for sensitive in sorted(sensitive_values, key=len, reverse=True):
-        if sensitive:
-            value = value.replace(sensitive, '[redacted]')
     # Action denials can include an email or an Auth0 subject in their prose.
     value = re.sub(r'[^\s@]+@[^\s@]+', '[redacted]', value)
     value = re.sub(r'\b[\w-]+\|[^\s,;]+', '[redacted]', value)
+    value = re.sub(r'[A-Za-z0-9._~+/=-]{20,}', '[redacted]', value)
     return ''.join(c for c in value if not unicodedata.category(c).startswith('C'))[
         :200
     ]
