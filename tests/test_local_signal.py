@@ -2501,9 +2501,31 @@ def test_assignee_confirmation_text_is_the_persons_own():
     )
     assert signal.text() == (
         'Alpacon: confirmation pending',
-        'systemctl on web-1 as root is waiting for your own confirmation. '
-        'Session session-1. Confirm it yourself in the Alpacon web console. ' + url,
+        'systemctl on web-1 as root needs your own confirmation. '
+        'Session session-1. Confirm or reject it in the Alpacon web console. ' + url,
     )
+
+
+@pytest.mark.parametrize('lane', ['assignee', 'single_approver'])
+def test_approval_pending_keeps_the_console_link_with_ordinary_identifiers(lane):
+    url = (
+        'https://my-workspace.ap1.alpacon.io/commands/'
+        '7c9e6679-7425-40de-944b-e07fc1f90ae7'
+    )
+    signal = local_signal.Signal(
+        'approval_pending',
+        argv0='systemctl',
+        server='prod-web-server-01',
+        account='www-data',
+        session='3f2b8c1e-9a4d-4e7b-8c2a-1d5e6f7a8b9c',
+        lane=lane,
+        console_url=url,
+        workspace_url='https://my-workspace.ap1.alpacon.io',
+    )
+
+    _, body = signal.text()
+
+    assert body.endswith(' ' + url)
 
 
 @pytest.mark.asyncio
@@ -2515,8 +2537,8 @@ def test_assignee_confirmation_text_is_the_persons_own():
             'assignee',
             'Alpacon: confirmation pending',
             (
-                'Command is waiting for your own confirmation. '
-                'Confirm it yourself in the Alpacon web console.'
+                'Command needs your own confirmation. '
+                'Confirm or reject it in the Alpacon web console.'
             ),
         ),
         (
