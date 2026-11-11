@@ -1,6 +1,6 @@
 ---
 name: vuln-diagnose
-description: Find which Alpacon servers are affected by a vulnerability by reading the installed version of the vulnerable software and comparing it with the vendor's fixed version, read-only. Use when someone asks whether servers are affected by a CVE or advisory ("are we hit by CVE-2026-109618?", "which servers still run the vulnerable openssh?", "check our Metabase version against the advisory"), and as the first step of vuln-patch. Changes nothing on the servers.
+description: Find which Alpacon servers are affected by a vulnerability by reading the installed version of the vulnerable software and comparing it with the vendor's fixed version, read-only. Use when someone asks whether servers are affected by a CVE or advisory ("are we hit by CVE-2099-0001?", "which servers still run the vulnerable openssh?", "check our Metabase version against the advisory"), and as the first step of vuln-patch. Changes nothing on the servers.
 ---
 
 # Diagnose a vulnerability

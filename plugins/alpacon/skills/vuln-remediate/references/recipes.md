@@ -69,7 +69,7 @@ Running as an ordinary account with `sudo`, put the environment on the `sudo` li
 ```bash
 #!/bin/bash
 set -eu
-cve='CVE-2026-109618'
+cve='CVE-2099-0001'
 pkg=openssh-server
 pending() {
   local list

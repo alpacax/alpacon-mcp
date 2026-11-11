@@ -1,6 +1,6 @@
 ---
 name: vuln-patch
-description: Patch a vulnerability across Alpacon servers end to end—find the affected servers, upgrade them, and confirm the fix took effect—by chaining the vuln-diagnose, vuln-remediate, and vuln-verify skills. Use when someone wants a CVE or security advisory fixed on their fleet ("patch CVE-2026-109618 on our web servers", "roll out the openssh fix", "we're on the vulnerable PHP, fix it"), not just checked or verified.
+description: Patch a vulnerability across Alpacon servers end to end—find the affected servers, upgrade them, and confirm the fix took effect—by chaining the vuln-diagnose, vuln-remediate, and vuln-verify skills. Use when someone wants a CVE or security advisory fixed on their fleet ("patch CVE-2099-0001 on our web servers", "roll out the openssh fix", "we're on the vulnerable PHP, fix it"), not just checked or verified.
 ---
 
 # Patch a vulnerability

@@ -1,6 +1,6 @@
 ---
 name: vuln-mitigate
-description: Reduce exposure to a vulnerability on Alpacon servers that cannot be patched yet, by writing one dedicated PHP-FPM configuration drop-in from the vendor advisory with execute_file—one server at a time, config-tested, inside an approved Work Session—and flagging the services that must restart for it to apply. Use when a fix is not released or a server cannot take it now ("no PHP 8.1 fix yet, apply the php.net mitigation", "mitigate CVE-2026-109618 on web-01 to web-12 until we can patch"), usually after vuln-diagnose marks servers affected. The vulnerability stays present and nothing is restarted.
+description: Reduce exposure to a vulnerability on Alpacon servers that cannot be patched yet, by writing one dedicated PHP-FPM configuration drop-in from the vendor advisory with execute_file—one server at a time, config-tested, inside an approved Work Session—and flagging the services that must restart for it to apply. Use when a fix is not released or a server cannot take it now ("no PHP 8.1 fix yet, apply the php.net mitigation", "mitigate CVE-2099-0001 on web-01 to web-12 until we can patch"), usually after vuln-diagnose marks servers affected. The vulnerability stays present and nothing is restarted.
 ---
 
 # Mitigate a vulnerability
