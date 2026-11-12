@@ -218,14 +218,17 @@ async def _proxy_token_request(
 
 
 def _token_response(
-    response: httpx.Response, grant_type: str, grant: _OpenedSeal
+    response: httpx.Response,
+    grant_type: str,
+    grant: _OpenedSeal,
 ) -> JSONResponse:
     """Auth0's answer with the ledger grant wrapped into the access token and the
     refresh token sealed, status kept."""
     try:
         response_data = response.json()
     except Exception:
-        logger.warning('Auth0 returned non-JSON response: %s', response.status_code)
+        if grant_type != _GRANT_REFRESH_TOKEN:
+            logger.warning('Auth0 returned non-JSON response: %s', response.status_code)
         response_data = {
             'error': _ERROR_SERVER_ERROR,
             'error_description': 'Auth0 returned unexpected response format',
@@ -255,7 +258,17 @@ def _token_response(
             grant.ledger if carried is not None else '',
         )
 
-    _log_token_response(response.status_code, response_data, grant_type)
+    if grant_type == _GRANT_REFRESH_TOKEN and response.status_code != HTTPStatus.OK:
+        data = response_data if isinstance(response_data, dict) else {}
+        logger.warning(
+            'Auth0 refresh failed - error: %s, description_class: %s, '
+            'status: %s, grant_type: refresh_token, rotating: unknown',
+            _refresh_log_error(data.get('error')),
+            _refresh_log_description(data.get('error'), data.get('error_description')),
+            response.status_code,
+        )
+    else:
+        _log_token_response(response.status_code, response_data, grant_type)
     return JSONResponse(
         response_data,
         status_code=response.status_code,
@@ -294,3 +307,41 @@ def _log_token_response(
             status_code,
             type(response_data).__name__,
         )
+
+
+def _refresh_log_error(value: object) -> str:
+    # Return literals so response data cannot flow into the log.
+    match value:
+        case 'invalid_grant':
+            return 'invalid_grant'
+        case 'access_denied':
+            return 'access_denied'
+        case 'invalid_client':
+            return 'invalid_client'
+        case 'unauthorized_client':
+            return 'unauthorized_client'
+        case 'invalid_request':
+            return 'invalid_request'
+        case 'server_error':
+            return 'server_error'
+        case 'temporarily_unavailable':
+            return 'temporarily_unavailable'
+        case _:
+            return 'unknown'
+
+
+def _refresh_log_description(error: object, value: object) -> str:
+    if error == 'access_denied':
+        if value == 'signed_out':
+            return 'action_denied_signed_out'
+        return 'action_denied'
+    if not isinstance(value, str):
+        return 'other'
+    description = value.lower()
+    if 'reused' in description or 'refresh token reuse' in description:
+        return 'refresh_token_reused'
+    if 'expired' in description:
+        return 'refresh_token_expired'
+    if 'unknown or invalid refresh token' in description:
+        return 'invalid_or_unknown_refresh_token'
+    return 'other'

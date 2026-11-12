@@ -629,3 +629,182 @@ class TestOAuthToken:
         data = response.json()
         assert data['error'] == 'invalid_request'
         assert 'UTF-8' in data['error_description']
+
+
+class TestRefreshFailureLogging:
+    @pytest.mark.parametrize('status', [400, 401, 429, 500])
+    def test_failure_logs_only_diagnostic_fields(self, oauth_app, caplog, status):
+        refresh_token = 'opaque_refresh_' + 'r' * 40
+        access_token = 'opaque_access_' + 'a' * 40
+        id_token = 'eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.signature1234567890'
+        description = (
+            'Refresh token revoked.\n\r\x00\x1b'
+            f'{refresh_token} {access_token} {id_token} '
+            'person@example.com auth0|private-subject ' + 'ordinary prose ' * 30
+        )
+        body = {
+            'error': 'invalid_grant',
+            'error_description': description,
+            'refresh_token': refresh_token,
+            'access_token': access_token,
+            'id_token': id_token,
+            'email': 'person@example.com',
+            'sub': 'auth0|private-subject',
+        }
+        mock_client = _mock_auth0_response(status_code=status, json_data=body)
+        with patch('utils.oauth._token.httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.post(
+                _TOKEN_PATH,
+                data={
+                    'grant_type': _GRANT_REFRESH_TOKEN,
+                    'refresh_token': _seal_refresh_token(refresh_token, DEVICE_ID),
+                },
+            )
+        assert response.status_code == status
+        assert response.json() == body
+        [record] = [r for r in caplog.records if r.levelname == 'WARNING']
+        assert 'error: invalid_grant' in record.getMessage()
+        assert f'description_class: other, status: {status}' in record.getMessage()
+        assert 'grant_type: refresh_token' in record.getMessage()
+        assert 'client_id:' not in record.getMessage()
+        assert 'rotating: unknown' in record.getMessage()
+        for secret in (
+            refresh_token,
+            access_token,
+            id_token,
+            body['email'],
+            body['sub'],
+            TEST_CLIENT_SECRET,
+            TEST_CLIENT_ID,
+            description,
+            'Refresh token revoked.',
+            'ordinary prose',
+        ):
+            assert secret not in str(record.__dict__)
+        for control in ('\n', '\r', '\x00', '\x1b'):
+            assert control not in record.getMessage()
+
+    @pytest.mark.parametrize(
+        ('error', 'expected_error'),
+        [
+            ('invalid_grant', 'invalid_grant'),
+            ('a' * 64, 'unknown'),
+            ('a' * 65, 'unknown'),
+            ('access_denied', 'access_denied'),
+            ('invalid_client', 'invalid_client'),
+            ('unauthorized_client', 'unauthorized_client'),
+            ('invalid_request', 'invalid_request'),
+            ('server_error', 'server_error'),
+            ('temporarily_unavailable', 'temporarily_unavailable'),
+            ('unknown', 'unknown'),
+            ([], 'unknown'),
+            ({}, 'unknown'),
+            ('invalid_grant\n', 'unknown'),
+            ('Invalid grant', 'unknown'),
+            ('', 'unknown'),
+            (None, 'unknown'),
+        ],
+    )
+    def test_failure_classifies_description_and_validates_error(
+        self, oauth_app, caplog, error, expected_error
+    ):
+        description = 'Unknown or invalid refresh token.'
+        mock_client = _mock_auth0_response(
+            status_code=400,
+            json_data={'error': error, 'error_description': description},
+        )
+        with patch('utils.oauth._token.httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.post(
+                _TOKEN_PATH,
+                data={
+                    'grant_type': _GRANT_REFRESH_TOKEN,
+                    'refresh_token': _seal_refresh_token('r' * 40, DEVICE_ID),
+                },
+            )
+        assert response.status_code == 400
+        [record] = [r for r in caplog.records if r.levelname == 'WARNING']
+        assert f'error: {expected_error},' in record.getMessage()
+        classification = (
+            'action_denied'
+            if error == 'access_denied'
+            else 'invalid_or_unknown_refresh_token'
+        )
+        assert f'description_class: {classification},' in record.getMessage()
+        assert description not in str(record.__dict__)
+
+    @pytest.mark.parametrize(
+        ('error', 'description', 'classification'),
+        [
+            (
+                'invalid_grant',
+                'Unknown or invalid refresh token.',
+                'invalid_or_unknown_refresh_token',
+            ),
+            ('invalid_grant', 'Refresh token has been reused.', 'refresh_token_reused'),
+            ('invalid_grant', 'Refresh token reuse detected', 'refresh_token_reused'),
+            ('invalid_grant', 'Refresh token expired', 'refresh_token_expired'),
+            ('access_denied', 'signed_out', 'action_denied_signed_out'),
+            (
+                'access_denied',
+                'Denied person@example.com auth0|subject',
+                'action_denied',
+            ),
+            ('access_denied', 'Refresh token expired', 'action_denied'),
+            ('invalid_grant', 'signed_out', 'other'),
+            ('invalid_grant', None, 'other'),
+            ('invalid_grant', ['private-response'], 'other'),
+            ('invalid_grant', {'private': 'response'}, 'other'),
+        ],
+    )
+    def test_failure_logs_fixed_description_classification(
+        self, oauth_app, caplog, error, description, classification
+    ):
+        body = {'error': error, 'error_description': description}
+        mock_client = _mock_auth0_response(status_code=400, json_data=body)
+        with patch('utils.oauth._token.httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.post(
+                _TOKEN_PATH,
+                data={
+                    'grant_type': _GRANT_REFRESH_TOKEN,
+                    'refresh_token': _seal_refresh_token('private-refresh', DEVICE_ID),
+                },
+            )
+        assert response.json() == body
+        [record] = [r for r in caplog.records if r.levelname == 'WARNING']
+        assert f'description_class: {classification},' in record.getMessage()
+        if isinstance(description, str):
+            assert description not in record.args
+            assert description not in record.msg
+        for private in ('private-refresh', 'person@example.com', 'auth0|subject'):
+            assert private not in str(record.__dict__)
+
+    @pytest.mark.parametrize('malformed', ['non-json', 'non-object'])
+    def test_malformed_failure_logs_once(self, oauth_app, caplog, malformed):
+        mock_client = _mock_auth0_response(status_code=502, json_data=['unexpected'])
+        if malformed == 'non-json':
+            mock_client.post.return_value.json.side_effect = ValueError('not JSON')
+        with patch('utils.oauth._token.httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.post(
+                _TOKEN_PATH,
+                data={
+                    'grant_type': _GRANT_REFRESH_TOKEN,
+                    'refresh_token': _seal_refresh_token('private-refresh', DEVICE_ID),
+                },
+            )
+        assert response.status_code == 502
+        [record] = [r for r in caplog.records if r.levelname == 'WARNING']
+        assert 'status: 502' in record.getMessage()
+        assert 'client_id:' not in record.getMessage()
+
+    def test_success_has_no_new_warning(self, oauth_app, caplog):
+        mock_client = _mock_auth0_response()
+        with patch('utils.oauth._token.httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.post(
+                _TOKEN_PATH,
+                data={
+                    'grant_type': _GRANT_REFRESH_TOKEN,
+                    'refresh_token': _seal_refresh_token('private-refresh', DEVICE_ID),
+                },
+            )
+        assert response.status_code == 200
+        assert not [r for r in caplog.records if r.levelname == 'WARNING']
