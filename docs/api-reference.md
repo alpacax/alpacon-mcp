@@ -483,6 +483,17 @@ from that one interpreter path. The held command stays queued and runs if approv
 Alpacon console (Commands) first, or the script waits on two approval requests. No MCP tool cancels
 it.
 
+When the held line instead carries a script body (an inline `-c`/`-e` body, a heredoc, or a body
+piped into an interpreter), the server may report it in `script_body_suggestion`, and the response
+then carries `script_body_suggestion: {"signal": "embedded_script"}` in place of the
+`read_from_server` hint. Its `message` says to move the body into a file and send it with
+`execute_file` and `write_file: true`, and, for code that runs inside a container or pod, to put the
+container command and the whole program in one host script. Nothing is rewritten or resubmitted:
+the held command stays queued, so the agent tells the user, who can cancel it first. The server
+sends this only when the file lane would take the script and names no script path; when
+`execute_file_suggestion` applies, that more specific form wins. A run fed `data` gets neither. The
+field needs an Alpacon server release that sends it; without it the `read_from_server` hint applies.
+
 **Refused as a script body:** a line that carries a script body (a heredoc, a multi-line `-c` or `-e`
 body, or a decoded payload piped into a shell or interpreter) can be refused when the workspace
 approval policy blocks script bodies. It is never refused at submit time. The command is created as

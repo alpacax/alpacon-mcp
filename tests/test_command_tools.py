@@ -4160,6 +4160,57 @@ class TestHeldCommandSuggestsTheFileLane:
         assert 'read_from_server=true' in result['message']
 
     @pytest.mark.asyncio
+    async def test_a_script_body_points_at_execute_file_with_write_file(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await self._held(
+            {'script_body_suggestion': {'signal': 'embedded_script'}}
+        )
+
+        assert result['status'] == 'pending_approval'
+        assert result['script_body_suggestion'] == {'signal': 'embedded_script'}
+        assert 'write_file=true' in result['message']
+        assert 'Multi-step work inside a container' in result['message']
+        # The generic read_from_server hint gives way to the specific one.
+        assert 'read_from_server=true' not in result['message']
+        assert 'execute_file_suggestion' not in result
+        assert 'Do not resubmit the command' in result['message']
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'body',
+        [None, {}, {'signal': 'something_else'}, {'signal': 1}, 'embedded_script'],
+    )
+    async def test_an_absent_or_unknown_script_body_signal_changes_nothing(
+        self, mock_http_client, mock_token_manager, body
+    ):
+        extra = {} if body is None else {'script_body_suggestion': body}
+        result = await self._held(extra)
+
+        assert 'script_body_suggestion' not in result
+        assert 'write_file=true' not in result['message']
+        assert 'read_from_server=true' in result['message']
+
+    @pytest.mark.asyncio
+    async def test_a_script_path_suggestion_wins_over_a_script_body(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await self._held(
+            {
+                'file_execution_suggestion': {
+                    'path': '/opt/deploy.sh',
+                    'interpreter': '/bin/bash',
+                    'args': ['--fast'],
+                },
+                'script_body_suggestion': {'signal': 'embedded_script'},
+            }
+        )
+
+        assert result['execute_file_suggestion']['tool'] == 'execute_file'
+        assert 'script_body_suggestion' not in result
+        assert 'write_file=true' not in result['message']
+
+    @pytest.mark.asyncio
     async def test_missing_args_take_an_empty_list(
         self, mock_http_client, mock_token_manager
     ):
