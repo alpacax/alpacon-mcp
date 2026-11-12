@@ -5911,7 +5911,7 @@ class TestHeldSudoApproval:
     @pytest.mark.parametrize(
         'held_field',
         [{}, {'held': None}],
-        ids=['an older server sends no key', 'held null'],
+        ids=['an older server sends no key', 'held null after a cancel'],
     )
     async def test_no_held_keeps_todays_sudo_denial(
         self, held_field, mock_http_client, mock_token_manager
@@ -5920,17 +5920,6 @@ class TestHeldSudoApproval:
 
         assert result['status'] == 'success'
         assert result['sudo_denial'] == _TODAYS_SUDO_DENIAL
-
-    @pytest.mark.asyncio
-    async def test_held_null_after_a_cancel_does_not_read_as_an_ended_wait(
-        self, mock_http_client, mock_token_manager
-    ):
-        row = _sudo_held_row(held=None, sudo_grant_status='pending_approval')
-
-        result = await self._check(mock_http_client, row)
-
-        assert result['sudo_denial'] == _TODAYS_SUDO_DENIAL
-        assert result['sudo_denial']['status'] == 'pending_approval'
         assert result['data']['sudo_grant_status'] == 'pending_approval'
 
     @pytest.mark.asyncio
