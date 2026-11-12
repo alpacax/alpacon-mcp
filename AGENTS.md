@@ -142,8 +142,10 @@ Things the code will not tell you at a glance:
 - **A client that renders MCP Apps is pointed at `show_mfa`** (`tools/mfa_tools.py`, remote mode only, #427). Its `mfa_required` message names the tool and still carries `mfa_url`; `show_mfa` puts its own fresh link only in result `_meta`, never in the text the model reads; a client of unknown support gets it in both, since its host may render the panel. Apps support means the `io.modelcontextprotocol/ui` extension lists `text/html;profile=mcp-app`, and `hide_ui_tools` (`utils/ui_tools.py`) drops every `_meta.ui` tool from `tools/list` for a client that declares capabilities without it.
 - **The code and refresh token a remote client holds are sealed by this
   server**, carrying the device id minted for that grant. Rotating
-  `ALPACON_MCP_GRANT_SECRET` (or `AUTH0_ALPACON_LOGIN_CLIENT_SECRET`, which it is derived
-  from by default) logs every remote session out.
+  `ALPACON_MCP_GRANT_SECRET` logs every remote session out. Production logs an ERROR when
+  this explicit key is missing and keeps deriving it from the client secret until
+  the fallback is removed (#488). Only explicit dev, staging or local is non-production. Opening
+  old seals temporarily accepts the current client-secret-derived key too.
 - **A remote access token may not be an Auth0 JWT.** With
   `ALPACON_MCP_REMOTE_LEDGER=true`, `/oauth/token` wraps a command pre-approval
   ledger token into an encrypted `amcpl1.` value (`utils/ledger_grant.py`), and

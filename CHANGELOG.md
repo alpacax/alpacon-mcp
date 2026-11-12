@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Production OAuth startup without `ALPACON_MCP_GRANT_SECRET` now logs an ERROR and continues using the derived key; only explicit `ALPACON_MCP_ENV=dev`, `staging` or `local` is non-production (#484). Deploy this release with no secret first, then provision it across replicas in one change (including the production `ALPACON_MCP_ENV` value if set); never supply it to pods without the fallback, and after provisioning, rollback to such a version rejects remaining derived-key grants. New grants use only the explicit key when set; opening temporarily accepts the current client-secret-derived key with an INFO counter, until a later release about 30 days after provisioning removes the fallback and requires the secret (#488); keep the current client secret during this window, and client response shapes are unchanged.
+
 - Work Session parameter and `work_session_create` guidance (#473) now directs personal API tokens to an active, approved session for command execution and REST file-transfer creation, with personal-token enforcement requiring an Alpacon server release that supports it. Service-token authorization, explicit session selection and `ALPACON_WORK_SESSION` fallback are unchanged. This changes descriptions only: clients receive no new parameter, response field or local authorization gate, and the Alpacon server remains responsible for admission.
 
 ### Added

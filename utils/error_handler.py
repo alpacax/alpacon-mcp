@@ -21,6 +21,15 @@ def serves_dev_region() -> bool:
     return os.getenv(DEPLOYMENT_ENV, '').strip().lower() in DEV_REGION_DEPLOYMENTS
 
 
+def is_production_deployment() -> bool:
+    """Treat only explicitly named development environments as non-production."""
+    return os.getenv(DEPLOYMENT_ENV, '').strip().lower() not in (
+        'dev',
+        'staging',
+        'local',
+    )
+
+
 class UpstreamAuthError(ToolError):
     """Re-authentication is required (a ToolError, logged at INFO). Raising only cuts
     the call short; request_signal records what the middleware reads."""
