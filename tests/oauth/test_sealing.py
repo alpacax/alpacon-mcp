@@ -21,6 +21,7 @@ from tests.oauth._support import (
     _forge_state_under_valid_signature,
     _state_payload,
 )
+from utils.error_handler import is_production_deployment
 from utils.oauth import register_oauth_routes, request_state_key
 from utils.oauth._ledger import _ledger_cookie_name
 from utils.oauth._sealing import (
@@ -128,10 +129,96 @@ class TestGrantSecret:
             with pytest.raises(ValueError, match='must be hex'):
                 register_oauth_routes(MockMCPServer())
 
+    @pytest.mark.parametrize(
+        'deployment,production',
+        [
+            (None, True),
+            ('unknown', True),
+            ('prod', True),
+            ('production', True),
+            ('dev', False),
+            ('staging', False),
+            ('local', False),
+        ],
+    )
+    def test_production_detection_and_missing_secret_startup(
+        self, monkeypatch, caplog, deployment, production
+    ):
+        if deployment is None:
+            monkeypatch.delenv('ALPACON_MCP_ENV', raising=False)
+        else:
+            monkeypatch.setenv('ALPACON_MCP_ENV', deployment)
+        monkeypatch.delenv(_GRANT_SECRET_ENV, raising=False)
+        assert is_production_deployment() is production
+        register_oauth_routes(MockMCPServer())
+        records = [r for r in caplog.records if _GRANT_SECRET_ENV in r.message]
+        assert bool(records) is production
+        assert all(r.levelname == 'ERROR' for r in records)
+        assert request_state_key() == request_state_key()
+        assert 'sealed per process' not in caplog.text
+
+    def test_previous_client_secret_seal_is_refused(self, monkeypatch):
+        monkeypatch.delenv(_GRANT_SECRET_ENV, raising=False)
+        sealed = _seal_refresh_token('opaque-value', DEVICE_ID)
+        monkeypatch.setenv(_GRANT_SECRET_ENV, 'b2' * 32)
+        monkeypatch.setenv('AUTH0_ALPACON_LOGIN_CLIENT_SECRET', 'changed-client-secret')
+        assert _open_seal(_SEAL_KIND_REFRESH, sealed) is None
+
+    def test_forged_seal_does_not_log_fallback(self, monkeypatch, caplog):
+        monkeypatch.setenv(_GRANT_SECRET_ENV, 'b2' * 32)
+        sealed = _seal_refresh_token('opaque-value', DEVICE_ID)
+        with caplog.at_level('INFO'):
+            assert _open_seal(_SEAL_KIND_REFRESH, sealed[:-4] + 'AAAA') is None
+        assert 'fallback' not in caplog.text
+
+    def test_legacy_code_cannot_open_as_refresh(self, monkeypatch):
+        monkeypatch.delenv(_GRANT_SECRET_ENV, raising=False)
+        sealed = _seal_code('opaque-value', DEVICE_ID)
+        monkeypatch.setenv(_GRANT_SECRET_ENV, 'b2' * 32)
+        assert _open_seal(_SEAL_KIND_REFRESH, sealed) is None
+
+    @pytest.mark.parametrize(
+        'seal,kind',
+        [(_seal_code, _SEAL_KIND_CODE), (_seal_refresh_token, _SEAL_KIND_REFRESH)],
+    )
+    def test_explicit_grants_survive_client_secret_rotation(
+        self, monkeypatch, seal, kind
+    ):
+        monkeypatch.setenv(_GRANT_SECRET_ENV, 'b2' * 32)
+        sealed = seal('opaque-value', DEVICE_ID)
+        monkeypatch.delenv(_GRANT_SECRET_ENV)
+        assert _open_seal(kind, sealed) is None
+        monkeypatch.setenv(_GRANT_SECRET_ENV, 'b2' * 32)
+        monkeypatch.setenv('AUTH0_ALPACON_LOGIN_CLIENT_SECRET', 'changed-client-secret')
+        opened = _open_seal(kind, sealed)
+        assert opened is not None and opened.value == 'opaque-value'
+        monkeypatch.delenv(_GRANT_SECRET_ENV)
+        assert _open_seal(kind, sealed) is None
+
+    def test_legacy_grant_opens_after_switch_and_logs_counter(
+        self, monkeypatch, caplog
+    ):
+        monkeypatch.delenv(_GRANT_SECRET_ENV, raising=False)
+        sealed = _seal_refresh_token('opaque-value', DEVICE_ID)
+        monkeypatch.setenv(_GRANT_SECRET_ENV, 'b2' * 32)
+        with caplog.at_level('INFO'):
+            opened = _open_seal(_SEAL_KIND_REFRESH, sealed)
+            assert opened is not None and opened.value == 'opaque-value'
+            opened = _open_seal(_SEAL_KIND_REFRESH, sealed)
+            assert opened is not None and opened.value == 'opaque-value'
+        counts = re.findall(r'fallback \(process count=(\d+)\)', caplog.text)
+        assert len(counts) == 2
+        records = [r for r in caplog.records if 'fallback (process count=' in r.message]
+        assert all(r.levelname == 'INFO' for r in records)
+        assert int(counts[1]) == int(counts[0]) + 1
+        assert 'opaque-value' not in caplog.text
+        assert TEST_CLIENT_SECRET not in caplog.text
+        assert 'b2' * 32 not in caplog.text
+
 
 class TestMintedDeviceId:
     def test_mint_is_unpredictable(self):
-        """The per-grant property rests on the CSPRNG, not on a call count. Every other
+        """Distinct minted identities rest on the CSPRNG, not on a call count. Every other
         minting test patches `_mint_device_id`; this one fails if it became a constant.
         """
         assert _mint_device_id() != _mint_device_id()

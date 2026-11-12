@@ -84,7 +84,9 @@ _REFUSAL_GATES = frozenset(
         'block',
     }
 )
-_APPROVAL_LAPSES = frozenset({'approval_expired', 'approval_cancelled'})
+_APPROVAL_LAPSES = frozenset(
+    {'approval_expired', 'approval_cancelled', 'approval_rule_changed'}
+)
 _ARGV0 = re.compile(r'[A-Za-z0-9._+-]{1,64}')
 _ACCOUNT = re.compile(r'[a-z_][a-z0-9_.-]{0,31}\$?')
 _ASSIGNMENT = re.compile(r'[A-Za-z_][A-Za-z0-9_]*=')
@@ -249,6 +251,8 @@ class Signal:
     session_id: str = ''
     console_url: str = ''
     workspace_url: str = ''
+    # `assignee` when the session's assignee confirms the held command (ADR 0114).
+    lane: str = ''
 
     def __post_init__(self) -> None:
         if not _ACCOUNT.fullmatch(self.account):
@@ -299,6 +303,7 @@ class Signal:
                 subject += f' on {self.server}'
             if self.account:
                 subject += f' as {self.account}'
+            assignee = self.kind == 'approval_pending' and self.lane == 'assignee'
             if self.kind == 'denied':
                 title = (
                     'Alpacon: file transfer denied'
@@ -308,18 +313,26 @@ class Signal:
                 gate = f' by the {self.gate} gate' if self.gate else ''
                 action = 'proceed' if self.target == 'file_transfer' else 'run'
                 body = f'{subject} was refused{gate} and did not {action}.'
+            elif assignee:
+                title = 'Alpacon: confirmation pending'
+                body = f'{subject} needs your own confirmation.'
             else:
                 title = 'Alpacon: approval pending'
                 body = f'{subject} is waiting for approval.'
             if self.session:
                 body += f' Session {self.session}.'
-            if self.kind == 'approval_pending':
+            if assignee:
+                body += ' Confirm or reject it in the Alpacon web console.'
+            elif self.kind == 'approval_pending':
                 body += ' Open the approval or wait for an approver.'
         suffix = f' +{folded} more.' if folded else ''
-        body = body[: _MAX_BODY - len(suffix)] + suffix
-        if self.console_url and len(body) + len(self.console_url) + 1 <= _MAX_BODY:
-            body += f' {self.console_url}'
-        return title, body
+        link = f' {self.console_url}' if self.console_url else ''
+        # The link is what the person opens, so the body yields to it; a link
+        # that leaves no room for any body text is dropped instead.
+        room = _MAX_BODY - len(suffix) - len(link)
+        if room <= 0:
+            link, room = '', _MAX_BODY - len(suffix)
+        return title, body[:room] + suffix + link
 
 
 class RateLimiter:
@@ -625,6 +638,7 @@ def _from_result(
         session_id=session_id,
         console_url=console_url,
         workspace_url=workspace_url,
+        lane=_string(result, 'approval_lane'),
     )
 
 

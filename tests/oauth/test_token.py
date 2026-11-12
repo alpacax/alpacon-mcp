@@ -33,7 +33,9 @@ from utils.oauth._http import (
 )
 from utils.oauth._sealing import (
     _SEAL_KIND_REFRESH,
+    _mint_client_id,
     _open_seal,
+    _registered_device_id,
     _seal_code,
     _seal_refresh_token,
 )
@@ -215,6 +217,24 @@ class TestOAuthToken:
             DEVICE_ID,
             '',
         )
+
+    def test_legacy_refresh_rotates_to_explicit_key(self, oauth_app, monkeypatch):
+        monkeypatch.delenv('ALPACON_MCP_GRANT_SECRET', raising=False)
+        legacy = _seal_refresh_token('v1.refresh', DEVICE_ID)
+        monkeypatch.setenv('ALPACON_MCP_GRANT_SECRET', 'b2' * 32)
+        mock_client = _mock_auth0_response(
+            json_data={'access_token': 'new-access', 'refresh_token': 'v1.rotated'}
+        )
+        with patch('utils.oauth._token.httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.post(
+                _TOKEN_PATH,
+                data={'grant_type': _GRANT_REFRESH_TOKEN, 'refresh_token': legacy},
+            )
+        assert response.status_code == 200
+        rotated = response.json()['refresh_token']
+        assert _open_seal(_SEAL_KIND_REFRESH, rotated) == ('v1.rotated', DEVICE_ID, '')
+        monkeypatch.delenv('ALPACON_MCP_GRANT_SECRET')
+        assert _open_seal(_SEAL_KIND_REFRESH, rotated) is None
 
     def test_token_refresh_ignores_a_client_device_id_under_a_seal(self, oauth_app):
         """The sealed id is the grant's; a body param cannot point at another record."""
@@ -808,3 +828,85 @@ class TestRefreshFailureLogging:
             )
         assert response.status_code == 200
         assert not [r for r in caplog.records if r.levelname == 'WARNING']
+
+
+@pytest.mark.parametrize(
+    'grant_type', [_GRANT_AUTHORIZATION_CODE, _GRANT_REFRESH_TOKEN]
+)
+def test_registered_client_exchanges_grants_with_pinned_auth0_client(
+    oauth_app, grant_type
+):
+    client_id = _mint_client_id()
+    device_id = _registered_device_id(client_id)
+    assert device_id is not None
+    mock_client = _mock_auth0_response(
+        json_data={
+            'access_token': 'access',
+            'refresh_token': 'rotated',
+            'expires_in': 3600,
+        }
+    )
+    field, seal = (
+        ('code', _seal_code)
+        if grant_type == _GRANT_AUTHORIZATION_CODE
+        else ('refresh_token', _seal_refresh_token)
+    )
+    with patch('utils.oauth._token.httpx.AsyncClient', return_value=mock_client):
+        response = oauth_app.post(
+            _TOKEN_PATH,
+            data={
+                'grant_type': grant_type,
+                'client_id': client_id,
+                field: seal('upstream-value', device_id),
+            },
+        )
+    assert response.status_code == HTTPStatus.OK
+    sent = mock_client.post.call_args.kwargs['data']
+    assert sent['client_id'] == TEST_CLIENT_ID
+    assert sent['client_secret'] == TEST_CLIENT_SECRET
+    assert response.json()['expires_in'] == 3600
+    opened = _open_seal(_SEAL_KIND_REFRESH, response.json()['refresh_token'])
+    assert opened is not None
+    assert opened.device_id == device_id
+
+
+@pytest.mark.parametrize('client_id', ['tampered', 'wrong_kind'])
+def test_token_rejects_invalid_registration(oauth_app, client_id):
+    client_id = (
+        _mint_client_id() + 'x'
+        if client_id == 'tampered'
+        else _seal_code('code', DEVICE_ID)
+    )
+    response = oauth_app.post(
+        _TOKEN_PATH,
+        data={
+            'grant_type': _GRANT_AUTHORIZATION_CODE,
+            'client_id': client_id,
+            'code': _seal_code('code', DEVICE_ID),
+        },
+    )
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.json()['error'] == 'invalid_client'
+
+
+@pytest.mark.parametrize(
+    'grant_type', [_GRANT_AUTHORIZATION_CODE, _GRANT_REFRESH_TOKEN]
+)
+def test_registered_client_rejects_another_instances_grant(oauth_app, grant_type):
+    field, seal = (
+        ('code', _seal_code)
+        if grant_type == _GRANT_AUTHORIZATION_CODE
+        else ('refresh_token', _seal_refresh_token)
+    )
+    with patch('utils.oauth._token.httpx.AsyncClient') as upstream:
+        response = oauth_app.post(
+            _TOKEN_PATH,
+            data={
+                'grant_type': grant_type,
+                'client_id': _mint_client_id(),
+                field: seal('upstream-value', DEVICE_ID),
+            },
+        )
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.json()['error'] == 'invalid_grant'
+    upstream.assert_not_called()

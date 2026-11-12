@@ -23,6 +23,7 @@ from tests.oauth._support import (
     TEST_RESOURCE_URL,
     UNLISTED_PATH_URI,
     _issued_nonce,
+    _mock_auth0_response,
     _state_payload,
 )
 from utils.oauth._http import (
@@ -36,6 +37,9 @@ from utils.oauth._sealing import (
     _NONCE_COOKIE_PREFIX,
     _STATE_SECRET_ENV,
     _hash_nonce,
+    _mint_client_id,
+    _registered_device_id,
+    _seal_code,
 )
 
 
@@ -388,8 +392,8 @@ class TestOAuthAuthorize:
         location = response.headers['location']
         assert 'offline_access' in location
 
-    def test_authorize_mints_a_device_id_per_grant(self, oauth_app):
-        """Each grant gets its own id, so two clients never share an MFA record."""
+    def test_legacy_authorize_without_identity_mints_per_grant(self, oauth_app):
+        """Without a registration or device scope, two callers must not share an id."""
         with patch(
             'utils.oauth._authorize._mint_device_id',
             side_effect=[DEVICE_ID, OTHER_DEVICE_ID],
@@ -883,3 +887,131 @@ class TestAuthorizePkceDuplicateParams:
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
         assert 'S256' in response.json()['error_description']
+
+
+class TestConnectionIdentity:
+    def _register(self, app):
+        return _mint_client_id()
+
+    def _login(self, app, client_id, scope='openid'):
+        response = app.get(
+            _AUTHORIZE_PATH,
+            params={
+                'client_id': client_id,
+                'redirect_uri': LISTED_REDIRECT_URI,
+                'scope': scope,
+                **PKCE_PARAMS,
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.FOUND
+        query = parse_qs(urlparse(response.headers['location']).query)
+        assert query['client_id'] == [TEST_CLIENT_ID]
+        return response, _state_payload(query['state'][0])
+
+    def test_relogin_after_403_reuses_instance(self, oauth_app):
+        client_id = self._register(oauth_app)
+        _, first = self._login(oauth_app, client_id)
+        _, relogin = self._login(oauth_app, client_id, 'openid mfa')
+        assert relogin['stage'] == 'mfa'
+        assert relogin['device_id'] == first['device_id']
+        assert f'device:{first["device_id"]}' in relogin['original_scope'].split()
+
+    def test_reconnect_without_browser_cookies_reuses_instance(self, oauth_app):
+        client_id = self._register(oauth_app)
+        _, first = self._login(oauth_app, client_id)
+        oauth_app.cookies.clear()
+        _, reconnect = self._login(oauth_app, client_id)
+        assert reconnect['device_id'] == first['device_id']
+
+    def test_new_installation_gets_new_instance(self, oauth_app):
+        first_id = self._register(oauth_app)
+        second_id = self._register(oauth_app)
+        assert first_id != second_id
+        _, first = self._login(oauth_app, first_id)
+        _, second = self._login(oauth_app, second_id)
+        assert first['device_id'] != second['device_id']
+
+    def test_reuse_preserves_upstream_step_up_expiry(self, oauth_app):
+        client_id = self._register(oauth_app)
+        first, initial = self._login(oauth_app, client_id)
+        reused, _ = self._login(oauth_app, client_id)
+        # MFA proof expiry is enforced upstream; reuse must not request renewal.
+        for response in (first, reused):
+            query = parse_qs(urlparse(response.headers['location']).query)
+            assert query['scope'][0].split() == [
+                'openid',
+                'offline_access',
+                f'device:{initial["device_id"]}',
+            ]
+            assert 'prompt' not in query
+            assert 'max_age' not in query
+
+            access_token = 'upstream-access-token'
+            mock_client = _mock_auth0_response(json_data={'access_token': access_token})
+            with patch(
+                'utils.oauth._token.httpx.AsyncClient', return_value=mock_client
+            ):
+                token_response = oauth_app.post(
+                    '/oauth/token',
+                    data={
+                        'grant_type': 'authorization_code',
+                        'client_id': client_id,
+                        'code': _seal_code('upstream-code', initial['device_id']),
+                    },
+                )
+            assert token_response.status_code == HTTPStatus.OK
+            assert token_response.json()['access_token'] == access_token
+
+    def test_key_rotation_recovers_with_new_registration(self, oauth_app, monkeypatch):
+        oauth_app.base_url = 'https://testserver'
+        monkeypatch.setenv('ALPACON_MCP_GRANT_SECRET', 'aa' * 32)
+        client_id = self._register(oauth_app)
+        _, original = self._login(oauth_app, client_id)
+        monkeypatch.setenv('ALPACON_MCP_GRANT_SECRET', 'bb' * 32)
+        response, fresh = self._login(oauth_app, client_id)
+        assert fresh['device_id'] != original['device_id']
+
+        def exchange(response, client_id):
+            query = parse_qs(urlparse(response.headers['location']).query)
+            oauth_app.cookies.update(response.cookies)
+            callback = oauth_app.get(
+                '/oauth/callback',
+                params={'code': 'upstream-code', 'state': query['state'][0]},
+                follow_redirects=False,
+            )
+            assert callback.status_code == HTTPStatus.FOUND
+            code = parse_qs(urlparse(callback.headers['location']).query)['code'][0]
+            return oauth_app.post(
+                '/oauth/token',
+                data={
+                    'grant_type': 'authorization_code',
+                    'client_id': client_id,
+                    'code': code,
+                },
+            )
+
+        mock_client = _mock_auth0_response()
+        with patch('utils.oauth._token.httpx.AsyncClient', return_value=mock_client):
+            rejected = exchange(response, client_id)
+            assert rejected.status_code == HTTPStatus.BAD_REQUEST
+            assert rejected.json()['error'] == 'invalid_client'
+            mock_client.post.assert_not_called()
+            replacement = self._register(oauth_app)
+            response, registered = self._login(oauth_app, replacement)
+            assert exchange(response, replacement).status_code == HTTPStatus.OK
+        _, reused = self._login(oauth_app, replacement)
+        assert reused['device_id'] == registered['device_id']
+
+    @pytest.mark.parametrize('sealed', [True, False])
+    def test_device_scope_precedence(self, oauth_app, sealed):
+        client_id = self._register(oauth_app) if sealed else TEST_CLIENT_ID
+        response, state = self._login(
+            oauth_app, client_id, f'openid device:{OTHER_DEVICE_ID}'
+        )
+        expected = _registered_device_id(client_id) if sealed else OTHER_DEVICE_ID
+        assert state['device_id'] == expected
+        query = parse_qs(urlparse(response.headers['location']).query)
+        assert [s for s in query['scope'][0].split() if s.startswith('device:')] == [
+            f'device:{expected}'
+        ]
