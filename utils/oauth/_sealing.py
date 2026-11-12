@@ -15,7 +15,6 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from utils.device_id import DEVICE_ID_PATTERN
-from utils.error_handler import is_production_deployment
 from utils.oauth._http import (
     _get_oauth_config,
     _invalid_grant_response,
@@ -137,12 +136,7 @@ def _get_grant_secret() -> bytes:
     explicit = _explicit_hex_secret(_GRANT_SECRET_ENV)
     if explicit is not None:
         return explicit
-    if is_production_deployment():
-        logger.error(
-            '%s is not set in production; using the client-secret-derived key '
-            'until fallback removal (#488)',
-            _GRANT_SECRET_ENV,
-        )
+    # Startup logs the missing production secret once (register_oauth_routes).
     return _derived_secret(_GRANT_SECRET_INFO)
 
 

@@ -83,9 +83,8 @@ def register_oauth_routes(mcp_server: RouteRegistry) -> None:
         _get_grant_secret()
     elif is_production_deployment():
         logger.error(
-            '%s is not set in production; using the client-secret-derived key '
-            'until fallback removal (#488)',
-            _GRANT_SECRET_ENV,
+            'ALPACON_MCP_GRANT_SECRET is not set in production; using the '
+            'client-secret-derived key until fallback removal (#488)'
         )
 
     for path, methods, handler in _ROUTES:
