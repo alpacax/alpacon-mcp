@@ -39,6 +39,7 @@ from utils.oauth._sealing import (
     _SEAL_KIND_REFRESH,
     _open_seal,
     _OpenedSeal,
+    _registered_device_id,
     _reject_unsealed,
     _seal_refresh_token,
     _strip_device_scopes,
@@ -132,11 +133,16 @@ def _require_grant_type(params: dict[str, object]) -> str:
 def _inject_client_credentials(
     params: dict[str, object], config: dict[str, str]
 ) -> None:
-    """Set the configured client_id and secret, refusing any other client_id so this
-    endpoint is no generic token proxy for arbitrary Auth0 clients."""
+    """Accept registered installation ids, but send only the configured Auth0 client
+    credentials upstream: this endpoint is no generic token proxy for arbitrary
+    Auth0 clients."""
     configured_client_id = config['client_id']
     provided_client_id = params.get('client_id')
-    if provided_client_id and provided_client_id != configured_client_id:
+    if (
+        provided_client_id
+        and provided_client_id != configured_client_id
+        and _registered_device_id(provided_client_id) is None
+    ):
         logger.warning(
             'Rejected /oauth/token request with mismatched client_id: %s',
             escape_for_log(provided_client_id),
