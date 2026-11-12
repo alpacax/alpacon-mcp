@@ -1,7 +1,5 @@
 """The token endpoint: proxies code and refresh exchanges to Auth0."""
 
-import re
-import unicodedata
 from http import HTTPStatus
 from urllib.parse import parse_qs
 
@@ -207,7 +205,7 @@ async def _proxy_token_request(
                 data=params,
                 headers=_FORM_HEADERS,
             )
-        return _token_response(response, grant_type, grant, config['client_id'])
+        return _token_response(response, grant_type, grant)
     except httpx.HTTPError as e:
         logger.error('Auth0 token request failed: %s', e)
         raise _OAuthRequestError(
@@ -223,7 +221,6 @@ def _token_response(
     response: httpx.Response,
     grant_type: str,
     grant: _OpenedSeal,
-    client_id: str = 'unknown',
 ) -> JSONResponse:
     """Auth0's answer with the ledger grant wrapped into the access token and the
     refresh token sealed, status kept."""
@@ -264,12 +261,11 @@ def _token_response(
     if grant_type == _GRANT_REFRESH_TOKEN and response.status_code != HTTPStatus.OK:
         data = response_data if isinstance(response_data, dict) else {}
         logger.warning(
-            'Auth0 refresh failed - error: %s, error_description: %s, '
-            'status: %s, client_id: %s, rotating: unknown',
+            'Auth0 refresh failed - error: %s, description_class: %s, '
+            'status: %s, grant_type: refresh_token, rotating: unknown',
             _refresh_log_error(data.get('error')),
-            _refresh_log_value(data.get('error_description')),
+            _refresh_log_description(data.get('error'), data.get('error_description')),
             response.status_code,
-            escape_for_log(client_id),
         )
     else:
         _log_token_response(response.status_code, response_data, grant_type)
@@ -314,18 +310,38 @@ def _log_token_response(
 
 
 def _refresh_log_error(value: object) -> str:
-    if isinstance(value, str) and re.fullmatch(r'[a-z_]{1,64}', value):
-        return value
-    return 'unknown'
+    # Return literals so response data cannot flow into the log.
+    match value:
+        case 'invalid_grant':
+            return 'invalid_grant'
+        case 'access_denied':
+            return 'access_denied'
+        case 'invalid_client':
+            return 'invalid_client'
+        case 'unauthorized_client':
+            return 'unauthorized_client'
+        case 'invalid_request':
+            return 'invalid_request'
+        case 'server_error':
+            return 'server_error'
+        case 'temporarily_unavailable':
+            return 'temporarily_unavailable'
+        case _:
+            return 'unknown'
 
 
-def _refresh_log_value(value: object) -> str:
+def _refresh_log_description(error: object, value: object) -> str:
+    if error == 'access_denied':
+        if value == 'signed_out':
+            return 'action_denied_signed_out'
+        return 'action_denied'
     if not isinstance(value, str):
-        return 'unknown'
-    # Action denials can include an email or an Auth0 subject in their prose.
-    value = re.sub(r'[^\s@]+@[^\s@]+', '[redacted]', value)
-    value = re.sub(r'\b[\w-]+\|[^\s,;]+', '[redacted]', value)
-    value = re.sub(r'[A-Za-z0-9._~+/=-]{20,}', '[redacted]', value)
-    return ''.join(c for c in value if not unicodedata.category(c).startswith('C'))[
-        :200
-    ]
+        return 'other'
+    description = value.lower()
+    if 'reused' in description or 'refresh token reuse' in description:
+        return 'refresh_token_reused'
+    if 'expired' in description:
+        return 'refresh_token_expired'
+    if 'unknown or invalid refresh token' in description:
+        return 'invalid_or_unknown_refresh_token'
+    return 'other'
