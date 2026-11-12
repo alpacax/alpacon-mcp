@@ -4737,6 +4737,16 @@ class TestRejectionCause:
                 ),
                 'The approval request expired',
             ),
+            (
+                'approval_rule_changed',
+                (
+                    'The approval rule changed while the command waited, so it was '
+                    'closed without running. Sending it again applies the current '
+                    'rule, which may ask a different person to decide. Ask the user '
+                    'whether to send it again.'
+                ),
+                'A human approver rejected this command',
+            ),
         ],
     )
     @pytest.mark.parametrize(
@@ -4952,6 +4962,7 @@ class TestRejectionCause:
             'approval_rejected',
             'approval_expired',
             'approval_cancelled',
+            'approval_rule_changed',
             'work_session_terminated',
             'account_bound_to_other_person',
             'unsigned_file',
@@ -5576,16 +5587,20 @@ class TestAssigneeLane:
         assert result['requires_human_approval'] is True
         assert result['approval_lane'] == 'assignee'
         assert result['command_id'] == 'cmd-a1'
-        next_action = result['next_action']
-        assert 'confirm this command themselves in the Alpacon web console' in (
-            next_action
+        assert result['next_action'] == (
+            'The user must confirm this command themselves in the Alpacon web '
+            'console; you cannot confirm it. Tell the user and wait, then retrieve '
+            'the result with check_command_status. Do not re-run: a resubmission '
+            'is held again and may double-execute the command.'
         )
-        assert 'Tell the user and wait' in next_action
-        assert 'approv' not in next_action.lower()
-        # The shell-lane file hint that may follow is about later runs.
-        notice = result['message'].split(' If this command runs a script')[0]
-        assert 'confirm it themselves in the Alpacon web console' in notice
-        assert 'approv' not in notice.lower()
+        assert result['message'] == (
+            "Command is waiting for the user's own confirmation. As this Work "
+            "Session's assignee, the user must confirm it themselves in the "
+            'Alpacon web console; it then runs automatically. Tell the user, '
+            'wait, then retrieve the result with check_command_status. Do not '
+            'resubmit the command: a resubmission is held again and may '
+            'double-execute the command.'
+        )
 
     @pytest.mark.asyncio
     async def test_the_assignee_lane_carries_no_judgment_or_console_link(

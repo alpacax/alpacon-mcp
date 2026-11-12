@@ -326,10 +326,13 @@ class Signal:
             elif self.kind == 'approval_pending':
                 body += ' Open the approval or wait for an approver.'
         suffix = f' +{folded} more.' if folded else ''
-        body = body[: _MAX_BODY - len(suffix)] + suffix
-        if self.console_url and len(body) + len(self.console_url) + 1 <= _MAX_BODY:
-            body += f' {self.console_url}'
-        return title, body
+        link = f' {self.console_url}' if self.console_url else ''
+        # The link is what the person opens, so the body yields to it; a link
+        # that leaves no room for any body text is dropped instead.
+        room = _MAX_BODY - len(suffix) - len(link)
+        if room <= 0:
+            link, room = '', _MAX_BODY - len(suffix)
+        return title, body[:room] + suffix + link
 
 
 class RateLimiter:

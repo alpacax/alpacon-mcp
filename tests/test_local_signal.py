@@ -1214,7 +1214,9 @@ def test_approval_lapse_never_denies(cause, shape):
     assert local_signal._from_result(result, {}, 'execute_command') is None
 
 
-@pytest.mark.parametrize('code', ['approval_expired', 'approval_cancelled'])
+@pytest.mark.parametrize(
+    'code', ['approval_expired', 'approval_cancelled', 'approval_rule_changed']
+)
 @pytest.mark.parametrize('field', ['error_code', 'code'])
 @pytest.mark.parametrize('shape', ['http', 'row', 'details', 'flat'])
 def test_approval_lapse_code_never_denies(code, field, shape):
@@ -2526,6 +2528,47 @@ def test_approval_pending_keeps_the_console_link_with_ordinary_identifiers(lane)
     _, body = signal.text()
 
     assert body.endswith(' ' + url)
+
+
+@pytest.mark.parametrize('folded', [0, 123])
+@pytest.mark.parametrize('lane', ['assignee', 'single_approver'])
+@pytest.mark.parametrize(
+    'argv0, server, account, session',
+    [
+        (
+            'systemctl',
+            'production-web-server-0001',
+            'www-data',
+            '3f2b8c1e-9a4d-4e7b-8c2a-1d5e6f7a8b9c',
+        ),
+        ('a' * 64, 's' * 64, 'u' * 32, 'i' * 64),
+    ],
+)
+def test_approval_pending_body_yields_to_the_console_link(
+    argv0, server, account, session, lane, folded
+):
+    url = (
+        'https://my-workspace.ap1.alpacon.io/commands/'
+        '7c9e6679-7425-40de-944b-e07fc1f90ae7'
+    )
+    signal = local_signal.Signal(
+        'approval_pending',
+        argv0=argv0,
+        server=server,
+        account=account,
+        session=session,
+        lane=lane,
+        console_url=url,
+        workspace_url='https://my-workspace.ap1.alpacon.io',
+    )
+
+    _, body = signal.text(folded)
+
+    assert len(body) <= 256
+    assert body.endswith(' ' + url)
+    assert body.startswith(f'{argv0} on {server}')
+    if folded:
+        assert f' +{folded} more. ' in body
 
 
 @pytest.mark.asyncio
