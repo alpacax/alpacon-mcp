@@ -1,6 +1,6 @@
 ---
 name: vuln-verify
-description: Confirm a vulnerability fix actually took effect on Alpacon servers—the fixed version is installed and the running services and kernel loaded it—and list the servers that still need a restart or reboot, without restarting anything. Use after patching ("did the openssh fix take?", "verify CVE-2026-109618 is fixed on web-01 to web-12", "which servers still need a restart after the upgrade?") and as the last step of vuln-patch.
+description: Confirm a vulnerability fix actually took effect on Alpacon servers—the fixed version is installed and the running services and kernel loaded it—and list the servers that still need a restart or reboot, without restarting anything. Use after patching ("did the openssh fix take?", "verify CVE-2099-0001 is fixed on web-01 to web-12", "which servers still need a restart after the upgrade?") and as the last step of vuln-patch.
 ---
 
 # Verify a vulnerability fix
