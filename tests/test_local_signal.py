@@ -1192,7 +1192,9 @@ def test_work_session_code_without_gate_is_denied(code):
     assert local_signal._from_result(result, {}, 'execute_command') is None
 
 
-@pytest.mark.parametrize('cause', ['approval_expired', 'approval_cancelled'])
+@pytest.mark.parametrize(
+    'cause', ['approval_expired', 'approval_cancelled', 'approval_rule_changed']
+)
 @pytest.mark.parametrize('shape', ['http', 'row', 'details', 'flat'])
 def test_approval_lapse_never_denies(cause, shape):
     row = {'status': 'rejected', 'rejection_gate': 'approval', 'rejection_cause': cause}
@@ -1212,7 +1214,9 @@ def test_approval_lapse_never_denies(cause, shape):
     assert local_signal._from_result(result, {}, 'execute_command') is None
 
 
-@pytest.mark.parametrize('code', ['approval_expired', 'approval_cancelled'])
+@pytest.mark.parametrize(
+    'code', ['approval_expired', 'approval_cancelled', 'approval_rule_changed']
+)
 @pytest.mark.parametrize('field', ['error_code', 'code'])
 @pytest.mark.parametrize('shape', ['http', 'row', 'details', 'flat'])
 def test_approval_lapse_code_never_denies(code, field, shape):
@@ -2483,3 +2487,164 @@ async def test_work_session_pending_through_other_tools_uses_session_identity(
     assert title == 'Alpacon: approval pending'
     assert body.startswith('Work Session session-1 is waiting for approval.')
     assert ' more.' not in body
+
+
+def test_assignee_confirmation_text_is_the_persons_own():
+    url = 'https://example.ap1.alpacon.io/commands/1'
+    signal = local_signal.Signal(
+        'approval_pending',
+        argv0='systemctl',
+        server='web-1',
+        account='root',
+        session='session-1',
+        lane='assignee',
+        console_url=url,
+        workspace_url='https://example.ap1.alpacon.io',
+    )
+    assert signal.text() == (
+        'Alpacon: confirmation pending',
+        'systemctl on web-1 as root needs your own confirmation. '
+        'Session session-1. Confirm or reject it in the Alpacon web console. ' + url,
+    )
+
+
+@pytest.mark.parametrize('lane', ['assignee', 'single_approver'])
+def test_approval_pending_keeps_the_console_link_with_ordinary_identifiers(lane):
+    url = (
+        'https://my-workspace.ap1.alpacon.io/commands/'
+        '7c9e6679-7425-40de-944b-e07fc1f90ae7'
+    )
+    signal = local_signal.Signal(
+        'approval_pending',
+        argv0='systemctl',
+        server='prod-web-server-01',
+        account='www-data',
+        session='3f2b8c1e-9a4d-4e7b-8c2a-1d5e6f7a8b9c',
+        lane=lane,
+        console_url=url,
+        workspace_url='https://my-workspace.ap1.alpacon.io',
+    )
+
+    _, body = signal.text()
+
+    assert body.endswith(' ' + url)
+
+
+@pytest.mark.parametrize('folded', [0, 123])
+@pytest.mark.parametrize('lane', ['assignee', 'single_approver'])
+@pytest.mark.parametrize(
+    'argv0, server, account, session',
+    [
+        (
+            'systemctl',
+            'production-web-server-0001',
+            'www-data',
+            '3f2b8c1e-9a4d-4e7b-8c2a-1d5e6f7a8b9c',
+        ),
+        ('a' * 64, 's' * 64, 'u' * 32, 'i' * 64),
+    ],
+)
+def test_approval_pending_body_yields_to_the_console_link(
+    argv0, server, account, session, lane, folded
+):
+    url = (
+        'https://my-workspace.ap1.alpacon.io/commands/'
+        '7c9e6679-7425-40de-944b-e07fc1f90ae7'
+    )
+    signal = local_signal.Signal(
+        'approval_pending',
+        argv0=argv0,
+        server=server,
+        account=account,
+        session=session,
+        lane=lane,
+        console_url=url,
+        workspace_url='https://my-workspace.ap1.alpacon.io',
+    )
+
+    _, body = signal.text(folded)
+
+    assert len(body) <= 256
+    assert body.endswith(' ' + url)
+    assert body.startswith(f'{argv0} on {server}')
+    if folded:
+        assert f' +{folded} more. ' in body
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('tool_name', ['execute_command', 'check_command_status'])
+@pytest.mark.parametrize(
+    'lane, title, body',
+    [
+        (
+            'assignee',
+            'Alpacon: confirmation pending',
+            (
+                'Command needs your own confirmation. '
+                'Confirm or reject it in the Alpacon web console.'
+            ),
+        ),
+        (
+            'single_approver',
+            'Alpacon: approval pending',
+            (
+                'Command is waiting for approval. Open the approval or wait for an '
+                'approver.'
+            ),
+        ),
+        (
+            None,
+            'Alpacon: approval pending',
+            (
+                'Command is waiting for approval. Open the approval or wait for an '
+                'approver.'
+            ),
+        ),
+    ],
+)
+async def test_held_command_notification_by_lane(
+    monkeypatch, desktop_notifications, tool_name, lane, title, body
+):
+    url = 'https://example.ap1.alpacon.io/commands/1'
+    row: dict[str, object] = {
+        'id': 'cmd-1',
+        'status': 'awaiting_approval',
+        'handled_at': None,
+        'console_url': url,
+    }
+    if lane is not None:
+        row['approval_lane'] = lane
+    monkeypatch.setattr(
+        command_tools, '_get_command_result', AsyncMock(return_value=row)
+    )
+
+    async def poll(workspace='example', region='ap1', command_id='cmd-1'):
+        return await command_tools._poll_command_result(
+            'cmd-1', 'example', 1, 'ap1', None
+        )
+
+    # The hook reads the tool name at decoration.
+    poll.__name__ = tool_name
+    call = with_error_handling(poll)
+    with local_signal.stdio_transport():
+        result = await call()
+    await drain_signals()
+    assert 'console_url' not in result
+    desktop_notifications.assert_called_once()
+    sent_title, sent_body, link = desktop_notifications.call_args.args
+    assert (sent_title, sent_body) == (title, f'{body} {url}')
+    assert link == url
+
+
+@pytest.mark.asyncio
+async def test_assignee_confirmation_keeps_the_rate_limit(desktop_notifications):
+    pending = {'status': 'pending_approval', 'approval_lane': 'assignee'}
+    with local_signal.stdio_transport():
+        for command_id in ('cmd-1', 'cmd-2', 'cmd-3'):
+            local_signal.signal_result(
+                {**pending, 'command_id': command_id, 'work_session_id': 's1'},
+                {},
+                tool_name='execute_command',
+            )
+    await drain_signals()
+    desktop_notifications.assert_called_once()

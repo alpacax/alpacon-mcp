@@ -11,11 +11,11 @@ The `category` on a `pending_approval` result says what is waiting, and the righ
 - `WORK_SESSION_PENDING`: the session is not active yet. Poll `work_session_get` until `data.status` is `active`, then go on. Do not open another session. See [work-sessions.md](work-sessions.md).
 - `WORK_SESSION_MOD_PENDING`: a modification request from `work_session_update` waits. The session keeps its old settings meanwhile. Poll `work_session_get` until `pending_modification_request` clears, then check that the servers and scopes you asked for are there before relying on them. Do not send the update again, even when `next_action` says to retry.
 - `WORK_SESSION_EXTENSION_PENDING`: a `work_session_extend` waits. The session keeps its old `expires_at`. Poll `work_session_get` until `expires_at` changes; do not send the extension again, which files a second request. A rejected extension leaves `expires_at` as it was, so if it stays unchanged, ask the person whether the extension was decided.
-- `COMMAND_AWAITING_APPROVAL`: the command is held, and it runs on its own once approved. Keep its `command_id` and read the result with `check_command_status`. Do not run the command again, through `execute_command` or `execute_file`: a second submission needs its own approval and may run the command twice.
+- `COMMAND_AWAITING_APPROVAL`: the command is held, and it runs on its own once approved. Keep its `command_id` and read the result with `check_command_status`. Do not run the command again, through `execute_command` or `execute_file`: a second submission needs its own approval and may run the command twice. When the result also carries `approval_lane: "assignee"`, the person you work for confirms it themselves in the Alpacon web console: tell them so, and do not wait for an approver or point them to Slack.
 - `SUDO_POLICY_REQUEST_PENDING`: a `request_sudo_policy` request waits for an admin. Once it is approved, rerun the sudo command. Do not file the request again, which only creates a duplicate.
 - `APPROVAL_DECISION_HUMAN_ONLY`: `explain_approval_decision` returns this. It is a fixed explanation, not a live request; there is nothing to wait for.
 
-A held command that a person rejects, or whose request expires, comes back from `check_command_status` as an error with `rejection_cause` (`approval_rejected`, `approval_expired`, `approval_cancelled`). See [refusals.md](refusals.md).
+A held command that a person rejects, or whose request expires, comes back from `check_command_status` as an error with `rejection_cause` (`approval_rejected`, `approval_expired`, `approval_cancelled`, `approval_rule_changed`). See [refusals.md](refusals.md).
 
 ## Sudo
 

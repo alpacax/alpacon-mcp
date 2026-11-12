@@ -39,6 +39,11 @@ _REJECTION_CAUSE_HINT: dict[str, str] = {
         'The requester cancelled the approval request. Do not resubmit unless '
         'the user asks for the command again.'
     ),
+    'approval_rule_changed': (
+        'The approval rule changed while the command waited, so it was closed '
+        'without running. Sending it again applies the current rule, which may '
+        'ask a different person to decide. Ask the user whether to send it again.'
+    ),
     'work_session_terminated': (
         'The Work Session ended while the command was held, so it never ran. Do '
         'not resubmit it into that session; ask the user whether the work should '
