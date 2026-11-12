@@ -4179,7 +4179,14 @@ class TestHeldCommandSuggestsTheFileLane:
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
         'body',
-        [None, {}, {'signal': 'something_else'}, {'signal': 1}, 'embedded_script'],
+        [
+            None,
+            {},
+            {'signal': 'something_else'},
+            {'signal': 1},
+            {'signal': []},
+            'embedded_script',
+        ],
     )
     async def test_an_absent_or_unknown_script_body_signal_changes_nothing(
         self, mock_http_client, mock_token_manager, body

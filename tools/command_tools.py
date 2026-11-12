@@ -1607,6 +1607,7 @@ def _attach_file_execution_suggestion(
     signal = body.get('signal') if isinstance(body, dict) else None
     if (
         not well_formed
+        and isinstance(signal, str)
         and signal in _SCRIPT_BODY_SIGNALS
         and not _stdin_was_fed(result, stdin_fed)
     ):
