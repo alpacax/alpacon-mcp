@@ -37,7 +37,6 @@ from utils.oauth._sealing import (
     _NONCE_COOKIE_PREFIX,
     _STATE_SECRET_ENV,
     _hash_nonce,
-    _mint_client_id,
     _registered_device_id,
     _seal_code,
 )
@@ -891,7 +890,9 @@ class TestAuthorizePkceDuplicateParams:
 
 class TestConnectionIdentity:
     def _register(self, app):
-        return _mint_client_id()
+        response = app.post('/oauth/register', json={})
+        assert response.status_code == HTTPStatus.CREATED
+        return response.json()['client_id']
 
     def _login(self, app, client_id, scope='openid'):
         response = app.get(

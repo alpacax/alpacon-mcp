@@ -104,8 +104,8 @@ def _normalize_authorize_request(
     params = dict(request.query_params)
     client_id = params.get('client_id', '')
     registered_device_id = _registered_device_id(client_id)
-    # A stale registration must reach /token's invalid_client response so the
-    # client registers again instead of stopping at an authorize error page.
+    # Treat stale registrations as unregistered so /token's invalid_client
+    # response makes the client register again.
     # Pinned so this endpoint cannot proxy arbitrary Auth0 clients.
     params['client_id'] = config['client_id']
     if 'audience' not in params:

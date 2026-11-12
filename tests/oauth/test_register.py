@@ -12,7 +12,6 @@ from tests.oauth._support import (
     LISTED_REDIRECT_URI,
     MALFORMED_REDIRECT_URI,
     REPORT_ONLY,
-    TEST_CLIENT_ID,
     UNLISTED_PATH_URI,
 )
 from utils.oauth._http import (
@@ -23,12 +22,13 @@ from utils.oauth._http import (
     _REGISTER_PATH,
 )
 from utils.oauth._redirect_uris import _MAX_REGISTERED_REDIRECT_URIS
+from utils.oauth._sealing import _registered_device_id
 
 
 class TestOAuthRegister:
     """Tests for /oauth/register endpoint (RFC 7591 Dynamic Client Registration)."""
 
-    def test_register_returns_configured_client_id(self, oauth_app):
+    def test_register_returns_installation_client_id(self, oauth_app):
         response = oauth_app.post(
             _REGISTER_PATH,
             content=json.dumps(
@@ -41,7 +41,7 @@ class TestOAuthRegister:
         )
         assert response.status_code == HTTPStatus.CREATED
         data = response.json()
-        assert data['client_id'] == TEST_CLIENT_ID
+        assert _registered_device_id(data['client_id']) is not None
         assert data['token_endpoint_auth_method'] == 'none'
         assert 'client_id_issued_at' not in data
 

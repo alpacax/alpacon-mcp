@@ -115,7 +115,7 @@ sequenceDiagram
     Note over C: SDK skips the refresh and starts full OAuth re-auth
 
     C->>S: GET /oauth/authorize?scope=...+mfa
-    S->>S: Mint device id, park it in state<br/>Detect 'mfa' in scope
+    S->>S: Resolve device id, park it in state<br/>Detect 'mfa' in scope
 
     rect rgb(255, 240, 230)
         Note over S,B: Stage 1 — MFA verification
@@ -148,11 +148,13 @@ sequenceDiagram
     S-->>C: Tool Result
 ```
 
-## Device id per grant
+## Device id per installation
 
-The Auth0 action stores MFA presence under a key named by the `device:<id>` scope and restores the claim from it on refresh. Remote MCP refreshes server-side and stores nothing, so the id has to come back with every refresh: `/oauth/authorize` mints one per grant and parks it in the signed state, `/oauth/callback` seals the code with it, and `/oauth/token` seals every refresh token it returns under the same id and forwards it as `device_id` on every refresh. The client only echoes back what it received.
+The Auth0 action stores MFA presence under a key named by the `device:<id>` scope and restores the claim from it on refresh. Remote MCP refreshes server-side and stores nothing, so the id has to come back with every refresh: `/oauth/register` returns a sealed client ID carrying a new device id, and `/oauth/authorize` reuses it and parks it in the signed state, `/oauth/callback` seals the code with it, and `/oauth/token` seals every refresh token it returns under the same id and forwards it as `device_id` on every refresh. The client only echoes back what it received.
 
-One id per grant means one MFA record per MCP client installation: a step-up in one client does not refresh another's presence, and a password-only login in one does not clear the record another refreshes against. The sealed value's shape and key are described in [configuration.md](configuration.md).
+Clients keep their cached client ID until they register again; existing registrations do not migrate. For a verified sealed client ID, the registration's device id wins over any client-supplied `device:` scope. A client without a sealed ID keeps a usable `device:` scope or gets a fresh id per grant. A sealed client ID that fails verification is treated as unregistered: authorize mints a fresh device id, token answers `invalid_client`, and the client registers again. The reader shipped in v1.26.0; rolling back below v1.26.0 makes clients holding sealed IDs register again. Reuse does not renew an MFA proof; expiry is enforced upstream.
+
+One id per installation means one MFA record per MCP client installation: a step-up in one client does not refresh another's presence, and a password-only login in one does not clear the record another refreshes against. The sealed value's shape and key are described in [configuration.md](configuration.md).
 
 ## Key components
 
