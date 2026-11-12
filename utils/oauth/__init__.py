@@ -6,6 +6,7 @@ import os
 from starlette.requests import Request
 from starlette.responses import Response
 
+from utils.error_handler import is_production_deployment
 from utils.oauth._authorize import oauth_authorize
 from utils.oauth._callback import oauth_callback
 from utils.oauth._http import (
@@ -75,11 +76,17 @@ def register_oauth_routes(mcp_server: RouteRegistry) -> None:
     """Register the OAuth proxy routes; raises ValueError when an explicit state or
     grant secret is malformed."""
     # A malformed key would otherwise surface on the first OAuth request. Only the
-    # explicit keys are checked: deployments without OAuth config must still start.
+    # explicit keys are checked outside production so local setups may omit OAuth config.
     if os.getenv(_STATE_SECRET_ENV):
         _get_state_secret()
     if os.getenv(_GRANT_SECRET_ENV):
         _get_grant_secret()
+    elif is_production_deployment():
+        logger.error(
+            '%s is not set in production; using the client-secret-derived key '
+            'until fallback removal (#488)',
+            _GRANT_SECRET_ENV,
+        )
 
     for path, methods, handler in _ROUTES:
         mcp_server.custom_route(path, methods=list(methods))(handler)

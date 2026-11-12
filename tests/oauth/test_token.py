@@ -216,6 +216,24 @@ class TestOAuthToken:
             '',
         )
 
+    def test_legacy_refresh_rotates_to_explicit_key(self, oauth_app, monkeypatch):
+        monkeypatch.delenv('ALPACON_MCP_GRANT_SECRET', raising=False)
+        legacy = _seal_refresh_token('v1.refresh', DEVICE_ID)
+        monkeypatch.setenv('ALPACON_MCP_GRANT_SECRET', 'b2' * 32)
+        mock_client = _mock_auth0_response(
+            json_data={'access_token': 'new-access', 'refresh_token': 'v1.rotated'}
+        )
+        with patch('utils.oauth._token.httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.post(
+                _TOKEN_PATH,
+                data={'grant_type': _GRANT_REFRESH_TOKEN, 'refresh_token': legacy},
+            )
+        assert response.status_code == 200
+        rotated = response.json()['refresh_token']
+        assert _open_seal(_SEAL_KIND_REFRESH, rotated) == ('v1.rotated', DEVICE_ID, '')
+        monkeypatch.delenv('ALPACON_MCP_GRANT_SECRET')
+        assert _open_seal(_SEAL_KIND_REFRESH, rotated) is None
+
     def test_token_refresh_ignores_a_client_device_id_under_a_seal(self, oauth_app):
         """The sealed id is the grant's; a body param cannot point at another record."""
         mock_client = _mock_auth0_response()
