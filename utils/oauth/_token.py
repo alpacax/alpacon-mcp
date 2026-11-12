@@ -14,6 +14,7 @@ from utils.oauth._http import (
     _AUTH0_TOKEN_PATH,
     _CACHE_CONTROL_NO_STORE,
     _ERROR_INVALID_CLIENT,
+    _ERROR_INVALID_GRANT,
     _ERROR_INVALID_REQUEST,
     _ERROR_SERVER_ERROR,
     _ERROR_UNSUPPORTED_GRANT_TYPE,
@@ -57,9 +58,17 @@ async def oauth_token(request: Request) -> Response:
         config = _require_oauth_config()
         params = await _parse_token_request(request)
         grant_type = _require_grant_type(params)
+        registered_device_id = _registered_device_id(params.get('client_id'))
         _inject_client_credentials(params, config)
         _strip_client_scope(params)
         grant = _unseal_grant(params, grant_type)
+        if registered_device_id and registered_device_id != grant.device_id:
+            raise _OAuthRequestError(
+                _oauth_error_response(
+                    _ERROR_INVALID_GRANT,
+                    'The grant does not belong to this client registration',
+                )
+            )
         # Auth0 requires the redirect_uri /authorize sent, which is always ours.
         if grant_type == _GRANT_AUTHORIZATION_CODE:
             params['redirect_uri'] = _callback_url(_get_server_url(request))

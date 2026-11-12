@@ -38,7 +38,6 @@ from utils.oauth._redirect_uris import (
 )
 from utils.oauth._sealing import (
     _DEVICE_SCOPE_PREFIX,
-    _SEALED_PREFIX,
     _STAGE_LEDGER,
     _STAGE_MFA,
     _build_state,
@@ -105,11 +104,8 @@ def _normalize_authorize_request(
     params = dict(request.query_params)
     client_id = params.get('client_id', '')
     registered_device_id = _registered_device_id(client_id)
-    if client_id.startswith(f'{_SEALED_PREFIX}.') and registered_device_id is None:
-        # RFC 6749 §4.1.2.1 forbids redirecting an invalid client identifier.
-        raise _OAuthRequestError(
-            _oauth_error_response(_ERROR_INVALID_REQUEST, 'Invalid client_id')
-        )
+    # A stale registration must reach /token's invalid_client response so the
+    # client registers again instead of stopping at an authorize error page.
     # Pinned so this endpoint cannot proxy arbitrary Auth0 clients.
     params['client_id'] = config['client_id']
     if 'audience' not in params:

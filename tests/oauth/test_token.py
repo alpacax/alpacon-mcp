@@ -869,3 +869,26 @@ def test_token_rejects_invalid_registration(oauth_app, client_id):
     )
     assert response.status_code == HTTPStatus.BAD_REQUEST
     assert response.json()['error'] == 'invalid_client'
+
+
+@pytest.mark.parametrize(
+    'grant_type', [_GRANT_AUTHORIZATION_CODE, _GRANT_REFRESH_TOKEN]
+)
+def test_registered_client_rejects_another_instances_grant(oauth_app, grant_type):
+    field, seal = (
+        ('code', _seal_code)
+        if grant_type == _GRANT_AUTHORIZATION_CODE
+        else ('refresh_token', _seal_refresh_token)
+    )
+    with patch('utils.oauth._token.httpx.AsyncClient') as upstream:
+        response = oauth_app.post(
+            _TOKEN_PATH,
+            data={
+                'grant_type': grant_type,
+                'client_id': _mint_client_id(),
+                field: seal('upstream-value', DEVICE_ID),
+            },
+        )
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.json()['error'] == 'invalid_grant'
+    upstream.assert_not_called()

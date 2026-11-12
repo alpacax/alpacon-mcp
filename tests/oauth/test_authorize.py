@@ -963,26 +963,45 @@ class TestConnectionIdentity:
             assert token_response.status_code == HTTPStatus.OK
             assert token_response.json()['access_token'] == access_token
 
-    @pytest.mark.parametrize('client_id', ['amcp1.invalid', 'wrong_kind', 'tampered'])
-    def test_invalid_sealed_client_id_is_rejected_without_redirect(
-        self, oauth_app, client_id
-    ):
-        if client_id == 'wrong_kind':
-            client_id = _seal_code('code', DEVICE_ID)
-        elif client_id == 'tampered':
-            client_id = _mint_client_id() + 'x'
-        response = oauth_app.get(
-            _AUTHORIZE_PATH,
-            params={
-                'client_id': client_id,
-                'redirect_uri': LISTED_REDIRECT_URI,
-                **PKCE_PARAMS,
-            },
-            follow_redirects=False,
-        )
-        assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert 'location' not in response.headers
-        assert response.json()['error'] == 'invalid_request'
+    def test_key_rotation_recovers_with_new_registration(self, oauth_app, monkeypatch):
+        oauth_app.base_url = 'https://testserver'
+        monkeypatch.setenv('ALPACON_MCP_GRANT_SECRET', 'aa' * 32)
+        client_id = self._register(oauth_app)
+        _, original = self._login(oauth_app, client_id)
+        monkeypatch.setenv('ALPACON_MCP_GRANT_SECRET', 'bb' * 32)
+        response, fresh = self._login(oauth_app, client_id)
+        assert fresh['device_id'] != original['device_id']
+
+        def exchange(response, client_id):
+            query = parse_qs(urlparse(response.headers['location']).query)
+            oauth_app.cookies.update(response.cookies)
+            callback = oauth_app.get(
+                '/oauth/callback',
+                params={'code': 'upstream-code', 'state': query['state'][0]},
+                follow_redirects=False,
+            )
+            assert callback.status_code == HTTPStatus.FOUND
+            code = parse_qs(urlparse(callback.headers['location']).query)['code'][0]
+            return oauth_app.post(
+                '/oauth/token',
+                data={
+                    'grant_type': 'authorization_code',
+                    'client_id': client_id,
+                    'code': code,
+                },
+            )
+
+        mock_client = _mock_auth0_response()
+        with patch('utils.oauth._token.httpx.AsyncClient', return_value=mock_client):
+            rejected = exchange(response, client_id)
+            assert rejected.status_code == HTTPStatus.BAD_REQUEST
+            assert rejected.json()['error'] == 'invalid_client'
+            mock_client.post.assert_not_called()
+            replacement = self._register(oauth_app)
+            response, registered = self._login(oauth_app, replacement)
+            assert exchange(response, replacement).status_code == HTTPStatus.OK
+        _, reused = self._login(oauth_app, replacement)
+        assert reused['device_id'] == registered['device_id']
 
     @pytest.mark.parametrize('sealed', [True, False])
     def test_device_scope_precedence(self, oauth_app, sealed):
