@@ -4404,6 +4404,38 @@ class TestHeldCommandSuggestsTheFileLane:
         assert 'execute_file_suggestion' not in result
         assert 'read_from_server=true' in result['message']
 
+    @pytest.mark.asyncio
+    async def test_a_run_fed_stdin_gets_no_script_body_hint(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await self._held(
+            {'script_body_suggestion': {'signal': 'embedded_script'}},
+            data='yes\n',
+        )
+
+        assert result['status'] == 'pending_approval'
+        assert 'script_body_suggestion' not in result
+        assert 'write_file=true' not in result['message']
+
+    @pytest.mark.asyncio
+    async def test_check_command_status_carries_the_script_body_hint(
+        self, mock_http_client, mock_token_manager
+    ):
+        row = {
+            'id': 'cmd-910',
+            'status': 'awaiting_approval',
+            'handled_at': None,
+            'script_body_suggestion': {'signal': 'embedded_script'},
+        }
+        with patch('tools.command_tools._get_command_result', return_value=row):
+            result = await check_command_status(
+                command_id='cmd-910', workspace='testworkspace', region='ap1'
+            )
+
+        assert result['status'] == 'pending_approval'
+        assert result['script_body_suggestion'] == {'signal': 'embedded_script'}
+        assert 'write_file=true' in result['message']
+
 
 class TestExecuteFileRegistration:
     """The published tool is what teaches a model to take this lane."""
