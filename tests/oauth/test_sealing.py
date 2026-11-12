@@ -218,7 +218,7 @@ class TestGrantSecret:
 
 class TestMintedDeviceId:
     def test_mint_is_unpredictable(self):
-        """The per-grant property rests on the CSPRNG, not on a call count. Every other
+        """Distinct minted identities rest on the CSPRNG, not on a call count. Every other
         minting test patches `_mint_device_id`; this one fails if it became a constant.
         """
         assert _mint_device_id() != _mint_device_id()

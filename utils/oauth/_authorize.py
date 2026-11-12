@@ -46,6 +46,7 @@ from utils.oauth._sealing import (
     _hash_nonce,
     _mint_device_id,
     _mint_nonce,
+    _registered_device_id,
     _set_nonce_cookie,
     _strip_device_scopes,
 )
@@ -101,6 +102,10 @@ def _normalize_authorize_request(
     """Pin client_id, fill audience and response_type, and leave the scope with
     offline_access, exactly one `device:` token, and no pseudo-scopes."""
     params = dict(request.query_params)
+    client_id = params.get('client_id', '')
+    registered_device_id = _registered_device_id(client_id)
+    # A stale registration must reach /token's invalid_client response so the
+    # client registers again instead of stopping at an authorize error page.
     # Pinned so this endpoint cannot proxy arbitrary Auth0 clients.
     params['client_id'] = config['client_id']
     if 'audience' not in params:
@@ -114,9 +119,7 @@ def _normalize_authorize_request(
         scope = f'{scope} {_OFFLINE_ACCESS_SCOPE}'.strip()
     # The Auth0 action keys MFA presence on the first `device:` token, so exactly one
     # leaves here. The id rides the state so the callback can seal the code under it.
-    device_id = _client_device_id(scope)
-    if device_id is None:
-        device_id = _mint_device_id()
+    device_id = registered_device_id or _client_device_id(scope) or _mint_device_id()
     scope = f'{_strip_device_scopes(scope)} {_DEVICE_SCOPE_PREFIX}{device_id}'.strip()
 
     ledger_org = _ledger_org(scope)

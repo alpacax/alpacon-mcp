@@ -58,6 +58,7 @@ _STAGE_LEDGER = 'ledger'
 _SEALED_PREFIX = 'amcp1'
 _SEAL_KIND_CODE = 'code'
 _SEAL_KIND_REFRESH = 'refresh'
+_SEAL_KIND_CLIENT = 'client'
 
 # Mirrors the validator in the Auth0 action's code.js, another repo: a value accepted
 # here but rejected there silently falls back to the fingerprint keying.
@@ -303,7 +304,7 @@ def _strip_device_scopes(scope: str) -> str:
 
 
 def _mint_device_id() -> str:
-    """One id per grant; 32 hex characters clear the Auth0 action's validator."""
+    """32 random hex characters clear the Auth0 action's validator."""
     return secrets.token_hex(16)
 
 
@@ -392,3 +393,14 @@ def _reject_unsealed(what: str, value: object) -> NoReturn:
     else:
         logger.info('Rejected an unsealed %s', what)
     raise _OAuthRequestError(_invalid_grant_response(what))
+
+
+def _mint_client_id() -> str:
+    device_id = _mint_device_id()
+    return _seal(_SEAL_KIND_CLIENT, device_id, device_id)
+
+
+def _registered_device_id(client_id: object) -> str | None:
+    """A registration survives reconnects and replicas without server-side storage."""
+    opened = _open_seal(_SEAL_KIND_CLIENT, client_id)
+    return opened.device_id if opened is not None else None
