@@ -483,14 +483,25 @@ from that one interpreter path. The held command stays queued and runs if approv
 Alpacon console (Commands) first, or the script waits on two approval requests. No MCP tool cancels
 it.
 
+When the held line instead carries a script body (an inline `-c`/`-e` body, a heredoc, or a body
+piped into an interpreter), the server may report it in `script_body_suggestion`, and the response
+then carries `script_body_suggestion: {"signal": "embedded_script"}` in place of the
+`read_from_server` hint. Its `message` says to move the body into a file and send it with
+`execute_file` and `write_file: true`, and, for code that runs inside a container or pod, to put the
+container command and the whole program in one host script. Nothing is rewritten or resubmitted:
+the held command stays queued, so the agent tells the user, who can cancel it first. The server
+sends this only when the file lane would take the script and names no script path; when
+`execute_file_suggestion` applies, that more specific form wins. A run fed `data` gets neither. The
+field needs an Alpacon server release that sends it; without it the `read_from_server` hint applies.
+
 **Held for the assignee's confirmation:** when the command row's `approval_lane` is `assignee`, the
 decision belongs to the Work Session's assignee, the user the agent works for, and not to an approver.
 The response keeps `status: "pending_approval"`, `category: "COMMAND_AWAITING_APPROVAL"` and
 `approvable_by_agent: false`, and adds `approval_lane: "assignee"`. Its `message` and `next_action`
 say that the user must confirm the command themselves in the Alpacon web console and that the agent
 should tell the user and wait, then read the result with `check_command_status`. Neither carries a
-score, the reasoning, or the console link, and the response carries neither the file-lane hint nor
-`execute_file_suggestion`, both of which speak of approvers. Any other `approval_lane`, or none from an older server,
+score, the reasoning, or the console link, and the response carries neither the file-lane hint, `execute_file_suggestion` nor
+`script_body_suggestion`, all of which speak of approvers. Any other `approval_lane`, or none from an older server,
 gives the response above unchanged. `check_command_status` and `state_command_purpose` answer a held
 command the same way.
 

@@ -1553,6 +1553,23 @@ _FILE_LANE_HINT = (
     'requests. No MCP tool cancels it.'
 )
 
+#: Appended instead of _FILE_LANE_HINT when the server reports that the held
+#: line carries a script body (`script_body_suggestion`).
+_SCRIPT_BODY_HINT = (
+    ' This command line carries a script body. To have the script reviewed by '
+    'its content, move the body into a file and send it with execute_file and '
+    'write_file=true; for code that runs inside a container or pod, put the '
+    'container command and the whole program in one host script (see '
+    '"Multi-step work inside a container" in the using-alpacon skill). An '
+    'approver can then mark that file standing so an unchanged re-run needs no '
+    'human. This held command stays queued and runs if approved: do not '
+    'resubmit it; tell the user, who can cancel it in the Alpacon console '
+    '(Commands) before you send the script. No MCP tool cancels it.'
+)
+
+#: Signals the server may name in `script_body_suggestion`.
+_SCRIPT_BODY_SIGNALS = frozenset({'embedded_script'})
+
 #: A bare interpreter basename such as bash or python3. Kept narrow because it
 #: is echoed into the suggestion's instruction text.
 _BARE_INTERPRETER_RE = re.compile(r'[A-Za-z0-9][A-Za-z0-9._+-]{0,63}')
@@ -1568,8 +1585,9 @@ def _attach_file_execution_suggestion(
     shell_lane: bool,
     stdin_fed: bool = False,
 ) -> None:
-    """Point a held shell-lane command at execute_file with read_from_server;
-    a malformed `file_execution_suggestion` is dropped whole."""
+    """Point a held shell-lane command at execute_file: read_from_server for a
+    script path, write_file for a script body the server reported; a malformed
+    `file_execution_suggestion` is dropped whole."""
     suggestion = result.get('file_execution_suggestion')
     if not isinstance(suggestion, dict):
         suggestion = {}
@@ -1599,6 +1617,19 @@ def _attach_file_execution_suggestion(
         and isinstance(args, list)
         and all(isinstance(a, str) for a in args)
     )
+    # A script-path suggestion is the more specific form, so it wins. A run
+    # fed stdin cannot move to execute_file, which has none.
+    body = result.get('script_body_suggestion')
+    signal = body.get('signal') if isinstance(body, dict) else None
+    if (
+        not well_formed
+        and isinstance(signal, str)
+        and signal in _SCRIPT_BODY_SIGNALS
+        and not _stdin_was_fed(result, stdin_fed)
+    ):
+        response['message'] += _SCRIPT_BODY_HINT
+        response['script_body_suggestion'] = {'signal': signal}
+        return
     if shell_lane or well_formed:
         response['message'] += _FILE_LANE_HINT
     # execute_file has no stdin, so a run fed data cannot be suggested as one.

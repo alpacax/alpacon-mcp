@@ -13,6 +13,7 @@ Send any script, heredoc, or `bash /path/to/file` line through `execute_file`, n
 - `reuse_days` (1 to 366) proposes how long the approver may let this exact file rerun without a new review. It is a proposal the approver may decline. A value above the workspace ceiling is refused with `file_exec_reuse_exceeds_max`.
 - The write happens before review, so a run that is later denied leaves the new file on the host.
 - `execute_file` always waits for the result; it has no `wait` option. Otherwise it follows the same rules as `execute_command`: a held run returns `pending_approval`, a purpose demand returns `purpose_required`, neither is resubmitted, and sudo inside the script is approved or denied the same way.
+- A held `execute_command` result with `script_body_suggestion` means the server found a script body on that line. Do not resubmit it: tell the user, who can cancel the held command in the Alpacon console. For the next run, or after the user cancels, move the body into a file with `write_file=true`; for code inside a container, follow the next section.
 
 ### Multi-step work inside a container
 
