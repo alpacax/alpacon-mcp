@@ -5953,7 +5953,7 @@ class TestHeldSudoApproval:
         assert 'no deadline' in denial['wait_hint']
 
     @pytest.mark.asyncio
-    async def test_a_passed_deadline_asks_for_a_new_approval_instead_of_a_wait(
+    async def test_a_passed_deadline_asks_the_user_instead_of_waiting(
         self, mock_http_client, mock_token_manager
     ):
         row = _sudo_held_row(held=_held(expires_at=_PASSED_DEADLINE))
@@ -5966,8 +5966,17 @@ class TestHeldSudoApproval:
             'expires_at': _PASSED_DEADLINE,
         }
         assert f'deadline ({_PASSED_DEADLINE}) has passed' in denial['wait_hint']
-        assert 'request a new approval' in denial['wait_hint']
+        assert 'ask the user whether to re-submit' in denial['wait_hint']
         assert 'check_command_status' not in denial['wait_hint']
+        assert denial['message'] == denial['wait_hint']
+        assert result['sudo_hint'] == denial['wait_hint']
+        assert denial['next_action'] == (
+            'Do not wait on this approval, since its deadline has passed, and do '
+            'not re-submit on your own: ask the user whether to re-submit the '
+            'whole command, which requests a new approval.'
+        )
+        assert denial['status'] == 'pending_approval'
+        assert denial['approvable_by_agent'] is False
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
