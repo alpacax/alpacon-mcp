@@ -34,6 +34,7 @@ from tools.command_tools import (
     _CommandRecord,
     _file_phase_hint,
     _get_capped,
+    _rerun_coordinates,
     _submit_command,
     _submit_file_execution,
     _sudo_denial,
@@ -234,6 +235,28 @@ class TestSudoDenialHint:
 
 class TestSubmitCommand:
     @pytest.mark.asyncio
+    async def test_groupname_sent_only_when_named(self, mock_http_client):
+        mock_http_client.post.return_value = {'id': 'cmd-124'}
+
+        async def submit(groupname: str | None = None) -> dict[str, object]:
+            await _submit_command(
+                server_id=VALID_SERVER_ID,
+                command='id',
+                workspace='testworkspace',
+                region='ap1',
+                token='test-token',
+                groupname=groupname,
+            )
+            sent: dict[str, object] = mock_http_client.post.call_args.kwargs['data']
+            return sent
+
+        assert 'groupname' not in await submit()
+        assert 'groupname' not in await submit('')
+        assert (await submit('ops'))['groupname'] == 'ops'
+        # An explicit 'alpacon' is the caller's choice and goes out as given.
+        assert (await submit('alpacon'))['groupname'] == 'alpacon'
+
+    @pytest.mark.asyncio
     async def test_submit_basic(self, mock_http_client):
         mock_http_client.post.return_value = {'id': 'cmd-123', 'status': 'running'}
 
@@ -256,7 +279,6 @@ class TestSubmitCommand:
                 'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'ls -la',
-                'groupname': 'alpacon',
             },
         )
 
@@ -286,7 +308,6 @@ class TestSubmitCommand:
                 'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'echo done',
-                'groupname': 'alpacon',
                 'env': {'PATH': '/usr/bin'},
                 'data': 'stdin input',
                 'username': 'testuser',
@@ -315,7 +336,6 @@ class TestSubmitCommand:
                 'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'ls',
-                'groupname': 'alpacon',
             },
         )
 
@@ -343,7 +363,6 @@ class TestSubmitCommand:
                 'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'ls',
-                'groupname': 'alpacon',
                 'work_session': 'ws-from-env',
             },
         )
@@ -373,7 +392,6 @@ class TestSubmitCommand:
                 'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'ls',
-                'groupname': 'alpacon',
                 'work_session': 'explicit-ws',
             },
         )
@@ -1158,7 +1176,6 @@ class TestSubmitCommandWithSession:
                 'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'ls',
-                'groupname': 'alpacon',
                 'work_session': 'ws-uuid-abcd',
             },
         )
@@ -1184,7 +1201,6 @@ class TestSubmitCommandWithSession:
                 'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'ls',
-                'groupname': 'alpacon',
             },
         )
 
@@ -1218,7 +1234,6 @@ class TestExecuteCommandWithSession:
                 'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'ls',
-                'groupname': 'alpacon',
                 'work_session': 'ws-uuid-abcd',
                 'purpose_demand_supported': True,
             },
@@ -1249,7 +1264,6 @@ class TestExecuteCommandMultiServerWithSession:
                 'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'ls',
-                'groupname': 'alpacon',
                 'work_session': 'ws-uuid-abcd',
             },
         )
@@ -1618,7 +1632,6 @@ class TestPurposeDemand:
                 'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'systemctl restart chronyd',
-                'groupname': 'alpacon',
                 'purpose': (
                     'The host clock is 40s ahead, so the cert reads as not-yet-valid.'
                 ),
@@ -1652,7 +1665,6 @@ class TestPurposeDemand:
                 'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'true',
-                'groupname': 'alpacon',
                 'purpose': 'x' * PURPOSE_MAX_LENGTH,
             },
         )
@@ -1683,7 +1695,6 @@ class TestPurposeDemand:
                 'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'true',
-                'groupname': 'alpacon',
                 'purpose_demand_supported': True,
             },
         )
@@ -2357,6 +2368,21 @@ class TestSubmitFileExecution:
         )
 
     @pytest.mark.asyncio
+    async def test_groupname_absent_when_unnamed(self, mock_http_client):
+        mock_http_client.post.return_value = {'id': 'cmd-702'}
+
+        await _submit_file_execution(
+            server_id=VALID_SERVER_ID,
+            path='/opt/deploy.sh',
+            content=_FILE_SCRIPT,
+            workspace='testworkspace',
+            region='ap1',
+            token='test-token',
+        )
+
+        assert 'groupname' not in mock_http_client.post.call_args.kwargs['data']
+
+    @pytest.mark.asyncio
     async def test_content_travels_byte_for_byte(self, mock_http_client):
         # Trailing newline, CRLF, tabs, trailing spaces, non-ASCII: every one
         # of these is bytes the on-disk file carries and the agent hashes.
@@ -2379,7 +2405,6 @@ class TestSubmitFileExecution:
             token='test-token',
             data={
                 'server': VALID_SERVER_ID,
-                'groupname': 'alpacon',
                 'file': {
                     'path': '/opt/deploy.sh',
                     'interpreter': '/bin/bash',
@@ -2411,7 +2436,6 @@ class TestSubmitFileExecution:
             token='test-token',
             data={
                 'server': VALID_SERVER_ID,
-                'groupname': 'alpacon',
                 'file': {
                     'path': '/opt/deploy.sh',
                     'interpreter': '/bin/bash',
@@ -2450,7 +2474,6 @@ class TestSubmitFileExecution:
             token='test-token',
             data={
                 'server': VALID_SERVER_ID,
-                'groupname': 'alpacon',
                 'file': {
                     'path': '/opt/deploy.sh',
                     'interpreter': '/bin/bash',
@@ -2488,7 +2511,6 @@ class TestSubmitFileExecution:
             token='test-token',
             data={
                 'server': VALID_SERVER_ID,
-                'groupname': 'alpacon',
                 'file': {
                     'path': '/opt/deploy.sh',
                     'interpreter': '/bin/bash',
@@ -2519,7 +2541,6 @@ class TestSubmitFileExecution:
             token='test-token',
             data={
                 'server': VALID_SERVER_ID,
-                'groupname': 'alpacon',
                 'file': {
                     'path': '/opt/deploy.sh',
                     'interpreter': '/bin/bash',
@@ -3365,7 +3386,7 @@ class TestExecuteFileWriteFile:
 
         assert 'groupname' not in mock_http_client.post.call_args.kwargs['data']
         # The run itself still carries the group it executes as.
-        assert mock_submit.call_args.kwargs['groupname'] == 'alpacon'
+        assert mock_submit.call_args.kwargs['groupname'] is None
 
     @pytest.mark.asyncio
     async def test_existing_file_refusal_names_both_ways_out(
@@ -4053,7 +4074,7 @@ class TestHeldCommandSuggestsTheFileLane:
         row_extra: dict[str, JsonValue],
         *,
         username: str | None = None,
-        groupname: str = 'alpacon',
+        groupname: str | None = None,
         work_session_id: str | None = None,
         data: str | None = None,
     ) -> ToolResponse:
@@ -4287,6 +4308,21 @@ class TestHeldCommandSuggestsTheFileLane:
         assert arguments['username'] == 'deploy'
         assert arguments['groupname'] == 'ops'
         assert arguments['work_session_id'] == work_session_id
+
+    @pytest.mark.parametrize(
+        ('recorded', 'expected'),
+        [
+            ('alpacon', 'alpacon'),
+            ('ops', 'ops'),
+            ('', None),
+            (None, None),
+        ],
+    )
+    def test_rerun_carries_the_recorded_group_unchanged(self, recorded, expected):
+        row = {'server': {'id': 'srv-1'}, 'groupname': recorded}
+        coordinates = _rerun_coordinates(row)
+        assert coordinates.get('groupname') == expected
+        assert ('groupname' in coordinates) is (expected is not None)
 
     @pytest.mark.asyncio
     async def test_after_a_stated_purpose_the_call_comes_off_the_row(
