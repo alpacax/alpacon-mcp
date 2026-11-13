@@ -333,17 +333,19 @@ _SUBMITTED_COMMAND = TypeAdapter(_SubmittedCommand)
 
 
 def _sudo_denial(result: _CommandRecord) -> tuple[str, str] | None:
-    """Return `(code, hint)` for a non-interactive sudo denial in the output,
-    or None when there is none."""
+    """Return `(code, hint)` for a non-interactive sudo denial in the output, or
+    None. A hard denial wins over an earlier one a human can clear: a rerun fails on it."""
     output = result.get('result') or ''
     if not isinstance(output, str):
         return None
-    match = _SUDO_DENIAL_LINE_RE.search(output)
-    if not match:
-        return None
-    code = match.group(1)
-    hint = _SUDO_DENIAL_HINTS.get(code)
-    return (code, hint) if hint else None
+    known = [
+        (code, _SUDO_DENIAL_HINTS[code])
+        for code in _SUDO_DENIAL_LINE_RE.findall(output)
+        if code in _SUDO_DENIAL_HINTS
+    ]
+    hard = [denial for denial in known if denial[0] not in _SUDO_HUMAN_APPROVAL_CODES]
+    chosen = hard or known
+    return chosen[0] if chosen else None
 
 
 #: A self-relative path of plain segments, none starting with '.'; the
