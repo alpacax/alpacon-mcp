@@ -5644,7 +5644,7 @@ async def test_execute_command_unhashable_denial_code_keeps_normal_result(
         workspace='testworkspace',
         region='ap1',
     )
-    assert response.get('denial_code') != denial_code
+    assert response['status'] == 'success'
     assert response['command_id'] == 'cmd-odd-code'
 
 
