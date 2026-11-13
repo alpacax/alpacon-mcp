@@ -441,7 +441,7 @@ Execute a command on a server and wait for the result, or with `wait: false` ret
 - `workspace` (string): Workspace name
 - `shell` (string, default: "system"): Shell type
 - `username` (string, optional): Username for execution
-- `groupname` (string, optional): Group to run as. Omitted, the field is not sent and the server uses the account's primary group on that host; pass it only to name a different group the account may use
+- `groupname` (string, optional): Group to run as. Omitted, the field is not sent and the server uses the account's primary group on that host (requires an Alpacon server release that resolves it; an older server uses `alpacon`); pass it only to name a different group the account may use
 - `env` (object, optional): Environment variables
 - `run_after` (array, optional): Command IDs to wait for before executing
 - `scheduled_at` (string, optional): ISO 8601 datetime for scheduled execution
@@ -551,7 +551,7 @@ human, which a `bash /path` line on `execute_command` never is.
 - `overwrite` (boolean, default: false): With `write_file`, replace a file already at `path`. Refused with `file_exec_invalid_options` without `write_file`
 - `read_from_server` (boolean, default: false): Read the file at `path` from the host through WebFTP and submit those bytes as `content`. Excludes `write_file` and `content`. See "Reading the file" below
 - `username` (string, optional): Username for execution; with `write_file`, also the account the file is written as, and with `read_from_server`, the account it is read as
-- `groupname` (string, optional): Group to run as. Omitted, the field is not sent and the server uses the account's primary group on that host; pass it only to name a different group the account may use; with `write_file`, a named group is also the group a new file is written with
+- `groupname` (string, optional): Group to run as. Omitted, the field is not sent and the server uses the account's primary group on that host (requires an Alpacon server release that resolves it; an older server uses `alpacon`); pass it only to name a different group the account may use; with `write_file`, a named group is also the group a new file is written with
 - `run_after` (array, optional): Command IDs to wait for before executing
 - `scheduled_at` (string, optional): ISO 8601 datetime for scheduled execution
 - `timeout` (integer, default: 300): Timeout in seconds
@@ -669,7 +669,7 @@ Execute a command on multiple servers simultaneously. The tool only submits: rea
 - `workspace` (string): Workspace name
 - `shell` (string, default: "system"): Shell type
 - `username` (string, optional): Username for execution
-- `groupname` (string, optional): Group to run as. Omitted, the field is not sent and the server uses the account's primary group on that host; pass it only to name a different group the account may use
+- `groupname` (string, optional): Group to run as. Omitted, the field is not sent and the server uses the account's primary group on that host (requires an Alpacon server release that resolves it; an older server uses `alpacon`); pass it only to name a different group the account may use
 - `env` (object, optional): Environment variables
 - `parallel` (boolean, default: true): Execute in parallel; `false` runs the servers one after another
 - `work_session_id` (string, optional): Work Session to link the call to for audit; an active, approved session is needed for personal API tokens and MCP OAuth/browser callers when creating commands or REST file transfers; service tokens retain their endpoint-specific authorization rules; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins

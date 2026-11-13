@@ -186,8 +186,9 @@ _FILE_CONTENT_DESCRIPTION = (
 
 _GROUPNAME_DESCRIPTION = (
     "Group to run as. Omit it to run as the account's primary group on the "
-    'server, which the server chooses; pass it only to name a different group '
-    'the account may use.'
+    'server (requires an Alpacon server release that resolves it; an older '
+    'server uses `alpacon`); pass it only to name a different group the '
+    'account may use.'
 )
 
 _FILE_USERNAME_DESCRIPTION = (
@@ -455,9 +456,7 @@ def _rerun_coordinates(result: _CommandRecord) -> dict[str, str]:
     candidates = (
         ('server_id', server.get('id') if isinstance(server, dict) else server),
         ('username', result.get('username')),
-        # Rows recorded before the server resolved the primary group carry
-        # the old 'alpacon' default; resending it would pin that group.
-        ('groupname', groupname if groupname != 'alpacon' else None),
+        ('groupname', groupname),
         (
             'work_session_id',
             work_session.get('id') if isinstance(work_session, dict) else work_session,

@@ -34,6 +34,7 @@ from tools.command_tools import (
     _CommandRecord,
     _file_phase_hint,
     _get_capped,
+    _rerun_coordinates,
     _submit_command,
     _submit_file_execution,
     _sudo_denial,
@@ -4307,6 +4308,21 @@ class TestHeldCommandSuggestsTheFileLane:
         assert arguments['username'] == 'deploy'
         assert arguments['groupname'] == 'ops'
         assert arguments['work_session_id'] == work_session_id
+
+    @pytest.mark.parametrize(
+        ('recorded', 'expected'),
+        [
+            ('alpacon', 'alpacon'),
+            ('ops', 'ops'),
+            ('', None),
+            (None, None),
+        ],
+    )
+    def test_rerun_carries_the_recorded_group_unchanged(self, recorded, expected):
+        row = {'server': {'id': 'srv-1'}, 'groupname': recorded}
+        coordinates = _rerun_coordinates(row)
+        assert coordinates.get('groupname') == expected
+        assert ('groupname' in coordinates) is (expected is not None)
 
     @pytest.mark.asyncio
     async def test_after_a_stated_purpose_the_call_comes_off_the_row(

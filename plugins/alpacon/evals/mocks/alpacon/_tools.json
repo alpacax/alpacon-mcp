@@ -221,7 +221,7 @@
        }
       ],
       "default": null,
-      "description": "Group to run as. Omit it to run as the account's primary group on the server, which the server chooses; pass it only to name a different group the account may use.",
+      "description": "Group to run as. Omit it to run as the account's primary group on the server (requires an Alpacon server release that resolves it; an older server uses `alpacon`); pass it only to name a different group the account may use.",
       "title": "Groupname"
      },
      "env": {
@@ -446,7 +446,7 @@
        }
       ],
       "default": null,
-      "description": "Group to run as. Omit it to run as the account's primary group on the server, which the server chooses; pass it only to name a different group the account may use.",
+      "description": "Group to run as. Omit it to run as the account's primary group on the server (requires an Alpacon server release that resolves it; an older server uses `alpacon`); pass it only to name a different group the account may use.",
       "title": "Groupname"
      },
      "run_after": {
