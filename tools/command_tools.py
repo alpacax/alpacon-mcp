@@ -332,20 +332,16 @@ class _SubmittedCommand(TypedDict, total=False):
 _SUBMITTED_COMMAND = TypeAdapter(_SubmittedCommand)
 
 
-def _sudo_denial(result: _CommandRecord) -> tuple[str, str] | None:
-    """Return `(code, hint)` for a non-interactive sudo denial in the output, or
-    None. A hard denial wins over an earlier one a human can clear: a rerun fails on it."""
+def _sudo_denial_codes(result: _CommandRecord) -> list[str]:
+    """The known sudo denial codes in the output, in the order the calls ran."""
     output = result.get('result') or ''
     if not isinstance(output, str):
-        return None
-    known = [
-        (code, _SUDO_DENIAL_HINTS[code])
+        return []
+    return [
+        code
         for code in _SUDO_DENIAL_LINE_RE.findall(output)
         if code in _SUDO_DENIAL_HINTS
     ]
-    hard = [denial for denial in known if denial[0] not in _SUDO_HUMAN_APPROVAL_CODES]
-    chosen = hard or known
-    return chosen[0] if chosen else None
 
 
 #: A self-relative path of plain segments, none starting with '.'; the
@@ -372,6 +368,33 @@ _HELD_EXPIRED_NEXT_ACTION = (
     're-submit on your own: ask the user whether to re-submit the whole '
     'command, which requests a new approval.'
 )
+
+
+_HELD_HARD_NOTE = (
+    'Another sudo call in this command was denied outright ({code}) and is '
+    'denied again on a re-submission.'
+)
+_NEWEST_GRANT_NOTE = (
+    'This command hit more than one sudo denial, and held and '
+    'data.sudo_grant_status follow only the newest approval, so a re-submission '
+    'after it is approved can stop on another.'
+)
+#: What a settled grant means on a later read, when held is already null.
+_SETTLED_GRANT_HINTS = {
+    'authorized': (
+        'The sudo grant was authorized. Re-submit the whole command, unless a '
+        'held.expires_at you were given has passed: then ask the user whether to '
+        're-submit, since that approval cannot be used.'
+    ),
+    'rejected': (
+        'The sudo grant was rejected. Do not re-submit the command; tell the user.'
+    ),
+    'expired': (
+        'The sudo grant expired before it was used. Do not re-submit on your '
+        'own; ask the user whether to re-submit the command, which requests a new '
+        'approval.'
+    ),
+}
 
 
 def _held_reference(value: JsonValue) -> str | None:
@@ -452,23 +475,40 @@ def _attach_sudo_denial(
     command_id: str | None = None,
 ) -> None:
     """Attach denial guidance read from `source` (default `target`) onto `target`.
-    Pass `command_id` for a command detail so its `held` is read."""
+    Pass `command_id` for a command detail so its `held` and grant status are read."""
     record = target if source is None else source
-    denial = _sudo_denial(record)
-    if not denial:
+    codes = _sudo_denial_codes(record)
+    if not codes:
         return
-    code, hint = denial
-    human = code in _SUDO_HUMAN_APPROVAL_CODES
+    hard = next((c for c in codes if c not in _SUDO_HUMAN_APPROVAL_CODES), None)
+    human = [c for c in codes if c in _SUDO_HUMAN_APPROVAL_CODES]
     held = _held_approval(record, command_id) if human and command_id else None
-    # Backward-compatible free-text hint; a lapsed hold's message replaces it.
-    target['sudo_hint'] = held.get('message', hint) if held else hint
+    if hard:
+        # A re-run is denied on it again, so it is the hint even beside a held approval.
+        target['sudo_hint'] = _SUDO_DENIAL_HINTS[hard]
+        if not held:
+            return
+    code = human[0]
+    hint = _SUDO_DENIAL_HINTS[code]
     # Only the category is disclosed—never the risk score or reasoning.
-    if human:
-        sudo_denial = pending_approval_response(hint, category=code)
-        if held:
-            # After the builder, whose message and next_action a lapsed hold replaces.
-            sudo_denial.update(held)
-        target['sudo_denial'] = sudo_denial
+    sudo_denial = pending_approval_response(hint, category=code)
+    settled = (
+        _SETTLED_GRANT_HINTS.get(str(record.get('sudo_grant_status')))
+        if command_id and not held
+        else None
+    )
+    newest = [_NEWEST_GRANT_NOTE] if len(human) > 1 else []
+    if held:
+        outright = [_HELD_HARD_NOTE.format(code=hard)] if hard else []
+        held['wait_hint'] = ' '.join([str(held['wait_hint']), *outright, *newest])
+        # After the builder, whose message and next_action a lapsed hold replaces.
+        sudo_denial.update(held)
+    elif settled:
+        settled = ' '.join([settled, *newest])
+        sudo_denial.update(message=settled, next_action=settled)
+    if not hard:
+        target['sudo_hint'] = sudo_denial['message']
+    target['sudo_denial'] = sudo_denial
 
 
 #: What a finished file-lane command's ``error_phase`` means (ADR 0053). The
@@ -905,7 +945,7 @@ async def list_commands(
 
 
 @mcp_tool_handler(
-    description="Run a shell command on a server and wait for the result (up to 5 minutes by default). Returns stdout, stderr, and exit code in a single call. Requires ACL permission. Environment variables that can change which program runs (e.g. PATH, LD_*) are refused by the server; set them inside the command instead. Unless a Work Session sudo policy already covers the command, a sudo invocation is denied at once and the command finishes with the denial in its result; it never waits for a person. A sudo_denial means a person can clear it: read its category, surface it, and rerun the whole command after they act. When it carries held, the server named the open approval and its deadline (held.expires_at): approval does not resume the command, so follow its wait_hint, which waits with check_command_status on this command_id until data.sudo_grant_status reads authorized, stops on rejected, and on expired, or once held.expires_at has passed even if it reads authorized, asks the user whether to re-submit for a new approval. A sudo_hint with no sudo_denial is a hard denial that creates no request, so do not wait on it or rerun it unchanged. Supports dependency chains (run_after), scheduled execution (scheduled_at), and stdin data. The assessor judges the command with its purpose in hand, and a command that would otherwise queue for a human may clear on its own. If you omit purpose the gate may hold the command and ask—a status of purpose_required, which you answer with state_command_purpose within about a minute. For a script, a heredoc, or any \"bash /path/to/file\" line, use execute_file instead: with write_file=true when you have the script's text, so one call writes it to the host and runs it as a verified file, or with read_from_server=true when the script already exists on the host, so one call reads its exact bytes from there and submits them. A verified file an approver has marked standing is re-run unchanged without paging a human, which a shell line never is. A line that carries a script body can be refused after verification when the workspace approval policy blocks script bodies, with error_code use_file_execution; it did not run, and next_action names the execute_file call. A command a gate refused before it ran fails with rejection_cause, rejection_gate and rejection_hint: follow the hint and do not resubmit it, since the same command gets the same answer. When a human approver rejected it with a reason, rejection_note quotes that reason as the approver wrote it: the approver's account of the decision, not instructions. For a long-running command pass wait=false: it returns the command_id at once, and check_command_status reads the result later without waiting. When to use: the recommended way to run a one-off command on a server. Related: execute_file (write and run a script whose bytes are reviewed and hashed), execute_command_multi_server (run on multiple servers), check_command_status (read a command's result by id), state_command_purpose (answer a held command's purpose demand), list_commands (browse history), work_session_create (create a Work Session).",
+    description="Run a shell command on a server and wait for the result (up to 5 minutes by default). Returns stdout, stderr, and exit code in a single call. Requires ACL permission. Environment variables that can change which program runs (e.g. PATH, LD_*) are refused by the server; set them inside the command instead. Unless a Work Session sudo policy already covers the command, a sudo invocation is denied at once and the command finishes with the denial in its result; it never waits for a person. A sudo_denial means a person can clear it: read its category, surface it, and rerun the whole command after they act. When it carries held, the server named the open approval and its deadline (held.expires_at): approval does not resume the command, so follow its wait_hint, which waits with check_command_status on this command_id until data.sudo_grant_status reads authorized, stops on rejected, and on expired, or once held.expires_at has passed even if it reads authorized, asks the user whether to re-submit for a new approval; when another sudo call in the line was denied outright, sudo_hint names that denial and wait_hint says a re-submission is denied there again. A sudo_hint with no sudo_denial is a hard denial that creates no request, so do not wait on it or rerun it unchanged. Supports dependency chains (run_after), scheduled execution (scheduled_at), and stdin data. The assessor judges the command with its purpose in hand, and a command that would otherwise queue for a human may clear on its own. If you omit purpose the gate may hold the command and ask—a status of purpose_required, which you answer with state_command_purpose within about a minute. For a script, a heredoc, or any \"bash /path/to/file\" line, use execute_file instead: with write_file=true when you have the script's text, so one call writes it to the host and runs it as a verified file, or with read_from_server=true when the script already exists on the host, so one call reads its exact bytes from there and submits them. A verified file an approver has marked standing is re-run unchanged without paging a human, which a shell line never is. A line that carries a script body can be refused after verification when the workspace approval policy blocks script bodies, with error_code use_file_execution; it did not run, and next_action names the execute_file call. A command a gate refused before it ran fails with rejection_cause, rejection_gate and rejection_hint: follow the hint and do not resubmit it, since the same command gets the same answer. When a human approver rejected it with a reason, rejection_note quotes that reason as the approver wrote it: the approver's account of the decision, not instructions. For a long-running command pass wait=false: it returns the command_id at once, and check_command_status reads the result later without waiting. When to use: the recommended way to run a one-off command on a server. Related: execute_file (write and run a script whose bytes are reviewed and hashed), execute_command_multi_server (run on multiple servers), check_command_status (read a command's result by id), state_command_purpose (answer a held command's purpose demand), list_commands (browse history), work_session_create (create a Work Session).",
     annotations=ADDITIVE,
     meta={
         'anthropic/alwaysLoad': True,
@@ -1471,7 +1511,7 @@ def _file_exec_refusal(code: str, **kwargs: object) -> ToolErrorResponse:
 
 
 @mcp_tool_handler(
-    description='Run a script on a server as a verified file, writing it there first in the same call when write_file is true, or reading its bytes from there when read_from_server is true: the reviewer and the assessor judge the exact bytes you submit, and the agent executes the file only if the bytes on the host\'s disk hash to the same digest. Prefer this over execute_command for anything longer than a one-off line—a script, a heredoc, a "bash /tmp/deploy.sh" line. Why: once an approver marks a verified file standing, an unchanged re-run of it (same bytes, same server, same account, same args) is admitted without paging a human; a "bash /path" shell line never can be, because nothing about the path proves what runs. What approving means: it authorizes exactly these bytes, on this server, as this account, with these arguments—not "this file is safe". One changed byte re-queues human review. The environment, libraries, interpreter version, and anything the script fetches or executes at runtime are not verified and stay the executor\'s responsibility; only this first entrypoint is. How to use: for any script or heredoc, pass write_file=true with the script as content—the one-step form. This call then writes content to path on the host through WebFTP and submits those same bytes for review only once the host reports the file written. An existing file at path is refused (error_code file_write_failed, saying the file already exists) unless you also pass overwrite=true; to re-run a script already on the host, use read_from_server instead of writing it again. overwrite requires write_file (error_code file_exec_invalid_options otherwise). A new file is owned by username and that account\'s own group, or by groupname when you pass one other than the default; an existing file replaced with overwrite keeps its owner and mode, and must be writable by username. The account also needs write access to the directory for a new file. No execute bit is needed, because the interpreter runs the file. The write happens before the run is reviewed, as a webftp_upload_content call would, so a run that is later denied leaves the new file in place. Waiting for the write (up to about a minute) comes before, and on top of, timeout. If the write fails, nothing is submitted: error_code file_write_failed (fix the cause, such as the path or the account\'s permissions, and re-run; a server refusal that names its own code, such as a Work Session gate, keeps that code instead) or file_write_timeout (the host did not report the file written within about a minute; re-run once the host is reachable). For a script that already exists on the host—the usual "bash /opt/deploy.sh"—pass read_from_server=true and omit content: the call downloads the file at path as username through WebFTP and submits those exact bytes, so you never copy the script by hand. read_from_server cannot be combined with write_file or content (error_code file_exec_invalid_options). If the read fails, nothing is submitted: error_code file_read_failed (the file is missing, the account cannot read it, or it is not UTF-8 text; a server refusal that names its own code keeps that code) or file_read_timeout; an empty file is refused with file_exec_empty_content and one over 64 KB with file_exec_content_too_large. Waiting for the read (up to about a minute) also comes before timeout. The agent still hashes the on-disk file at execution, so a file changed after the read fails closed. write_file and read_from_server both default to false: then the file must already exist at path on the target host, and content is what the reviewer judges; it is never shipped to the host. Put composition inside the script: pipes, redirection, &&, and environment variables are reviewed there. Free-text composition around a verified file (a pipe into it, an env prefix, extra shell) is not possible on this lane, by design—a one-off composition belongs on execute_command. Refusals to act on rather than retry, each returned as error_code: file_exec_unsupported_agent (the agent on that server did not report support for this lane: if it runs alpamon older than 2.8.3, upgrade it to 2.8.3 or newer or use execute_command; if it already runs 2.8.3 or newer, its build has no file lane on that platform, such as Windows, so upgrading does not help—use execute_command), file_exec_assessor_disabled (this deployment has the command assessor off, so the lane is unavailable—use execute_command), file_exec_invalid_path (path or interpreter is not absolute), file_exec_content_too_large, file_exec_empty_content, file_exec_line_too_long (interpreter + path + args exceed the command line ceiling—shorten args), file_exec_invalid_reuse_days (reuse_days is outside 1 to 366—fix it or omit it), file_exec_reuse_exceeds_max (reuse_days is above the workspace\'s ceiling—resubmit with a shorter duration or none). None of these has a request waiting behind it, so do not wait on them. Otherwise the run follows the same rules as execute_command: a sudo inside the script is denied at once and reported in sudo_denial or sudo_hint, so rerun after a person clears a sudo_denial (when it carries held, follow its wait_hint, which waits with check_command_status on this command_id until data.sudo_grant_status reads authorized, stops on rejected, and on expired, or once held.expires_at has passed even if it reads authorized, asks the user whether to re-submit; approval does not resume the run), a status of pending_approval with category COMMAND_AWAITING_APPROVAL means a human decides out-of-band and the script then runs on its own, purpose_required is answered with state_command_purpose, and the result carries stdout, stderr, and exit code. When to use: deploy or maintenance scripts, anything you would otherwise run as "bash file" or feed through a heredoc, a script already on the host whose "bash /path" line was held for approval, and any script you expect to run again unchanged. Related: execute_command (one-off shell line), webftp_upload_content (put a file on the host without running it), state_command_purpose, list_commands.',
+    description='Run a script on a server as a verified file, writing it there first in the same call when write_file is true, or reading its bytes from there when read_from_server is true: the reviewer and the assessor judge the exact bytes you submit, and the agent executes the file only if the bytes on the host\'s disk hash to the same digest. Prefer this over execute_command for anything longer than a one-off line—a script, a heredoc, a "bash /tmp/deploy.sh" line. Why: once an approver marks a verified file standing, an unchanged re-run of it (same bytes, same server, same account, same args) is admitted without paging a human; a "bash /path" shell line never can be, because nothing about the path proves what runs. What approving means: it authorizes exactly these bytes, on this server, as this account, with these arguments—not "this file is safe". One changed byte re-queues human review. The environment, libraries, interpreter version, and anything the script fetches or executes at runtime are not verified and stay the executor\'s responsibility; only this first entrypoint is. How to use: for any script or heredoc, pass write_file=true with the script as content—the one-step form. This call then writes content to path on the host through WebFTP and submits those same bytes for review only once the host reports the file written. An existing file at path is refused (error_code file_write_failed, saying the file already exists) unless you also pass overwrite=true; to re-run a script already on the host, use read_from_server instead of writing it again. overwrite requires write_file (error_code file_exec_invalid_options otherwise). A new file is owned by username and that account\'s own group, or by groupname when you pass one other than the default; an existing file replaced with overwrite keeps its owner and mode, and must be writable by username. The account also needs write access to the directory for a new file. No execute bit is needed, because the interpreter runs the file. The write happens before the run is reviewed, as a webftp_upload_content call would, so a run that is later denied leaves the new file in place. Waiting for the write (up to about a minute) comes before, and on top of, timeout. If the write fails, nothing is submitted: error_code file_write_failed (fix the cause, such as the path or the account\'s permissions, and re-run; a server refusal that names its own code, such as a Work Session gate, keeps that code instead) or file_write_timeout (the host did not report the file written within about a minute; re-run once the host is reachable). For a script that already exists on the host—the usual "bash /opt/deploy.sh"—pass read_from_server=true and omit content: the call downloads the file at path as username through WebFTP and submits those exact bytes, so you never copy the script by hand. read_from_server cannot be combined with write_file or content (error_code file_exec_invalid_options). If the read fails, nothing is submitted: error_code file_read_failed (the file is missing, the account cannot read it, or it is not UTF-8 text; a server refusal that names its own code keeps that code) or file_read_timeout; an empty file is refused with file_exec_empty_content and one over 64 KB with file_exec_content_too_large. Waiting for the read (up to about a minute) also comes before timeout. The agent still hashes the on-disk file at execution, so a file changed after the read fails closed. write_file and read_from_server both default to false: then the file must already exist at path on the target host, and content is what the reviewer judges; it is never shipped to the host. Put composition inside the script: pipes, redirection, &&, and environment variables are reviewed there. Free-text composition around a verified file (a pipe into it, an env prefix, extra shell) is not possible on this lane, by design—a one-off composition belongs on execute_command. Refusals to act on rather than retry, each returned as error_code: file_exec_unsupported_agent (the agent on that server did not report support for this lane: if it runs alpamon older than 2.8.3, upgrade it to 2.8.3 or newer or use execute_command; if it already runs 2.8.3 or newer, its build has no file lane on that platform, such as Windows, so upgrading does not help—use execute_command), file_exec_assessor_disabled (this deployment has the command assessor off, so the lane is unavailable—use execute_command), file_exec_invalid_path (path or interpreter is not absolute), file_exec_content_too_large, file_exec_empty_content, file_exec_line_too_long (interpreter + path + args exceed the command line ceiling—shorten args), file_exec_invalid_reuse_days (reuse_days is outside 1 to 366—fix it or omit it), file_exec_reuse_exceeds_max (reuse_days is above the workspace\'s ceiling—resubmit with a shorter duration or none). None of these has a request waiting behind it, so do not wait on them. Otherwise the run follows the same rules as execute_command: a sudo inside the script is denied at once and reported in sudo_denial or sudo_hint, so rerun after a person clears a sudo_denial (when it carries held, follow its wait_hint, which waits with check_command_status on this command_id until data.sudo_grant_status reads authorized, stops on rejected, and on expired, or once held.expires_at has passed even if it reads authorized, asks the user whether to re-submit; approval does not resume the run, and sudo_hint beside it names another sudo call that was denied outright), a status of pending_approval with category COMMAND_AWAITING_APPROVAL means a human decides out-of-band and the script then runs on its own, purpose_required is answered with state_command_purpose, and the result carries stdout, stderr, and exit code. When to use: deploy or maintenance scripts, anything you would otherwise run as "bash file" or feed through a heredoc, a script already on the host whose "bash /path" line was held for approval, and any script you expect to run again unchanged. Related: execute_command (one-off shell line), webftp_upload_content (put a file on the host without running it), state_command_purpose, list_commands.',
     annotations=ADDITIVE,
     meta={
         'anthropic/alwaysLoad': True,
@@ -2079,7 +2119,7 @@ async def state_command_purpose(
 
 
 @mcp_tool_handler(
-    description="Read one command's current state and result by command_id, in a single call that never waits. Returns the result once the command has finished, or the same status results execute_command gives: pending_approval while a human must approve it, purpose_required while the gate asks what it is for, an error when it was refused, and otherwise a success whose message says it has not finished, with a next_action to check again. A stuck status means the agent has not reported for over 10 minutes; the command may still finish, so it is not a failure. When to use: after execute_command with wait=false, after an execute_command call that timed out, for a command id from an execute_command_multi_server result, or to follow a command held for approval or a sudo_denial whose held names an open approval, until data.sudo_grant_status settles; held turning null does not end that wait. This only reads: it does not resubmit, cancel or approve anything, and a resubmission runs the command again. Related: execute_command (submit; wait=false returns the id at once), execute_command_multi_server (each accepted server entry carries command_id), list_commands (browse history when no id is known), state_command_purpose (answer a purpose demand).",
+    description="Read one command's current state and result by command_id, in a single call that never waits. Returns the result once the command has finished, or the same status results execute_command gives: pending_approval while a human must approve it, purpose_required while the gate asks what it is for, an error when it was refused, and otherwise a success whose message says it has not finished, with a next_action to check again. A stuck status means the agent has not reported for over 10 minutes; the command may still finish, so it is not a failure. When to use: after execute_command with wait=false, after an execute_command call that timed out, for a command id from an execute_command_multi_server result, or to follow a command held for approval or a sudo_denial whose held names an open approval, until data.sudo_grant_status settles; held turning null does not end that wait, and once the grant settles the sudo_denial's next_action says whether to re-submit. This only reads: it does not resubmit, cancel or approve anything, and a resubmission runs the command again. Related: execute_command (submit; wait=false returns the id at once), execute_command_multi_server (each accepted server entry carries command_id), list_commands (browse history when no id is known), state_command_purpose (answer a purpose demand).",
     annotations=READ_ONLY,
     meta={
         'anthropic/searchHint': 'command status result check poll command_id detached'
