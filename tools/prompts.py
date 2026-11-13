@@ -76,9 +76,10 @@ here is judged in real time and recorded. Follow this discipline.
    does not wait: unless a Work Session sudo policy already covers it, the server denies it
    at once and the command finishes with the denial in its result. Surface a `sudo_denial`
    to a human and rerun the command after they act. A `sudo_hint` with no `sudo_denial` is
-   a hard denial with no request behind it, so waiting on it never ends. So do not prefix
-   commands with `sudo` by default—a needless `sudo` costs you the whole command. Use it
-   only when the command genuinely requires root.
+   a hard denial with no request behind it, so waiting on it never ends; beside a
+   `sudo_denial`, it names another sudo call in the line that a rerun hits again. So do
+   not prefix commands with `sudo` by default—a needless `sudo` costs you the whole
+   command. Use it only when the command genuinely requires root.
 
 4. On a denial, read the structured category and `next_action` and self-correct—the
    field is `code` on a Work Session gate refusal, `error_code` on any other `error` result,
