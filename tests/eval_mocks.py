@@ -37,6 +37,7 @@ UPLOAD_ID = 'f1e2d3c4-b5a6-4978-8a9b-0c1d2e3f4a5b'
 SID3 = '9f3c1d7a-4e2b-4a68-b5c9-1d2e3f4a5b6c'
 PATCH_CASE = 'remediate-stops-on-first-failure/mocks/alpacon'
 SECOND_CASE = 'remediate-stops-at-second-failure/mocks/alpacon'
+PREFLIGHT_CASE = 'remediate-asks-on-preflight-anomaly/mocks/alpacon'
 PATCH_SESSION = {
     'servers': [SID, SID2],
     'scopes': ['command', 'webftp'],
@@ -405,6 +406,7 @@ MOCKS: list[Mock] = [
     ),
     *_rollout_mocks(PATCH_CASE, PATCH_SESSION),
     *_rollout_mocks(SECOND_CASE, SECOND_SESSION),
+    *_rollout_mocks(PREFLIGHT_CASE, SECOND_SESSION),
     Mock(  # every run of the recipe fails, so only the first server may see one
         f'{PATCH_CASE}/execute_file.md',
         {
@@ -453,6 +455,8 @@ HAND_WRITTEN = {
     f'{PATCH_CASE}/execute_command.md',
     f'{SECOND_CASE}/execute_command.md',
     f'{SECOND_CASE}/execute_file.md',  # an agent responder: each server answers differently
+    f'{PREFLIGHT_CASE}/execute_command.md',
+    f'{PREFLIGHT_CASE}/execute_file.md',
 }
 
 
