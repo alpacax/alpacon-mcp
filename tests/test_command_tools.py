@@ -20,11 +20,16 @@ from tests.conftest import (
     tool_descriptions,
 )
 from tools.command_tools import (
+    _CANCELLED_GRANT_HINT,
     _COMMAND_DESCRIPTION,
     _FILE_PHASE_GENERIC_HINT,
     _FILE_PHASE_HINTS,
+    _HELD_HARD_NOTE,
+    _OTHER_DENIAL_NOTE,
+    _SETTLED_GRANT_HINTS,
     _SUDO_DENIAL_HINTS,
     _SUDO_HUMAN_APPROVAL_CODES,
+    _UNBOUND_GRANT_HINT,
     DO_NOT_RESUBMIT,
     FILE_CONTENT_MAX_BYTES,
     FILE_REUSE_DAYS_MAX,
@@ -5857,6 +5862,7 @@ _HARD_AND_PENDING = [
 ]
 _HARD_AND_PENDING_IDS = ['sudo hard || sudo pending', 'sudo pending; sudo hard']
 
+_OUTRIGHT_RISK = _HELD_HARD_NOTE.format(code='SUDO_RISK_DENIED')
 _TODAYS_SUDO_DENIAL = pending_approval_response(
     _SUDO_DENIAL_HINTS['SUDO_APPROVAL_REQUIRED'], category='SUDO_APPROVAL_REQUIRED'
 )
@@ -5893,10 +5899,13 @@ class TestHeldSudoApproval:
         )
         assert 'sudo_grant_status' in denial['wait_hint']
         assert 're-submit the whole command' in denial['wait_hint']
-        assert 'held turning null does not end the wait' in denial['wait_hint']
+        assert (
+            'held turning null while it still reads pending_approval means the '
+            'request was cancelled' in denial['wait_hint']
+        )
         assert 'not a place to wait' in denial['wait_hint']
         assert 'denied outright' not in denial['wait_hint']
-        assert 'follow only the newest' not in denial['wait_hint']
+        assert 'follow the newest' not in denial['wait_hint']
         mock_http_client.get.assert_awaited_once_with(
             region='ap1',
             workspace='testworkspace',
@@ -5921,23 +5930,39 @@ class TestHeldSudoApproval:
                 timeout=10,
             )
 
+        assert result['status'] == 'success'
         assert result['sudo_denial']['held'] == _held()
         assert _HELD_COMMAND_ID in result['sudo_denial']['wait_hint']
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        'held_field',
-        [{}, {'held': None}],
-        ids=['an older server sends no key', 'held null after a cancel'],
-    )
-    async def test_no_held_keeps_todays_sudo_denial(
-        self, held_field, mock_http_client, mock_token_manager
+    async def test_an_older_server_without_held_keeps_todays_sudo_denial(
+        self, mock_http_client, mock_token_manager
     ):
-        result = await self._check(mock_http_client, _sudo_held_row(**held_field))
+        result = await self._check(mock_http_client, _sudo_held_row())
 
         assert result['status'] == 'success'
         assert result['sudo_denial'] == _TODAYS_SUDO_DENIAL
         assert result['data']['sudo_grant_status'] == 'pending_approval'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'codes',
+        [['SUDO_APPROVAL_REQUIRED'], ['SUDO_RISK_DENIED', 'SUDO_APPROVAL_REQUIRED']],
+        ids=['alone', 'beside a hard denial'],
+    )
+    async def test_a_cancelled_request_stops_the_wait_and_asks_the_user(
+        self, codes, mock_http_client, mock_token_manager
+    ):
+        row = _sudo_held_row(held=None, result=_denial_lines(*codes))
+
+        result = await self._check(mock_http_client, row)
+
+        denial = result['sudo_denial']
+        assert result['status'] == 'success'
+        assert 'held' not in denial
+        assert denial['next_action'].startswith(_CANCELLED_GRANT_HINT)
+        assert denial['message'] == denial['next_action']
+        assert 'Wait for approval' not in denial['next_action']
 
     @pytest.mark.asyncio
     async def test_a_null_expiry_is_reported_as_no_known_deadline(
@@ -5948,6 +5973,7 @@ class TestHeldSudoApproval:
         result = await self._check(mock_http_client, row)
 
         denial = result['sudo_denial']
+        assert result['status'] == 'success'
         assert denial['held'] == _held(expires_at=None)
         assert 'no deadline' in denial['wait_hint']
         assert 'check_command_status' in denial['wait_hint']
@@ -5966,6 +5992,7 @@ class TestHeldSudoApproval:
         result = await self._check(mock_http_client, row)
 
         denial = result['sudo_denial']
+        assert result['status'] == 'success'
         assert denial['held']['expires_at'] is None
         assert 'no deadline' in denial['wait_hint']
 
@@ -5990,7 +6017,7 @@ class TestHeldSudoApproval:
         assert denial['next_action'] == (
             'Do not wait on this approval, since its deadline has passed, and do '
             'not re-submit on your own: ask the user whether to re-submit the '
-            'whole command, which requests a new approval.'
+            'whole command, which may request a new approval.'
         )
         assert denial['status'] == 'pending_approval'
         assert denial['approvable_by_agent'] is False
@@ -6027,6 +6054,7 @@ class TestHeldSudoApproval:
         result = await self._check(mock_http_client, row)
 
         denial = result['sudo_denial']
+        assert result['status'] == 'success'
         assert denial['held'] == {
             'approval_request': _HELD_REQUEST_ID,
             'expires_at': _HELD_DEADLINE,
@@ -6041,6 +6069,7 @@ class TestHeldSudoApproval:
 
         result = await self._check(mock_http_client, row)
 
+        assert result['status'] == 'success'
         assert 'approval_request' not in result['sudo_denial']['held']
         assert result['sudo_denial']['held']['status_path'] == _HELD_STATUS_PATH
 
@@ -6060,19 +6089,24 @@ class TestHeldSudoApproval:
     @pytest.mark.parametrize('codes', _HARD_AND_PENDING, ids=_HARD_AND_PENDING_IDS)
     @pytest.mark.parametrize(
         'held_field',
-        [{}, {'held': None}],
-        ids=['an older server sends no key', 'held null'],
+        [{}],
+        ids=['an older server sends no key'],
     )
-    async def test_a_hard_denial_without_held_reports_only_the_hard_denial(
+    async def test_a_hard_denial_without_held_keeps_the_pending_denial_beside_it(
         self, codes, held_field, mock_http_client, mock_token_manager
     ):
         row = _sudo_held_row(result=_denial_lines(*codes), **held_field)
 
         result = await self._check(mock_http_client, row)
 
+        denial = result['sudo_denial']
         assert result['status'] == 'success'
-        assert 'sudo_denial' not in result
         assert result['sudo_hint'] == _SUDO_DENIAL_HINTS['SUDO_RISK_DENIED']
+        assert denial['category'] == 'SUDO_APPROVAL_REQUIRED'
+        assert 'held' not in denial
+        assert denial['next_action'] == ' '.join(
+            [_TODAYS_SUDO_DENIAL['next_action'], _OUTRIGHT_RISK]
+        )
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize('codes', _HARD_AND_PENDING, ids=_HARD_AND_PENDING_IDS)
@@ -6087,13 +6121,39 @@ class TestHeldSudoApproval:
         assert result['status'] == 'success'
         assert result['sudo_hint'] == _SUDO_DENIAL_HINTS['SUDO_RISK_DENIED']
         assert denial['category'] == 'SUDO_APPROVAL_REQUIRED'
-        assert denial['next_action'] == _TODAYS_SUDO_DENIAL['next_action']
-        assert denial['held'] == _held()
-        assert (
-            'denied outright (SUDO_RISK_DENIED) and is denied again on a re-submission'
-            in denial['wait_hint']
+        assert denial['next_action'] == ' '.join(
+            [_TODAYS_SUDO_DENIAL['next_action'], _OUTRIGHT_RISK]
         )
-        assert 'follow only the newest' not in denial['wait_hint']
+        assert denial['held'] == _held()
+        assert denial['wait_hint'].endswith(_OUTRIGHT_RISK)
+        assert 'follow the newest' not in denial['wait_hint']
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('codes', _HARD_AND_PENDING, ids=_HARD_AND_PENDING_IDS)
+    @pytest.mark.parametrize('grant_status', ['authorized', 'rejected', 'expired'])
+    @pytest.mark.parametrize(
+        'held_field',
+        [{}, {'held': None}],
+        ids=['an older server sends no key', 'held null after the decision'],
+    )
+    async def test_a_hard_denial_beside_a_settled_grant_keeps_the_settled_denial(
+        self, codes, grant_status, held_field, mock_http_client, mock_token_manager
+    ):
+        row = _sudo_held_row(
+            result=_denial_lines(*codes), sudo_grant_status=grant_status, **held_field
+        )
+
+        result = await self._check(mock_http_client, row)
+
+        denial = result['sudo_denial']
+        assert result['status'] == 'success'
+        assert result['sudo_hint'] == _SUDO_DENIAL_HINTS['SUDO_RISK_DENIED']
+        assert denial['category'] == 'SUDO_APPROVAL_REQUIRED'
+        assert denial['next_action'] == denial['message']
+        assert 'held' not in denial
+        assert denial['next_action'] == ' '.join(
+            [_SETTLED_GRANT_HINTS[grant_status], _OUTRIGHT_RISK]
+        )
 
     @pytest.mark.asyncio
     async def test_a_hard_denial_beside_a_lapsed_approval_keeps_asking_the_user(
@@ -6126,16 +6186,20 @@ class TestHeldSudoApproval:
 
         denial = result['sudo_denial']
         assert result['status'] == 'success'
-        assert denial['category'] == 'SUDO_INTENT_DEVIATION'
+        assert denial['category'] == 'SUDO_APPROVAL_REQUIRED'
         assert result['sudo_hint'] == denial['message']
-        assert 'follow only the newest approval' in denial['wait_hint']
+        assert (
+            'more than one approval (SUDO_INTENT_DEVIATION, SUDO_APPROVAL_REQUIRED)'
+            in denial['wait_hint']
+        )
+        assert 'follow the newest' in denial['next_action']
         assert 'denied outright' not in denial['wait_hint']
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
         ('grant_status', 'says'),
         [
-            ('authorized', 'Re-submit the whole command, unless a held.expires_at'),
+            ('authorized', 'If an earlier result for this command carried held'),
             ('rejected', 'Do not re-submit the command; tell the user.'),
             ('expired', 'ask the user whether to re-submit'),
         ],
@@ -6169,8 +6233,133 @@ class TestHeldSudoApproval:
 
         denial = result['sudo_denial']
         assert result['status'] == 'success'
-        assert 'Re-submit the whole command' in denial['next_action']
-        assert 'follow only the newest approval' in denial['next_action']
+        assert denial['next_action'].startswith(_SETTLED_GRANT_HINTS['authorized'])
+        assert 'follow the newest' in denial['next_action']
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'grant_status',
+        [None, 'used'],
+        ids=['grant moved to a re-submission', 'grant used'],
+    )
+    async def test_an_unbound_grant_stops_the_wait_and_asks_the_user(
+        self, grant_status, mock_http_client, mock_token_manager
+    ):
+        row = _sudo_held_row(held=None, sudo_grant_status=grant_status)
+
+        result = await self._check(mock_http_client, row)
+
+        denial = result['sudo_denial']
+        assert result['status'] == 'success'
+        assert denial['next_action'] == _UNBOUND_GRANT_HINT
+        assert denial['message'] == _UNBOUND_GRANT_HINT
+        assert result['sudo_hint'] == _UNBOUND_GRANT_HINT
+
+    @pytest.mark.asyncio
+    async def test_an_older_server_without_the_grant_field_keeps_todays_denial(
+        self, mock_http_client, mock_token_manager
+    ):
+        row = _sudo_held_row()
+        del row['sudo_grant_status']
+
+        result = await self._check(mock_http_client, row)
+
+        assert result['status'] == 'success'
+        assert result['sudo_denial'] == _TODAYS_SUDO_DENIAL
+
+    @pytest.mark.asyncio
+    async def test_a_settled_grant_wins_over_a_malformed_held(
+        self, mock_http_client, mock_token_manager
+    ):
+        row = _sudo_held_row(held={}, sudo_grant_status='rejected')
+
+        result = await self._check(mock_http_client, row)
+
+        denial = result['sudo_denial']
+        assert result['status'] == 'success'
+        assert 'held' not in denial
+        assert denial['next_action'] == _SETTLED_GRANT_HINTS['rejected']
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'codes',
+        [
+            ['SUDO_PRESENCE_REQUIRED', 'SUDO_APPROVAL_REQUIRED'],
+            ['SUDO_APPROVAL_REQUIRED', 'SUDO_PRESENCE_REQUIRED'],
+            ['SUDO_NO_WORKSESSION_POLICY', 'SUDO_APPROVAL_REQUIRED'],
+        ],
+        ids=['after an MFA denial', 'before an MFA denial', 'after a missing policy'],
+    )
+    async def test_held_and_category_name_the_same_approval(
+        self, codes, mock_http_client, mock_token_manager
+    ):
+        row = _sudo_held_row(held=_held(), result=_denial_lines(*codes))
+
+        result = await self._check(mock_http_client, row)
+
+        denial = result['sudo_denial']
+        assert result['status'] == 'success'
+        assert denial['category'] == 'SUDO_APPROVAL_REQUIRED'
+        assert denial['held'] == _held()
+        other = next(c for c in codes if c != 'SUDO_APPROVAL_REQUIRED')
+        note = _OTHER_DENIAL_NOTE.format(code=other, hint=_SUDO_DENIAL_HINTS[other])
+        assert denial['next_action'].endswith(note)
+        assert denial['wait_hint'].endswith(note)
+        assert 'follow the newest' not in denial['next_action']
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('codes', _HARD_AND_PENDING, ids=_HARD_AND_PENDING_IDS)
+    async def test_list_commands_keeps_a_pending_denial_beside_a_hard_one(
+        self, codes, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {
+            'count': 1,
+            'results': [_sudo_held_row(held=_held(), result=_denial_lines(*codes))],
+        }
+
+        result = await list_commands(workspace='testworkspace')
+
+        entry = result['data']['results'][0]
+        assert result['status'] == 'success'
+        assert entry['sudo_hint'] == _SUDO_DENIAL_HINTS['SUDO_RISK_DENIED']
+        assert 'held' not in entry['sudo_denial']
+        assert entry['sudo_denial']['next_action'].endswith(_OUTRIGHT_RISK)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('grant_status', ['rejected', 'expired'])
+    async def test_a_decided_grant_after_several_approvals_adds_no_resubmit_note(
+        self, grant_status, mock_http_client, mock_token_manager
+    ):
+        row = _sudo_held_row(
+            held=None,
+            sudo_grant_status=grant_status,
+            result=_denial_lines('SUDO_INTENT_DEVIATION', 'SUDO_APPROVAL_REQUIRED'),
+        )
+
+        result = await self._check(mock_http_client, row)
+
+        assert result['status'] == 'success'
+        assert (
+            result['sudo_denial']['next_action'] == _SETTLED_GRANT_HINTS[grant_status]
+        )
+
+    @pytest.mark.asyncio
+    async def test_an_authorized_grant_of_another_sudo_call_is_not_read_as_approval(
+        self, mock_http_client, mock_token_manager
+    ):
+        # sudo a; sudo b: a filed an approval, b ran under a session policy.
+        row = _sudo_held_row(
+            held=None,
+            sudo_grant_status='authorized',
+            result=_denial_lines('SUDO_APPROVAL_REQUIRED') + 'uid=0(root)\n',
+        )
+
+        result = await self._check(mock_http_client, row)
+
+        next_action = result['sudo_denial']['next_action']
+        assert result['status'] == 'success'
+        assert 'If none did' in next_action
+        assert 'do not re-submit; ask the user' in next_action
 
     @pytest.mark.asyncio
     async def test_list_commands_keeps_todays_denial_for_a_settled_grant(
@@ -6197,4 +6386,5 @@ class TestHeldSudoApproval:
 
         result = await list_commands(workspace='testworkspace')
 
+        assert result['status'] == 'success'
         assert result['data']['results'][0]['sudo_denial'] == _TODAYS_SUDO_DENIAL

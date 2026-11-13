@@ -363,8 +363,8 @@ The `security_audit` prompt helps pick between these lenses when the question is
    (see "The shape of the flow" above) and run `sudo apt-get upgrade -y` through `execute_command`.
    A sudo invocation not already covered by a Work Session sudo policy is denied at once, and the
    command finishes with the denial in its result. With `sudo_denial`, surface its `category` to a
-   human and rerun the command after they act; a `sudo_hint` with no `sudo_denial` is a hard denial
-   that no one can approve, and a `sudo_hint` beside one names another sudo call that a rerun hits again
+   human and follow its `next_action`, which says when to rerun the command; a `sudo_hint` with no `sudo_denial` is a hard denial
+   that no one can approve; when the `sudo_denial` says another sudo call was denied outright, `sudo_hint` names that call, and a rerun hits it again
 4. `sudo reboot` through `execute_command` in that same session if the upgrade needs a restart
 
 Python packages have the same trio: `list_python_packages`, `install_python_package`, `remove_python_package`.
