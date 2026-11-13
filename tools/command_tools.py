@@ -184,6 +184,12 @@ _FILE_CONTENT_DESCRIPTION = (
     'be non-empty.'
 )
 
+_GROUPNAME_DESCRIPTION = (
+    "Group to run as. Omit it to run as the account's primary group on the "
+    'server, which the server chooses; pass it only to name a different group '
+    'the account may use.'
+)
+
 _FILE_USERNAME_DESCRIPTION = (
     'Pass it whenever ownership matters; omitted, the writing account is the '
     "server's WebFTP default."
@@ -449,6 +455,8 @@ def _rerun_coordinates(result: _CommandRecord) -> dict[str, str]:
     candidates = (
         ('server_id', server.get('id') if isinstance(server, dict) else server),
         ('username', result.get('username')),
+        # Rows recorded before the server resolved the primary group carry
+        # the old 'alpacon' default; resending it would pin that group.
         ('groupname', groupname if groupname != 'alpacon' else None),
         (
             'work_session_id',
@@ -546,7 +554,7 @@ async def _submit_command(
     workspace: str,
     shell: str = 'system',
     username: str | None = None,
-    groupname: str = 'alpacon',
+    groupname: str | None = None,
     env: dict[str, str] | None = None,
     run_after: list[str] | None = None,
     scheduled_at: str | None = None,
@@ -562,8 +570,9 @@ async def _submit_command(
         'server': server_id,
         'shell': shell,
         'line': command,
-        'groupname': groupname,
     }
+    if groupname:
+        command_data['groupname'] = groupname
 
     if env:
         command_data['env'] = env
@@ -598,7 +607,7 @@ async def _submit_file_execution(
     args: list[str] | None = None,
     reuse_days: int | None = None,
     username: str | None = None,
-    groupname: str = 'alpacon',
+    groupname: str | None = None,
     run_after: list[str] | None = None,
     scheduled_at: str | None = None,
     work_session_id: str | None = None,
@@ -619,9 +628,10 @@ async def _submit_file_execution(
     }
     command_data: dict[str, object] = {
         'server': server_id,
-        'groupname': groupname,
         'file': file_spec,
     }
+    if groupname:
+        command_data['groupname'] = groupname
     command_data.update(
         _requester_fields(
             username=username,
@@ -807,7 +817,7 @@ async def execute_command(
     workspace: str,
     shell: str = 'system',
     username: str | None = None,
-    groupname: str = 'alpacon',
+    groupname: Annotated[str | None, Field(description=_GROUPNAME_DESCRIPTION)] = None,
     env: dict[str, str] | None = None,
     run_after: list[str] | None = None,
     scheduled_at: str | None = None,
@@ -872,7 +882,7 @@ async def execute_command(
         arguments = suggested['arguments']
         if username is not None:
             arguments['username'] = username
-        if groupname != 'alpacon':
+        if groupname:
             arguments['groupname'] = groupname
         if work_session_id is not None:
             arguments['work_session_id'] = work_session_id
@@ -1240,7 +1250,7 @@ async def _write_file_to_host(
     content: str,
     workspace: str,
     username: str | None,
-    groupname: str,
+    groupname: str | None,
     overwrite: bool,
     work_session_id: str | None,
     region: str,
@@ -1256,9 +1266,8 @@ async def _write_file_to_host(
     }
     if username:
         upload_data['username'] = username
-    # The default stays off the upload so a new file takes the writing
-    # account's own group; the server would otherwise hand it to 'alpacon'.
-    if groupname != 'alpacon':
+    # Left off when unnamed so a new file takes the writing account's own group.
+    if groupname:
         upload_data['groupname'] = groupname
     if ws_id := resolve_work_session_id(work_session_id):
         upload_data['work_session'] = ws_id
@@ -1360,7 +1369,7 @@ def _file_exec_refusal(code: str, **kwargs: object) -> ToolErrorResponse:
 
 
 @mcp_tool_handler(
-    description='Run a script on a server as a verified file, writing it there first in the same call when write_file is true, or reading its bytes from there when read_from_server is true: the reviewer and the assessor judge the exact bytes you submit, and the agent executes the file only if the bytes on the host\'s disk hash to the same digest. Prefer this over execute_command for anything longer than a one-off line—a script, a heredoc, a "bash /tmp/deploy.sh" line. Why: once an approver marks a verified file standing, an unchanged re-run of it (same bytes, same server, same account, same args) is admitted without paging a human; a "bash /path" shell line never can be, because nothing about the path proves what runs. What approving means: it authorizes exactly these bytes, on this server, as this account, with these arguments—not "this file is safe". One changed byte re-queues human review. The environment, libraries, interpreter version, and anything the script fetches or executes at runtime are not verified and stay the executor\'s responsibility; only this first entrypoint is. How to use: for any script or heredoc, pass write_file=true with the script as content—the one-step form. This call then writes content to path on the host through WebFTP and submits those same bytes for review only once the host reports the file written. An existing file at path is refused (error_code file_write_failed, saying the file already exists) unless you also pass overwrite=true; to re-run a script already on the host, use read_from_server instead of writing it again. overwrite requires write_file (error_code file_exec_invalid_options otherwise). A new file is owned by username and that account\'s own group, or by groupname when you pass one other than the default; an existing file replaced with overwrite keeps its owner and mode, and must be writable by username. The account also needs write access to the directory for a new file. No execute bit is needed, because the interpreter runs the file. The write happens before the run is reviewed, as a webftp_upload_content call would, so a run that is later denied leaves the new file in place. Waiting for the write (up to about a minute) comes before, and on top of, timeout. If the write fails, nothing is submitted: error_code file_write_failed (fix the cause, such as the path or the account\'s permissions, and re-run; a server refusal that names its own code, such as a Work Session gate, keeps that code instead) or file_write_timeout (the host did not report the file written within about a minute; re-run once the host is reachable). For a script that already exists on the host—the usual "bash /opt/deploy.sh"—pass read_from_server=true and omit content: the call downloads the file at path as username through WebFTP and submits those exact bytes, so you never copy the script by hand. read_from_server cannot be combined with write_file or content (error_code file_exec_invalid_options). If the read fails, nothing is submitted: error_code file_read_failed (the file is missing, the account cannot read it, or it is not UTF-8 text; a server refusal that names its own code keeps that code) or file_read_timeout; an empty file is refused with file_exec_empty_content and one over 64 KB with file_exec_content_too_large. Waiting for the read (up to about a minute) also comes before timeout. The agent still hashes the on-disk file at execution, so a file changed after the read fails closed. write_file and read_from_server both default to false: then the file must already exist at path on the target host, and content is what the reviewer judges; it is never shipped to the host. Put composition inside the script: pipes, redirection, &&, and environment variables are reviewed there. Free-text composition around a verified file (a pipe into it, an env prefix, extra shell) is not possible on this lane, by design—a one-off composition belongs on execute_command. Refusals to act on rather than retry, each returned as error_code: file_exec_unsupported_agent (the agent on that server did not report support for this lane: if it runs alpamon older than 2.8.3, upgrade it to 2.8.3 or newer or use execute_command; if it already runs 2.8.3 or newer, its build has no file lane on that platform, such as Windows, so upgrading does not help—use execute_command), file_exec_assessor_disabled (this deployment has the command assessor off, so the lane is unavailable—use execute_command), file_exec_invalid_path (path or interpreter is not absolute), file_exec_content_too_large, file_exec_empty_content, file_exec_line_too_long (interpreter + path + args exceed the command line ceiling—shorten args), file_exec_invalid_reuse_days (reuse_days is outside 1 to 366—fix it or omit it), file_exec_reuse_exceeds_max (reuse_days is above the workspace\'s ceiling—resubmit with a shorter duration or none). None of these has a request waiting behind it, so do not wait on them. Otherwise the run follows the same rules as execute_command: a sudo inside the script is denied at once and reported in sudo_denial or sudo_hint, so rerun after a person clears a sudo_denial, a status of pending_approval with category COMMAND_AWAITING_APPROVAL means a human decides out-of-band and the script then runs on its own, purpose_required is answered with state_command_purpose, and the result carries stdout, stderr, and exit code. When to use: deploy or maintenance scripts, anything you would otherwise run as "bash file" or feed through a heredoc, a script already on the host whose "bash /path" line was held for approval, and any script you expect to run again unchanged. Related: execute_command (one-off shell line), webftp_upload_content (put a file on the host without running it), state_command_purpose, list_commands.',
+    description='Run a script on a server as a verified file, writing it there first in the same call when write_file is true, or reading its bytes from there when read_from_server is true: the reviewer and the assessor judge the exact bytes you submit, and the agent executes the file only if the bytes on the host\'s disk hash to the same digest. Prefer this over execute_command for anything longer than a one-off line—a script, a heredoc, a "bash /tmp/deploy.sh" line. Why: once an approver marks a verified file standing, an unchanged re-run of it (same bytes, same server, same account, same args) is admitted without paging a human; a "bash /path" shell line never can be, because nothing about the path proves what runs. What approving means: it authorizes exactly these bytes, on this server, as this account, with these arguments—not "this file is safe". One changed byte re-queues human review. The environment, libraries, interpreter version, and anything the script fetches or executes at runtime are not verified and stay the executor\'s responsibility; only this first entrypoint is. How to use: for any script or heredoc, pass write_file=true with the script as content—the one-step form. This call then writes content to path on the host through WebFTP and submits those same bytes for review only once the host reports the file written. An existing file at path is refused (error_code file_write_failed, saying the file already exists) unless you also pass overwrite=true; to re-run a script already on the host, use read_from_server instead of writing it again. overwrite requires write_file (error_code file_exec_invalid_options otherwise). A new file is owned by username and that account\'s own group, or by groupname when you pass one; an existing file replaced with overwrite keeps its owner and mode, and must be writable by username. The account also needs write access to the directory for a new file. No execute bit is needed, because the interpreter runs the file. The write happens before the run is reviewed, as a webftp_upload_content call would, so a run that is later denied leaves the new file in place. Waiting for the write (up to about a minute) comes before, and on top of, timeout. If the write fails, nothing is submitted: error_code file_write_failed (fix the cause, such as the path or the account\'s permissions, and re-run; a server refusal that names its own code, such as a Work Session gate, keeps that code instead) or file_write_timeout (the host did not report the file written within about a minute; re-run once the host is reachable). For a script that already exists on the host—the usual "bash /opt/deploy.sh"—pass read_from_server=true and omit content: the call downloads the file at path as username through WebFTP and submits those exact bytes, so you never copy the script by hand. read_from_server cannot be combined with write_file or content (error_code file_exec_invalid_options). If the read fails, nothing is submitted: error_code file_read_failed (the file is missing, the account cannot read it, or it is not UTF-8 text; a server refusal that names its own code keeps that code) or file_read_timeout; an empty file is refused with file_exec_empty_content and one over 64 KB with file_exec_content_too_large. Waiting for the read (up to about a minute) also comes before timeout. The agent still hashes the on-disk file at execution, so a file changed after the read fails closed. write_file and read_from_server both default to false: then the file must already exist at path on the target host, and content is what the reviewer judges; it is never shipped to the host. Put composition inside the script: pipes, redirection, &&, and environment variables are reviewed there. Free-text composition around a verified file (a pipe into it, an env prefix, extra shell) is not possible on this lane, by design—a one-off composition belongs on execute_command. Refusals to act on rather than retry, each returned as error_code: file_exec_unsupported_agent (the agent on that server did not report support for this lane: if it runs alpamon older than 2.8.3, upgrade it to 2.8.3 or newer or use execute_command; if it already runs 2.8.3 or newer, its build has no file lane on that platform, such as Windows, so upgrading does not help—use execute_command), file_exec_assessor_disabled (this deployment has the command assessor off, so the lane is unavailable—use execute_command), file_exec_invalid_path (path or interpreter is not absolute), file_exec_content_too_large, file_exec_empty_content, file_exec_line_too_long (interpreter + path + args exceed the command line ceiling—shorten args), file_exec_invalid_reuse_days (reuse_days is outside 1 to 366—fix it or omit it), file_exec_reuse_exceeds_max (reuse_days is above the workspace\'s ceiling—resubmit with a shorter duration or none). None of these has a request waiting behind it, so do not wait on them. Otherwise the run follows the same rules as execute_command: a sudo inside the script is denied at once and reported in sudo_denial or sudo_hint, so rerun after a person clears a sudo_denial, a status of pending_approval with category COMMAND_AWAITING_APPROVAL means a human decides out-of-band and the script then runs on its own, purpose_required is answered with state_command_purpose, and the result carries stdout, stderr, and exit code. When to use: deploy or maintenance scripts, anything you would otherwise run as "bash file" or feed through a heredoc, a script already on the host whose "bash /path" line was held for approval, and any script you expect to run again unchanged. Related: execute_command (one-off shell line), webftp_upload_content (put a file on the host without running it), state_command_purpose, list_commands.',
     annotations=ADDITIVE,
     meta={
         'anthropic/alwaysLoad': True,
@@ -1385,7 +1394,7 @@ async def execute_file(
     username: Annotated[
         str | None, Field(description=_FILE_USERNAME_DESCRIPTION)
     ] = None,
-    groupname: str = 'alpacon',
+    groupname: Annotated[str | None, Field(description=_GROUPNAME_DESCRIPTION)] = None,
     run_after: list[str] | None = None,
     scheduled_at: str | None = None,
     timeout: Annotated[int, Field(description=_FILE_TIMEOUT_DESCRIPTION)] = 300,
@@ -2053,7 +2062,7 @@ async def execute_command_multi_server(
     workspace: str,
     shell: str = 'system',
     username: str | None = None,
-    groupname: str = 'alpacon',
+    groupname: Annotated[str | None, Field(description=_GROUPNAME_DESCRIPTION)] = None,
     env: dict[str, str] | None = None,
     region: str = '',
     parallel: Annotated[bool, Field(description=_PARALLEL_DESCRIPTION)] = True,
