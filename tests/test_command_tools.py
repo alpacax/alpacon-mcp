@@ -6028,12 +6028,23 @@ class TestHeldSudoApproval:
         assert result['sudo_denial']['held']['status_path'] == _HELD_STATUS_PATH
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'codes',
+        [
+            ['SUDO_RISK_DENIED'],
+            ['SUDO_RISK_DENIED', 'SUDO_APPROVAL_REQUIRED'],
+            ['SUDO_APPROVAL_REQUIRED', 'SUDO_RISK_DENIED'],
+        ],
+        ids=['alone', 'before a pending approval', 'after a pending approval'],
+    )
     async def test_a_hard_denial_ignores_held(
-        self, mock_http_client, mock_token_manager
+        self, codes, mock_http_client, mock_token_manager
     ):
         row = _sudo_held_row(
             held=_held(),
-            result='Alpacon denied this sudo command (SUDO_RISK_DENIED).\n',
+            result=''.join(
+                f'Alpacon denied this sudo command ({code}).\n' for code in codes
+            ),
         )
 
         result = await self._check(mock_http_client, row)
