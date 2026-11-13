@@ -27,21 +27,22 @@ from utils.oauth._redirect_uris import (
     _is_allowed_redirect_uri,
     _is_registrable_uri_list,
 )
+from utils.oauth._sealing import _get_grant_secret, _mint_client_id
 
 
 @_allow_browser_clients
 async def oauth_register(request: Request) -> Response:
     """Dynamic Client Registration (RFC 7591): validates redirect_uris, returns the
-    pre-configured client_id, since Auth0 lacks DCR on non-Enterprise plans."""
+    opaque client_id carrying a stable installation identity."""
     try:
-        config = _require_registration_config()
+        _require_registration_config()
         client_metadata = await _parse_client_metadata(request)
         _validate_registered_redirect_uris(client_metadata)
+        response_data = _registration_body(client_metadata)
     except _OAuthRequestError as e:
         return e.response
 
-    response_data = _registration_body(config, client_metadata)
-    logger.info('Dynamic client registration: returning pre-configured client_id')
+    logger.info('Dynamic client registration: returning installation client_id')
     return JSONResponse(
         response_data,
         status_code=HTTPStatus.CREATED,
@@ -53,7 +54,9 @@ async def oauth_register(request: Request) -> Response:
 
 def _require_registration_config() -> dict[str, str]:
     try:
-        return _get_oauth_config()
+        config = _get_oauth_config()
+        _get_grant_secret()
+        return config
     except ValueError as e:
         logger.error('OAuth config error in /oauth/register: %s', e)
         raise _OAuthRequestError(
@@ -134,11 +137,9 @@ def _validate_registered_redirect_uris(client_metadata: dict[str, object]) -> No
         )
 
 
-def _registration_body(
-    config: dict[str, str], client_metadata: dict[str, object]
-) -> dict[str, object]:
+def _registration_body(client_metadata: dict[str, object]) -> dict[str, object]:
     response_data: dict[str, object] = {
-        'client_id': config['client_id'],
+        'client_id': _mint_client_id(),
         'token_endpoint_auth_method': _TOKEN_ENDPOINT_AUTH_NONE,
     }
     # Truthful only because these URIs cleared the check /oauth/authorize applies.
