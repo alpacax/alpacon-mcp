@@ -5873,6 +5873,9 @@ class TestHeldSudoApproval:
         assert denial['held'] == _held()
         assert f'decided by {_HELD_DEADLINE}' in denial['wait_hint']
         assert (
+            'reads authorized only after that time, ask the user' in denial['wait_hint']
+        )
+        assert (
             f'check_command_status with command_id {_HELD_COMMAND_ID}'
             in denial['wait_hint']
         )
