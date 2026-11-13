@@ -20,10 +20,10 @@ Previews do not lock out other package managers: arrange an exclusive maintenanc
 
 ## Preflight
 
-For a Debian or RHEL-family package, read each server's state in the same `execute_command` call as its preview: send the block for the distribution below, unchanged except for `pkg` or `cve`, as the preview's account. It prints one `key=value` line per fact, then the preview's own output, and exits with the preview's status. Every value is read-only.
+For a Debian or RHEL-family package, read each server's state in the same `execute_command` call as its preview: send the block for the distribution below, unchanged except for `pkg` or `cve` (and `sudo` before `dnf` on the `sudo` route), as the preview's account. It prints one `key=value` line per fact, then the preview's own output, and exits with the preview's status. Every value is read-only.
 
 - `transaction`: `changes` (on Debian, any `Inst`, `Conf` or `Remv` line, so a package left unconfigured counts), `empty` when the preview would change nothing, or `unreadable` when the preview failed.
-- `disk_free_<fs>` and `disk_need_<fs>`: KiB free on each filesystem holding `/`, `/usr` and `/var` (and `/boot` when a kernel is in the transaction), named by the mount point of the first path on it (`root`, `usr`, `var`, `boot`); paths on one filesystem share one set of keys: those whose `df` source is the same `/dev` device (Btrfs subvolumes of one pool included), or, for a source outside `/dev` such as `tmpfs`, the same device number (bind mounts included), and the KiB the transaction adds there. The download lands on the one holding `/var` and the installed-size growth on the one holding `/usr`; when they are one filesystem, the two add up. The growth includes what a kernel puts on `/boot`, so on a server with a separate `/boot` the need shown for `/usr` is an upper bound, and a shortfall there can be a false alarm the person clears. `unknown` marks a size the package manager never reports, such as the growth under dnf 4 (RHEL 8 to 10), which prints only the download size, and nothing is judged on it. dnf 4 prints only `Total size`, with no download line, when every package is already cached, and the download is then 0.
+- `disk_free_<fs>` and `disk_need_<fs>`: KiB free on each filesystem holding `/`, `/usr`, `/var` and the package cache (`Dir::Cache::archives` for apt, `/var/cache/libdnf5` or `/var/cache/dnf` for dnf), and `/boot` when a kernel is in the transaction,, named by the mount point of the first path on it (`root`, `usr`, `var`, `boot`); paths on one filesystem share one set of keys: those whose `df` source is the same `/dev` device (Btrfs subvolumes of one pool included), or, for a source outside `/dev` such as `tmpfs`, the same device number (bind mounts included), and the KiB the transaction adds there. The download lands on the one holding the package cache and the installed-size growth on the one holding `/usr`; when they are one filesystem, the two add up. The growth includes what a kernel puts on `/boot`, so on a server with a separate `/boot` the need shown for `/usr` is an upper bound, and a shortfall there can be a false alarm the person clears. `unknown` marks a size the package manager never reports, such as the growth under dnf 4 (RHEL 8 to 10), which prints only the download size, and nothing is judged on it. dnf 4 prints only `Total size`, with no download line, when every package is already cached, and the download is then 0.
 - `inode_free_<fs>`: free inodes, or `n/a` on a filesystem without a fixed count, such as btrfs.
 - `mount_<fs>`: `rw` or `ro`, or `unreadable` when `/proc/mounts` cannot be read.
 - `units`, `kubelet` and `mem_available`: the systemd services the transaction's packages ship in their installed version, whether `kubelet` runs, and `MemAvailable` in KiB. They are shown to the person and never judged. `units` lists what the packages ship now, not what the new version adds or what their scripts will restart, which no preview can tell; a package the transaction newly installs contributes nothing.
@@ -39,7 +39,8 @@ pkg=openssh-server
 sim=$(LC_ALL=C apt-get -s -q install --only-upgrade "$pkg"); rc=$?
 uris=$(LC_ALL=C apt-get -q --print-uris -y install --only-upgrade "$pkg") || uris=failed
 inst=$(printf '%s\n' "$sim" | awk '/^(Inst|Conf|Remv) / {print $2}' | sort -u)
-transaction=empty anomaly= unreadable= paths='/ /usr /var'
+eval "$(apt-config shell cache Dir::Cache::archives/d 2>/dev/null)"; cache=${cache%/}; [ -n "$cache" ] || cache=/var/cache/apt/archives
+transaction=empty anomaly= unreadable= paths="/ /usr /var $cache"
 if [ "$rc" -ne 0 ]; then transaction=unreadable unreadable=transaction; elif printf '%s\n' "$sim" | grep -Eq '^(Inst|Conf|Remv) '; then transaction=changes; fi
 audit=$(dpkg --audit 2>/dev/null) || [ -n "$audit" ] || unreadable="$unreadable dpkg_audit"
 [ -z "$audit" ] || anomaly=dpkg_audit
@@ -57,16 +58,17 @@ printf 'mem_available=%s\n' "$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo 2
 for p in $paths; do
   d=$(stat -L -c %d "$p" 2>/dev/null); i=$(df -Pi "$p" 2>/dev/null | awk 'NR == 2 {print $2, $4}')
   printf '%s %s %s %s\n' "$p" "${d:-?}" "${i:-? ?}" "$(df -Pk "$p" 2>/dev/null | awk 'NR == 2 {m = $6; for (f = 7; f <= NF; f++) m = m " " $f; print $1, $4, m}')"
-done | awk -v sizes="$sizes" -v a="$anomaly" -v u="$unreadable" -v mf=/proc/mounts '
+done | awk -v sizes="$sizes" -v a="$anomaly" -v u="$unreadable" -v mf=/proc/mounts -v cache="$cache" '
   function label(m) { m = substr(m, 2); gsub(/[^A-Za-z0-9]/, "_", m); return (m == "" ? "root" : m) }
   function need(m, v) { if (v == "unknown") unk[m] = 1; else if (v !~ /^[0-9]+$/) bad[m] = 1; else { sum[m] += v; known[m] = 1 } }
   BEGIN { split(sizes, s, " "); while ((getline line < mf) > 0) { split(line, w, " "); gsub(/\\040/, " ", w[2]); opt[w[2]] = w[4] } }
+  seen[$1]++ { next }
   NF < 7 || $6 !~ /^[0-9]+$/ { u = u " disk_" label($1); next }
   { k = $7; for (f = 8; f <= NF; f++) k = k " " $f
     if ($5 ~ /^\/dev\//) m = $5; else if ($2 != "?") m = $2; else { m = "mount " k; u = u " disk_" label($1) }
     if (!(m in free)) { order[++n] = m; name[m] = k; free[m] = $6 + 0; inodes[m] = $3; ifree[m] = $4 }
     if (!(k in opt)) mbad[m] = 1; else if (("," opt[k] ",") ~ /,ro,/) mro[m] = 1
-    if ($1 == "/var") need(m, s[1]); if ($1 == "/usr") need(m, s[2]) }
+    if ($1 == cache) need(m, s[1]); if ($1 == "/usr") need(m, s[2]) }
   END {
     for (i = 1; i <= n; i++) {
       m = order[i]; l = label(name[m]); v = known[m] ? sum[m] : ""
@@ -89,7 +91,8 @@ RHEL, Rocky, AlmaLinux and Fedora, as root (prefix `dnf` with `sudo` on the `sud
 cve=CVE-2099-0001
 sim=$(LC_ALL=C dnf --assumeno upgrade --cve "$cve" 2>&1); rc=$?
 inst=$(printf '%s\n' "$sim" | awk '$2 ~ /^(x86_64|aarch64|noarch|i686|ppc64le|s390x)$/ {print $1}')
-transaction=unreadable anomaly= unreadable=transaction paths='/ /usr /var'
+cache=/var; for c in /var/cache/libdnf5 /var/cache/dnf; do if [ -d "$c" ]; then cache=$c; break; fi; done
+transaction=unreadable anomaly= unreadable=transaction paths="/ /usr /var $cache"
 if [ -n "$inst" ]; then transaction=changes unreadable=; elif printf '%s\n' "$sim" | grep -q '^Nothing to do'; then transaction=empty unreadable=; fi
 if printf '%s\n' "$inst" | grep -Eq '^kernel(-|$)'; then paths="$paths /boot"; fi
 sizes=$(printf '%s\n' "$sim" | awk -v t="$transaction" '
@@ -106,16 +109,17 @@ printf 'mem_available=%s\n' "$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo 2
 for p in $paths; do
   d=$(stat -L -c %d "$p" 2>/dev/null); i=$(df -Pi "$p" 2>/dev/null | awk 'NR == 2 {print $2, $4}')
   printf '%s %s %s %s\n' "$p" "${d:-?}" "${i:-? ?}" "$(df -Pk "$p" 2>/dev/null | awk 'NR == 2 {m = $6; for (f = 7; f <= NF; f++) m = m " " $f; print $1, $4, m}')"
-done | awk -v sizes="$sizes" -v a="$anomaly" -v u="$unreadable" -v mf=/proc/mounts '
+done | awk -v sizes="$sizes" -v a="$anomaly" -v u="$unreadable" -v mf=/proc/mounts -v cache="$cache" '
   function label(m) { m = substr(m, 2); gsub(/[^A-Za-z0-9]/, "_", m); return (m == "" ? "root" : m) }
   function need(m, v) { if (v == "unknown") unk[m] = 1; else if (v !~ /^[0-9]+$/) bad[m] = 1; else { sum[m] += v; known[m] = 1 } }
   BEGIN { split(sizes, s, " "); while ((getline line < mf) > 0) { split(line, w, " "); gsub(/\\040/, " ", w[2]); opt[w[2]] = w[4] } }
+  seen[$1]++ { next }
   NF < 7 || $6 !~ /^[0-9]+$/ { u = u " disk_" label($1); next }
   { k = $7; for (f = 8; f <= NF; f++) k = k " " $f
     if ($5 ~ /^\/dev\//) m = $5; else if ($2 != "?") m = $2; else { m = "mount " k; u = u " disk_" label($1) }
     if (!(m in free)) { order[++n] = m; name[m] = k; free[m] = $6 + 0; inodes[m] = $3; ifree[m] = $4 }
     if (!(k in opt)) mbad[m] = 1; else if (("," opt[k] ",") ~ /,ro,/) mro[m] = 1
-    if ($1 == "/var") need(m, s[1]); if ($1 == "/usr") need(m, s[2]) }
+    if ($1 == cache) need(m, s[1]); if ($1 == "/usr") need(m, s[2]) }
   END {
     for (i = 1; i <= n; i++) {
       m = order[i]; l = label(name[m]); v = known[m] ? sum[m] : ""
