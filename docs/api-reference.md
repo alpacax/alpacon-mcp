@@ -484,8 +484,8 @@ Alpacon console (Commands) first, or the script waits on two approval requests. 
 it.
 
 When the held line instead carries a script body (a multi-line inline `-c`/`-e` body, a heredoc, or
-an encoded body decoded into an interpreter such as `base64 -d | bash`; a one-line pipeline or `&&`
-chain does not count), the server may report it in `script_body_suggestion`, and the response
+an encoded body decoded into an interpreter such as `base64 -d | bash`; a plain one-line pipeline
+such as `cat x.py | python3`, or an `&&` chain, does not count), the server may report it in `script_body_suggestion`, and the response
 then carries `script_body_suggestion: {"signal": "embedded_script"}` in place of the
 `read_from_server` hint. Its `message` says to move the body into a file and send it with
 `execute_file` and `write_file: true`, and, for code that runs inside a container or pod, to put the
