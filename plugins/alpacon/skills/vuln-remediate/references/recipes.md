@@ -28,7 +28,7 @@ For a Debian or RHEL-family package, read each server's state in the same `execu
 - `mount_<fs>`: `rw` or `ro`, or `unreadable` when `/proc/mounts` cannot be read.
 - `units`, `kubelet` and `mem_available`: the systemd services the transaction's packages ship in their installed version, whether `kubelet` runs, and `MemAvailable` in KiB. They are shown to the person and never judged. `units` lists what the packages ship now, not what the new version adds or what their scripts will restart, which no preview can tell; a package the transaction newly installs contributes nothing.
 - `anomaly`: `none`, or what is wrong as a matter of fact: `dpkg_audit` (`dpkg --audit` reports an interrupted run), `ro_<fs>`, `inode_<fs>` (no free inode) or `disk_<fs>` (less free space than the transaction adds there, or none at all, which counts even where the size is `unknown`).
-- `unreadable`: `none`, or a judged value that should have been read and was not, such as `disk_need_<fs>` when the size line is missing, `transaction` when the preview failed, or `package_cache` when the RPM block cannot tell which dnf is installed.
+- `unreadable`: `none`, or a judged value that should have been read and was not, such as `disk_need_<fs>` when the size line is missing, `transaction` when the preview failed, or `package_cache` when the RPM block cannot tell which dnf is installed or `cachedir` is not an absolute path.
 
 No anomaly needs a floor or a percentage; each is a fact about this server and this transaction. The package manager's lock is not read: the Debian recipe waits for it (`DPkg::Lock::Timeout`), and a lock held now may be gone when the recipe runs. dnf has no cheap check for an interrupted transaction, so the RPM block has no counterpart to `dpkg_audit`. Whether the server is a database primary or one half of an HA pair needs credentials or knowledge the block does not have: ask the person.
 
@@ -92,7 +92,7 @@ cve=CVE-2099-0001
 sim=$(LC_ALL=C dnf --assumeno upgrade --cve "$cve" 2>&1); rc=$?
 inst=$(printf '%s\n' "$sim" | awk '$2 ~ /^(x86_64|aarch64|noarch|i686|ppc64le|s390x)$/ {print $1}')
 case "$(dnf --version 2>/dev/null | head -n 1)" in dnf5*) cache=/var/cache/libdnf5 ;; [0-9]*) cache=/var/cache/dnf ;; *) cache= ;; esac
-c=$(awk -F= '$1 ~ /^[[:space:]]*cachedir[[:space:]]*$/ {v = $2; gsub(/^[[:space:]]+|[[:space:]]+$/, "", v)} END {print v}' /etc/dnf/dnf.conf 2>/dev/null); [ -z "$c" ] || cache=$c
+c=$(awk -F= '$1 ~ /^[[:space:]]*cachedir[[:space:]]*$/ {v = $2; gsub(/^[[:space:]]+|[[:space:]]+$/, "", v)} END {print v}' /etc/dnf/dnf.conf 2>/dev/null); [ -z "$c" ] || cache=$c; case "$cache" in /*) ;; *) cache= ;; esac
 while [ -n "$cache" ] && [ "$cache" != / ] && ! df -P "$cache" >/dev/null 2>&1; do cache=${cache%/*}; cache=${cache:-/}; done
 transaction=unreadable anomaly= unreadable=transaction paths="/ /usr /var $cache"
 if [ -n "$inst" ]; then transaction=changes unreadable=; elif printf '%s\n' "$sim" | grep -q '^Nothing to do'; then transaction=empty unreadable=; fi
