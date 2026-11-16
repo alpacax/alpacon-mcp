@@ -16,7 +16,7 @@ Alpacon is reached only through its MCP tools. Clients name them differently (`l
 
 - Branch on `status`, not on prose: `success`, `error`, `pending_approval`, `purpose_required`, and `mfa_required` are the common values. For any other value, read `message` and `next_action`.
 - When a result carries `next_action`, do what it says. `requires_human_approval: true` means a person decides; `approvable_by_agent: false` means no tool of yours can.
-- A command result can say `success` and still carry `sudo_denial` or `sudo_hint`: the sudo inside it did not run. With `sudo_denial`, a person can resolve it; rerun the command after they act, knowing the whole line runs again. With `sudo_hint` alone, it is a hard denial: do not wait for it and do not rerun it unchanged.
+- A command result can say `success` and still carry `sudo_denial` or `sudo_hint`: the sudo inside it did not run. With `sudo_denial`, a person can resolve it; follow its `next_action`, which says when to rerun, knowing the whole line runs again. With `sudo_hint` alone, it is a hard denial: do not wait for it and do not rerun it unchanged. When `sudo_denial` says another sudo call was denied outright, `sudo_hint` names that call, and a rerun hits it again.
 - A refusal carrying `rejection_cause`, `gate`, or `missing` is not cleared by resending it unchanged. Follow its hint: some ask you to fix the call, some to wait for a person's decision or MFA, after which the same call can succeed.
 
 ## Run commands inside a Work Session
