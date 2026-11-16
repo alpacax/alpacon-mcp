@@ -15,6 +15,7 @@ RHEL_DNF = """case " $* " in
 *) exit 2 ;;
 esac"""
 RHEL_RPM = """case "$*" in *--qf*) echo 'version 0:9.0-1' ;; esac"""
+RHEL_RPM_ABSENT = """case "$*" in *--qf*) echo "package $4 is not installed"; echo 'rpm: noise' >&2; exit 1 ;; esac"""
 FIXED_ADVISORY = 'RHSA-1 Security openssh-server-9.0'
 PENDING_ADVISORY = 'RHSA-1 Security openssh-server-9.1'
 
@@ -48,13 +49,14 @@ def _rhel_verdict(
     tmp_path: Path,
     available: tuple[int, str],
     installed: tuple[int, str],
+    rpm: str = RHEL_RPM,
 ) -> subprocess.CompletedProcess[str]:
     """Run the documented RHEL check; each query answers (exit code, advisory lines)."""
     script = doc_blocks('vuln-diagnose/references/distro-package.md', 'sh')[1]
     os_release = tmp_path / 'os-release'
     os_release.write_text('NAME="Rocky Linux"\nID=\'rocky\'\nVERSION_ID=9\n')
     script = script.replace('/etc/os-release', str(os_release))
-    install_fakes(tmp_path, {'rpm': RHEL_RPM, 'dnf': RHEL_DNF})
+    install_fakes(tmp_path, {'rpm': rpm, 'dnf': RHEL_DNF})
     return run_with_fakes(
         ['/bin/sh', '-c', script],
         tmp_path,
@@ -142,6 +144,16 @@ class TestRhelCheck:
 
         assert result.returncode == 0, result.stderr
         assert result.stdout.startswith('verdict=unknown package=openssh-server')
+
+    def test_a_package_rpm_reports_as_not_installed_is_not_affected(
+        self, tmp_path: Path
+    ):
+        result = _rhel_verdict(tmp_path, (0, ''), (0, ''), rpm=RHEL_RPM_ABSENT)
+
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == (
+            'verdict=not_affected package=openssh-server release=rocky-9 installed=none\n'
+        )
 
 
 DEBIAN_STANZA = 'Package: openssh-server\nStatus: {}\nVersion: {}\n'
