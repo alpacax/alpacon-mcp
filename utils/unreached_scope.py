@@ -23,15 +23,16 @@ from utils.types import ToolResponse
 _NO_TOOL_SHOWS = 'No tool shows what is counted.'
 
 _MANAGERS = (
-    'Alpacon names every server to its assignee, the owner of its token, the '
-    'direct maintainer of its Application and a superuser'
+    'Alpacon names every server and cluster to its assignee, the owner of its '
+    'token, the direct maintainer of its Application and a superuser'
 )
 
 _DECIDERS = ', and to anyone who may decide its pending approval'
 
 _NOT_A_MANAGER = (
-    'Alpacon counts servers only for a reader who does not manage the session, and '
-    'it lets only a manager run commands under it, change, extend or close it.'
+    'Alpacon counts servers and clusters only for a reader who does not manage the '
+    'session, and it lets only a manager run commands under it, change, extend or '
+    'close it.'
 )
 
 
@@ -221,13 +222,14 @@ def approval_note(approval: object) -> str | None:
         )
     if _get(approval, 'status') == 'pending':
         sentences.append(
-            'Alpacon counts servers only for a reader who neither manages the '
+            'Alpacon counts servers and clusters only for a reader who neither manages the '
             'session nor may decide this request.'
         )
         deciders = _DECIDERS
     else:
         sentences.append(
-            'Alpacon counts servers only for a reader who does not manage the session.'
+            'Alpacon counts servers and clusters only for a reader who does not '
+            'manage the session.'
         )
         deciders = ''
     sentences += [_NO_TOOL_SHOWS, f'{_MANAGERS}{deciders}.']

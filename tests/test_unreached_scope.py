@@ -61,6 +61,16 @@ class TestSessionNote:
         assert '`clusters_hidden`' in note
         assert 'servers_hidden' not in note
 
+    def test_cluster_session_is_not_described_as_counting_servers_only(self):
+        session = work_session_body(servers=[], clusters=[], clusters_hidden=1)
+        request = {'id': REQUEST_ID, 'status': 'pending', 'work_session': session}
+
+        for note in (session_note(session), approval_note(request)):
+            assert note is not None
+            assert 'counts servers only' not in note
+            assert 'names every server to' not in note
+            assert 'counts servers and clusters only' in note
+
     def test_adjustments_counts_are_read_inside_adjustments_servers(self):
         note = session_note(
             work_session_body(
