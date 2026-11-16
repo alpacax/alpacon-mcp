@@ -26,6 +26,15 @@ The top-level `status` of `work_session_get` is `success` on any good read; the 
 - On an approved or active session, widening it may wait for approval (`category="WORK_SESSION_MOD_PENDING"`); narrowing can apply at once. What waits does not apply until it is decided. Poll `work_session_get` until `pending_modification_request` clears, then check the session shows the change.
 - `expires_at` changes only while the session is still pending. To get more time on an approved or active session, call `work_session_extend` with a `reason` after the session has started and before `expires_at` passes. It may wait for approval (`category="WORK_SESSION_EXTENSION_PENDING"`); the session keeps its old `expires_at` meanwhile. Do not send the extension again, which files a second request. Once a session has expired, open a new one.
 
+## Servers you cannot see
+
+A session names only the servers and clusters you can reach and counts the rest, with no name or id: `servers_hidden` and `clusters_hidden` beside `servers` and `clusters`, `old_hidden` and `new_hidden` in `adjustments.servers`, and `servers_hidden` in `pending_modification_request.changes` and `account_flag`. When a count is above 0, the result also carries `scope_note`.
+
+- Never report the named list as the session's whole scope. Say how many more servers it covers that you cannot see.
+- Never guess the counted servers. No tool names them for you; the session's assignee, the owner of its token, the direct maintainer of its Application, or a superuser sees them all. A workspace admin who is none of these may see only part of it too.
+- A count above 0 means the session is not yours: do not reuse it, and do not try to change, extend or close it. Open your own session for your task.
+- `old` and `new` in `adjustments.servers` are cut to the same reach: a server named in `old` and missing from `new` was removed, but a change to a counted server cannot be seen, so the two lists do not show every server added or removed.
+
 ## Closing
 
 Call `work_session_close` when the task's commands and transfers are done, on a session you opened for the task. Leave a session you reused open; whoever opened it closes it. Closing ends the window and starts the session's security analysis. It is final, so do it only when the work is finished.

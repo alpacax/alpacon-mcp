@@ -17,6 +17,8 @@ The `category` on a `pending_approval` result says what is waiting, and the righ
 
 A held command that a person rejects, or whose request expires, comes back from `check_command_status` as an error with `rejection_cause` (`approval_rejected`, `approval_expired`, `approval_cancelled`, `approval_rule_changed`). See [refusals.md](refusals.md).
 
+An approval request names only the servers you can reach: its `work_session`, `metadata.adjustments`, `metadata.changes` and `overlapping_sessions` carry `*_hidden` counts for the rest, and `scope_note` says so. Do not describe a request's scope from the named servers alone; see [work-sessions.md](work-sessions.md#servers-you-cannot-see).
+
 ## Sudo
 
 Do not prefix a command with `sudo` unless it needs root and the Work Session has the `sudo` scope. A sudo the session does not cover is refused inside the command, and the command result can still have `status="success"`. Read these fields on every command result, successful or not:
