@@ -39,7 +39,7 @@ For a distribution package, including the kernel, take each fixed version from t
 
 ## Verdicts
 
-- `affected`: the installed version is older than the fixed version, or the fixing commit is missing. Keep the check's `reason`: `reboot-pending` means a fixed kernel is installed but not running, and `no-fix-available` means the distribution has not shipped a fix for that release yet.
+- `affected`: the installed version is older than the fixed version, or the fixing commit is missing. Keep the check's `reason`: `reboot-pending` means a fixed kernel is installed but not running, and `no-fix-available` means the distribution has not shipped a fix for that release yet. A Debian or Ubuntu row whose `status=` starts with `h` is held (`hi`): write `held` in its reason, since no upgrade reaches it until a person releases the hold.
 - `not_affected`: the software is not installed, or the installed version is the fixed version or newer.
 - `unknown`: anything else, with the reason: offline, unsupported OS, command refused or failed, output that does not parse, a release or OS the advisory does not list, or software inside a container the host cannot see into.
 
@@ -49,4 +49,4 @@ Never fold `unknown` into `not_affected`: a server nobody could check is a serve
 
 ## Report
 
-A table with one row per server in scope: name, UUID, OS and release, installed version, verdict, and the reason for every `unknown` and every `affected` row, including `reboot-pending` and `no-fix-available`. When patching follows, hand the `affected` rows to `vuln-remediate`, except `reboot-pending` ones, which need only a reboot by a person, and `no-fix-available` ones, which wait for the distribution's fix.
+A table with one row per server in scope: name, UUID, OS and release, installed version, verdict, and the reason for every `unknown` and every `affected` row, including `reboot-pending` and `no-fix-available`. When patching follows, hand the `affected` rows to `vuln-remediate`, except `reboot-pending` ones, which need only a reboot by a person, and `no-fix-available` ones, which wait for the distribution's fix. Hand held rows over marked as held, apart from the rest, so the person decides on the hold before any preview runs on them.

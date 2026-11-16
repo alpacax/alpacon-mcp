@@ -24,11 +24,12 @@ def install_fakes(bin_dir: Path, fakes: dict[str, str]) -> None:
 
 
 def run_with_fakes(
-    argv: Sequence[str], bin_dir: Path, **env: str
+    argv: Sequence[str], bin_dir: Path, *, stdin: str | None = None, **env: str
 ) -> subprocess.CompletedProcess[str]:
     """Run `argv` with `bin_dir` first on PATH, so its fakes shadow the real commands."""
     return subprocess.run(  # noqa: S603  # repository snippets against isolated fakes
         argv,
+        input=stdin,
         env={
             **os.environ,
             'PATH': str(bin_dir) + os.pathsep + os.environ['PATH'],
