@@ -108,7 +108,7 @@ def session_row(sid: str, status: str, **extra: object) -> dict[str, object]:
         'clusters': [],
         'target_account_username': None,
         'starts_at': '2026-11-05T09:00:00Z',
-        'expires_at': '2026-11-05T18:00:00Z',
+        'expires_at': '2099-11-05T18:00:00Z',  # far ahead, or a model refuses an expired session
         'started_at': '2026-11-05T09:00:00Z',
         'pending_modification_request': None,
         'pending_extension_request': None,
