@@ -37,7 +37,6 @@ UPLOAD_ID = 'f1e2d3c4-b5a6-4978-8a9b-0c1d2e3f4a5b'
 SID3 = '9f3c1d7a-4e2b-4a68-b5c9-1d2e3f4a5b6c'
 PATCH_CASE = 'remediate-stops-on-first-failure/mocks/alpacon'
 SECOND_CASE = 'remediate-stops-at-second-failure/mocks/alpacon'
-PREFLIGHT_CASE = 'remediate-asks-on-preflight-anomaly/mocks/alpacon'
 PATCH_SESSION = {
     'servers': [SID, SID2],
     'scopes': ['command', 'webftp'],
@@ -47,6 +46,16 @@ PATCH_SESSION = {
 SECOND_SESSION = PATCH_SESSION | {
     'servers': [SID, SID2, SID3],
     'description': 'Upgrade openssh-server for CVE-2026-31337 on web-01 to web-03; no restarts.',
+}
+PREFLIGHT_CASES = {  # each mock dir and the session its rollout runs in
+    f'{case}/mocks/alpacon': session
+    for case, session in {
+        'remediate-asks-on-preflight-anomaly': SECOND_SESSION,
+        'remediate-asks-on-unreadable-preflight': PATCH_SESSION,
+        'remediate-reports-an-already-fixed-server-without-asking': PATCH_SESSION,
+        'remediate-asks-on-an-already-fixed-server-with-a-read-only-disk': PATCH_SESSION,
+        'remediate-asks-on-an-empty-preview-below-the-fixed-version': PATCH_SESSION,
+    }.items()
 }
 SERVER_NAMES = {SID: 'web-01', SID2: 'web-02', SID3: 'web-03'}
 SERVER = {'id': SID, 'name': 'web-01'}
@@ -406,7 +415,11 @@ MOCKS: list[Mock] = [
     ),
     *_rollout_mocks(PATCH_CASE, PATCH_SESSION),
     *_rollout_mocks(SECOND_CASE, SECOND_SESSION),
-    *_rollout_mocks(PREFLIGHT_CASE, SECOND_SESSION),
+    *(
+        m
+        for case, session in PREFLIGHT_CASES.items()
+        for m in _rollout_mocks(case, session)
+    ),
     Mock(  # every run of the recipe fails, so only the first server may see one
         f'{PATCH_CASE}/execute_file.md',
         {
@@ -455,8 +468,11 @@ HAND_WRITTEN = {
     f'{PATCH_CASE}/execute_command.md',
     f'{SECOND_CASE}/execute_command.md',
     f'{SECOND_CASE}/execute_file.md',  # an agent responder: each server answers differently
-    f'{PREFLIGHT_CASE}/execute_command.md',
-    f'{PREFLIGHT_CASE}/execute_file.md',
+    *(
+        f'{case}/{tool}.md'
+        for case in PREFLIGHT_CASES
+        for tool in ('execute_command', 'execute_file')
+    ),
 }
 
 
