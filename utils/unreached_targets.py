@@ -4,7 +4,7 @@ Alpacon names only the servers and clusters the reader reaches and counts the
 rest in a sibling integer; the field paths follow the Alpacon API's Work
 Session, approval request and session analysis responses. The body passes
 through untouched; this module only reads those counts and writes a
-`scope_note`, so an agent does not take a partial list for the whole scope. It
+`hidden_targets_note`, so an agent does not take a partial list for the whole scope. It
 decides nothing: a server that sends no count gets no note.
 
 The notes state Alpacon's own rule, not one of this module: a reader who manages
@@ -349,15 +349,15 @@ ANALYSIS_PAGE = _Page(
 )
 
 
-def attach_scope_note(
+def attach_hidden_targets_note(
     response: ToolResponse, describe: Callable[[object], str | None]
 ) -> ToolResponse:
-    """Add ``scope_note`` to a successful result whose ``data`` counts a target.
+    """Add ``hidden_targets_note`` to a successful result whose ``data`` counts a target.
 
     ``data`` stays exactly as the server sent it; an error result is returned as is.
     """
     if response.get('status') != 'success':
         return response
     if note := describe(response.get('data')):
-        response['scope_note'] = note
+        response['hidden_targets_note'] = note
     return response

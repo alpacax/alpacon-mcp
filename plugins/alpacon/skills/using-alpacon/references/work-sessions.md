@@ -28,7 +28,7 @@ The top-level `status` of `work_session_get` is `success` on any good read; the 
 
 ## Servers you cannot see
 
-A session names only the servers and clusters you can reach and counts the rest, with no name or id: `servers_hidden` and `clusters_hidden` beside `servers` and `clusters`, `old_hidden` and `new_hidden` in `adjustments.servers`, and `servers_hidden` in `pending_modification_request.changes` and `account_flag`. When a count is above 0, the result also carries `scope_note`.
+A session names only the servers and clusters you can reach and counts the rest, with no name or id: `servers_hidden` and `clusters_hidden` beside `servers` and `clusters`, `old_hidden` and `new_hidden` in `adjustments.servers`, and `servers_hidden` in `pending_modification_request.changes` and `account_flag`. When a count is above 0, the result also carries `hidden_targets_note`.
 
 - Never report the named list as the session's whole scope. Say how many more servers it covers that you cannot see.
 - Never guess the counted servers. No tool names them for you; the session's assignee, the owner of its token, the direct maintainer of its Application, or a superuser sees them all. A workspace admin who is none of these may see only part of it too.

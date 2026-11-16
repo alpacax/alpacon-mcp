@@ -189,7 +189,7 @@ class TestResourceRegistration:
         assert "state='stale'" in stale.description
 
     @pytest.mark.asyncio
-    async def test_work_session_resource_carries_the_scope_note(
+    async def test_work_session_resource_carries_the_hidden_targets_note(
         self, mock_session_http_client, mock_token_manager
     ):
         """#480: a resource reads its tool, so a counted server reaches it too."""
@@ -208,7 +208,7 @@ class TestResourceRegistration:
         assert isinstance(contents, ReadResourceContents)
         assert isinstance(contents.content, str)
         body = json.loads(contents.content)
-        assert '1 more server' in body['content']['scope_note']
+        assert '1 more server' in body['content']['hidden_targets_note']
 
     @pytest.mark.asyncio
     async def test_metrics_latest_stale_pins_state_on_the_real_request(

@@ -12,7 +12,7 @@ Check which shape a list returned before you conclude you have seen everything.
 
 Never describe a whole history from the first page.
 
-Work Session, approval and session analysis results name only the servers you can reach. A list whose rows carry a `*_hidden` count above 0 gets a `scope_note` naming those rows; see [work-sessions.md](work-sessions.md#servers-you-cannot-see).
+Work Session, approval and session analysis results name only the servers you can reach. A list whose rows carry a `*_hidden` count above 0 gets a `hidden_targets_note` naming those rows; see [work-sessions.md](work-sessions.md#servers-you-cannot-see).
 
 ## Empty metrics
 

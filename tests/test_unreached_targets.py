@@ -9,13 +9,13 @@ import copy
 import pytest
 
 from tests.conftest import VALID_SERVER_ID, work_session_body
-from utils.unreached_scope import (
+from utils.unreached_targets import (
     ANALYSIS_PAGE,
     APPROVAL_PAGE,
     SESSION_PAGE,
     analysis_note,
     approval_note,
-    attach_scope_note,
+    attach_hidden_targets_note,
     session_note,
 )
 
@@ -419,20 +419,20 @@ class TestAttachScopeNote:
         response = {'status': 'success', 'data': body, 'region': 'ap1'}
         expected = copy.deepcopy(body)
 
-        result = attach_scope_note(response, session_note)
+        result = attach_hidden_targets_note(response, session_note)
 
         assert result['data'] == expected
-        assert '2 more servers' in result['scope_note']
+        assert '2 more servers' in result['hidden_targets_note']
 
     def test_no_count_adds_no_key(self):
-        result = attach_scope_note(
+        result = attach_hidden_targets_note(
             {'status': 'success', 'data': work_session_body()}, session_note
         )
 
-        assert 'scope_note' not in result
+        assert 'hidden_targets_note' not in result
 
     def test_a_result_that_is_not_a_success_is_returned_as_is(self):
         response = {'status': 'error', 'data': work_session_body(servers_hidden=1)}
         expected = copy.deepcopy(response)
 
-        assert attach_scope_note(response, session_note) == expected
+        assert attach_hidden_targets_note(response, session_note) == expected

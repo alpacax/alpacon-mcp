@@ -24,7 +24,11 @@ from utils.error_handler import format_validation_error
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
 from utils.types import OptionalServerIds, ServerIds, SessionId, ToolResponse
-from utils.unreached_scope import SESSION_PAGE, attach_scope_note, session_note
+from utils.unreached_targets import (
+    SESSION_PAGE,
+    attach_hidden_targets_note,
+    session_note,
+)
 
 _API_SESSIONS = '/api/work-sessions/sessions/'
 
@@ -119,7 +123,7 @@ _UNREACHED_DESCRIPTION = (
     'and clusters_hidden count the rest, with no name or id (also old_hidden and '
     'new_hidden in adjustments.servers, and servers_hidden in '
     'pending_modification_request.changes and account_flag). When a count is '
-    'above 0 the result carries scope_note: the named list is not the whole '
+    'above 0 the result carries hidden_targets_note: the named list is not the whole '
     'scope; Alpacon sends a count above 0 only to a reader who does not manage '
     'that session.'
 )
@@ -300,7 +304,7 @@ async def work_session_get(
         default_message='Failed to get Work Session',
         session_id=session_id,
     )
-    return attach_scope_note(response, session_note)
+    return attach_hidden_targets_note(response, session_note)
 
 
 @mcp_tool_handler(
@@ -339,7 +343,7 @@ async def work_session_list(
         default_message='Failed to list Work Sessions',
         params=params,
     )
-    return attach_scope_note(response, SESSION_PAGE)
+    return attach_hidden_targets_note(response, SESSION_PAGE)
 
 
 # IDEMPOTENT_WRITE: repeated PATCH cannot stack approval requests (server WORK_SESSION_MOD_ALREADY_PENDING guard).

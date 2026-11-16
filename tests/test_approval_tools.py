@@ -431,8 +431,8 @@ class TestUnreachedServersAreCounted:
         )
 
         assert result['data'] == body
-        assert '`work_session.servers_hidden`' in result['scope_note']
-        assert '2 more servers' in result['scope_note']
+        assert '`work_session.servers_hidden`' in result['hidden_targets_note']
+        assert '2 more servers' in result['hidden_targets_note']
 
     @pytest.mark.asyncio
     async def test_get_without_counts_adds_no_note(
@@ -444,7 +444,7 @@ class TestUnreachedServersAreCounted:
             request_id=REQUEST_ID, workspace='testworkspace', region='ap1'
         )
 
-        assert 'scope_note' not in result
+        assert 'hidden_targets_note' not in result
 
     @pytest.mark.asyncio
     async def test_list_names_each_partial_row(
@@ -462,9 +462,9 @@ class TestUnreachedServersAreCounted:
         assert result['data'] == page
         assert (
             f'request {REQUEST_ID} (overlapping session other: 1 more shared server)'
-            in result['scope_note']
+            in result['hidden_targets_note']
         )
-        assert 'req-plain' not in result['scope_note']
+        assert 'req-plain' not in result['hidden_targets_note']
 
     @pytest.mark.asyncio
     async def test_descriptions_name_the_counts(self):
@@ -472,4 +472,4 @@ class TestUnreachedServersAreCounted:
 
         for name in ('get_approval_request', 'list_approval_requests'):
             assert 'servers_hidden' in descriptions[name]
-            assert 'scope_note' in descriptions[name]
+            assert 'hidden_targets_note' in descriptions[name]

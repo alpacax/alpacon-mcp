@@ -11,7 +11,11 @@ from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, READ_ONLY
 from utils.types import OptionalServerId, ServerIds, ToolResponse
-from utils.unreached_scope import APPROVAL_PAGE, approval_note, attach_scope_note
+from utils.unreached_targets import (
+    APPROVAL_PAGE,
+    approval_note,
+    attach_hidden_targets_note,
+)
 
 _STATUS_DESCRIPTION = (
     'Filter by status: pending, approved, rejected, cancelled or expired.'
@@ -28,7 +32,7 @@ _UNREACHED_DESCRIPTION = (
     'the rest with no name or id: servers_hidden and clusters_hidden on '
     'work_session, old_hidden and new_hidden in metadata.adjustments.servers, '
     'servers_hidden in metadata.changes and each overlapping_sessions row. When a '
-    'count is above 0 the result carries scope_note: the named list is not the '
+    'count is above 0 the result carries hidden_targets_note: the named list is not the '
     "request's whole scope."
 )
 
@@ -78,7 +82,7 @@ async def list_approval_requests(
         default_message='Failed to list approval requests',
         params=params,
     )
-    return attach_scope_note(response, APPROVAL_PAGE)
+    return attach_hidden_targets_note(response, APPROVAL_PAGE)
 
 
 @mcp_tool_handler(
@@ -113,7 +117,7 @@ async def get_approval_request(
         default_message='Failed to get approval request',
         request_id=request_id,
     )
-    return attach_scope_note(response, approval_note)
+    return attach_hidden_targets_note(response, approval_note)
 
 
 # ===============================

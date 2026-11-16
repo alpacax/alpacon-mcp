@@ -15,7 +15,11 @@ from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import READ_ONLY
 from utils.types import OptionalServerId, ToolResponse
-from utils.unreached_scope import ANALYSIS_PAGE, analysis_note, attach_scope_note
+from utils.unreached_targets import (
+    ANALYSIS_PAGE,
+    analysis_note,
+    attach_hidden_targets_note,
+)
 
 # ===============================
 # ACTIVITY LOG TOOLS
@@ -212,7 +216,7 @@ async def list_webftp_logs(
 _UNREACHED_DESCRIPTION = (
     'work_session_detail.servers names only the servers you can reach, and '
     'work_session_detail.servers_hidden counts the rest with no name or id. When '
-    'it is above 0 the result carries scope_note: the named list is not every '
+    'it is above 0 the result carries hidden_targets_note: the named list is not every '
     'server the session covered.'
 )
 
@@ -267,7 +271,7 @@ async def list_session_analyses(
         params=params,
         server_id=server_id,
     )
-    return attach_scope_note(response, ANALYSIS_PAGE)
+    return attach_hidden_targets_note(response, ANALYSIS_PAGE)
 
 
 @mcp_tool_handler(
@@ -303,4 +307,4 @@ async def get_session_analysis_detail(
         default_message='Failed to get session analysis details',
         analysis_id=analysis_id,
     )
-    return attach_scope_note(response, analysis_note)
+    return attach_hidden_targets_note(response, analysis_note)

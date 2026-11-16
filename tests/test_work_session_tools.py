@@ -1594,7 +1594,7 @@ async def test_extend_description_states_the_window_the_api_requires():
 
 class TestUnreachedServersAreCounted:
     """#480: Alpacon names only the targets the caller reaches and counts the
-    rest; the body passes through and scope_note says the list is partial."""
+    rest; the body passes through and hidden_targets_note says the list is partial."""
 
     @pytest.mark.asyncio
     async def test_get_keeps_the_body_and_notes_the_count(
@@ -1609,8 +1609,8 @@ class TestUnreachedServersAreCounted:
 
         assert result['status'] == 'success'
         assert result['data'] == body
-        assert '2 more servers' in result['scope_note']
-        assert '`servers_hidden`' in result['scope_note']
+        assert '2 more servers' in result['hidden_targets_note']
+        assert '`servers_hidden`' in result['hidden_targets_note']
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -1636,7 +1636,7 @@ class TestUnreachedServersAreCounted:
             session_id=SESSION_ID, workspace='testworkspace', region='ap1'
         )
 
-        assert 'scope_note' not in result
+        assert 'hidden_targets_note' not in result
 
     @pytest.mark.asyncio
     async def test_list_names_each_partial_row(
@@ -1661,8 +1661,10 @@ class TestUnreachedServersAreCounted:
         result = await work_session_list(workspace='testworkspace', region='ap1')
 
         assert result['data'] == page
-        assert 's-partial (modification: 3 more servers)' in result['scope_note']
-        assert 's-full' not in result['scope_note']
+        assert (
+            's-partial (modification: 3 more servers)' in result['hidden_targets_note']
+        )
+        assert 's-full' not in result['hidden_targets_note']
 
     @pytest.mark.asyncio
     async def test_list_without_counts_adds_no_note(
@@ -1675,7 +1677,7 @@ class TestUnreachedServersAreCounted:
 
         result = await work_session_list(workspace='testworkspace', region='ap1')
 
-        assert 'scope_note' not in result
+        assert 'hidden_targets_note' not in result
 
     @pytest.mark.asyncio
     async def test_descriptions_name_the_counts(self):
@@ -1683,4 +1685,4 @@ class TestUnreachedServersAreCounted:
 
         for name in ('work_session_get', 'work_session_list'):
             assert 'servers_hidden' in descriptions[name]
-            assert 'scope_note' in descriptions[name]
+            assert 'hidden_targets_note' in descriptions[name]

@@ -301,8 +301,8 @@ class TestUnreachedServersAreCounted:
         )
 
         assert result['data'] == body
-        assert '`work_session_detail.servers_hidden`' in result['scope_note']
-        assert '2 more servers' in result['scope_note']
+        assert '`work_session_detail.servers_hidden`' in result['hidden_targets_note']
+        assert '2 more servers' in result['hidden_targets_note']
 
     @pytest.mark.asyncio
     async def test_detail_without_counts_adds_no_note(
@@ -314,7 +314,7 @@ class TestUnreachedServersAreCounted:
             analysis_id='analysis-1', workspace='test-ws', region='ap1'
         )
 
-        assert 'scope_note' not in result
+        assert 'hidden_targets_note' not in result
 
     @pytest.mark.asyncio
     async def test_list_names_each_partial_row(
@@ -329,9 +329,9 @@ class TestUnreachedServersAreCounted:
         assert result['data'] == page
         assert (
             f'analysis analysis-1 of session {self.SESSION_ID} (1 more server)'
-            in result['scope_note']
+            in result['hidden_targets_note']
         )
-        assert 'analysis-0' not in result['scope_note']
+        assert 'analysis-0' not in result['hidden_targets_note']
 
     @pytest.mark.asyncio
     async def test_descriptions_name_the_counts(self):
@@ -339,4 +339,4 @@ class TestUnreachedServersAreCounted:
 
         for name in ('get_session_analysis_detail', 'list_session_analyses'):
             assert 'servers_hidden' in descriptions[name]
-            assert 'scope_note' in descriptions[name]
+            assert 'hidden_targets_note' in descriptions[name]
