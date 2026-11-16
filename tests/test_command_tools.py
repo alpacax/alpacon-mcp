@@ -6302,10 +6302,42 @@ class TestHeldSudoApproval:
         assert denial['category'] == 'SUDO_APPROVAL_REQUIRED'
         assert denial['held'] == _held()
         other = next(c for c in codes if c != 'SUDO_APPROVAL_REQUIRED')
-        note = _OTHER_DENIAL_NOTE.format(code=other, hint=_SUDO_DENIAL_HINTS[other])
+        note = _OTHER_DENIAL_NOTE.format(
+            code=other,
+            hint=_SUDO_DENIAL_HINTS[other],
+            spent=' and uses up this approval',
+        )
         assert denial['next_action'].endswith(note)
         assert denial['wait_hint'].endswith(note)
         assert 'follow the newest' not in denial['next_action']
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'codes',
+        [
+            ['SUDO_NO_WORKSESSION_POLICY', 'SUDO_PRESENCE_REQUIRED'],
+            ['SUDO_POLICY_MFA_REQUIRED', 'SUDO_PRESENCE_REQUIRED'],
+        ],
+        ids=['missing policy then MFA', 'policy MFA then MFA'],
+    )
+    async def test_denials_without_an_approval_name_no_approval_to_use_up(
+        self, codes, mock_http_client, mock_token_manager
+    ):
+        row = _sudo_held_row(
+            held=None, sudo_grant_status='pending_mfa', result=_denial_lines(*codes)
+        )
+
+        result = await self._check(mock_http_client, row)
+
+        denial = result['sudo_denial']
+        note = _OTHER_DENIAL_NOTE.format(
+            code=codes[1], hint=_SUDO_DENIAL_HINTS[codes[1]], spent=''
+        )
+        assert result['status'] == 'success'
+        assert denial['category'] == codes[0]
+        assert denial['next_action'].endswith(note)
+        assert result['sudo_hint'] == denial['message']
+        assert 'approval' not in note
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize('codes', _HARD_AND_PENDING, ids=_HARD_AND_PENDING_IDS)

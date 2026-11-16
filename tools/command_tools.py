@@ -381,7 +381,7 @@ _HELD_HARD_NOTE = (
 _OTHER_DENIAL_NOTE = (
     'Another sudo call in this command was denied with {code}, which a person '
     'must clear first ({hint}); a re-submission before that is denied there '
-    'again and uses up this approval, so tell the user before re-submitting.'
+    'again{spent}, so tell the user before re-submitting.'
 )
 _NEWEST_GRANT_NOTE = (
     'This command filed more than one approval ({codes}); category, held and '
@@ -533,7 +533,11 @@ def _attach_sudo_denial(
     notes = [
         *([_HELD_HARD_NOTE.format(code=hard)] if hard else []),
         *(
-            _OTHER_DENIAL_NOTE.format(code=c, hint=_SUDO_DENIAL_HINTS[c])
+            _OTHER_DENIAL_NOTE.format(
+                code=c,
+                hint=_SUDO_DENIAL_HINTS[c],
+                spent=' and uses up this approval' if approvals else '',
+            )
             for c in others
         ),
     ]
