@@ -65,6 +65,21 @@ NO_CVE_SESSION = {
     'description': 'Read pending security updates on web-01; changes nothing.',
 }
 CMD_CHECK = 'a3b4c5d6-7e8f-4a1b-9c2d-3e4f5a6b7c8d'
+READ_CASES = {
+    'diagnose-marks-a-held-package/mocks/alpacon': PATCH_SESSION
+    | {
+        'scopes': ['command'],
+        'target_account_username': 'deploy',
+        'description': 'Read the openssh-server version for CVE-2026-31337 on web-01 and web-02.',
+    },
+    'verify-reads-a-socket-started-service/mocks/alpacon': PATCH_SESSION
+    | {
+        'servers': [SID],
+        'scopes': ['command'],
+        'target_account_username': 'deploy',
+        'description': 'Verify the CVE-2026-31337 openssh-server fix took effect on web-01.',
+    },
+}
 SERVER_NAMES = {SID: 'web-01', SID2: 'web-02', SID3: 'web-03'}
 SERVER = {'id': SID, 'name': 'web-01'}
 ECHO = 'ECHO-INPUT-COMMAND'
@@ -531,7 +546,7 @@ MOCKS: list[Mock] = [
     *_rollout_mocks(SECOND_CASE, SECOND_SESSION),
     *(
         m
-        for case, session in PREFLIGHT_CASES.items()
+        for case, session in (PREFLIGHT_CASES | READ_CASES).items()
         for m in _rollout_mocks(case, session)
     ),
     *_rollout_mocks(NO_CVE_CASE, NO_CVE_SESSION),
@@ -602,6 +617,15 @@ HAND_WRITTEN = {
         f'{case}/{tool}.md'
         for case in PREFLIGHT_CASES
         for tool in ('execute_command', 'execute_file')
+    ),
+    *(  # agent responders: each server's check answers differently
+        f'{case}/{tool}.md'
+        for case in READ_CASES
+        for tool in (
+            'execute_command',
+            'execute_command_multi_server',
+            'check_command_status',
+        )
     ),
 }
 

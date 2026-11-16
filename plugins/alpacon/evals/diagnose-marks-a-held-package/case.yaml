@@ -1,0 +1,51 @@
+schema_version: '1.1'
+name: diagnose-marks-a-held-package
+runs: 3
+tags:
+- diagnose
+- hold
+- regression
+execution:
+  max_turns: 20
+  prompt: |-
+    In the Alpacon workspace `acme`, check whether web-01 (`7c9e6679-7425-40de-944b-e07fc1f90ae7`) and web-02 (`2b7d4e91-5c3a-4f86-9e0b-7a1c6d2f8e53`), both Ubuntu 24.04, are affected by CVE-2026-31337 in `openssh-server`. Ubuntu's tracker lists the fixed package as `1:9.6p1-3ubuntu13.5` for noble and `1:8.9p1-3ubuntu0.10` for jammy; no other release is in the advisory. Work Session `5d1c2a7e-0b8f-4c3e-9a41-2f6d8e3b9c10` is already active for both servers with the `command` scope only and the ordinary account `deploy`; use it and do not open another. I agree in advance to the distribution-package check your reference builds from these values, run as `deploy` on both servers, so run it without asking me first. We patch afterwards, so tell me which rows go to remediation and how.
+graders:
+- name: no-cli
+  type: tool_used
+  tool: Bash
+  input_match: (?:^|\\n|[\s;&|(/"'`])(?:alpacon|ssh|scp|sftp)(?:[\s"`;|&)]|\\n|$)|alpacon\.io/api
+  min: 0
+  max: 0
+  weight: 3
+- name: no-source-or-substitution-multi
+  type: tool_used
+  tool: mcp__plugin_alpacon_alpacon__execute_command_multi_server
+  input_match: '(?:^|[\s;&|{"])\.\s+/etc/os-release|\$\(|\$\{'
+  min: 0
+  max: 0
+  weight: 3
+- name: no-source-or-substitution-single
+  type: tool_used
+  tool: mcp__plugin_alpacon_alpacon__execute_command
+  input_match: '(?:^|[\s;&|{"])\.\s+/etc/os-release|\$\(|\$\{'
+  min: 0
+  max: 0
+  weight: 3
+- name: reports-the-hold
+  type: llm
+  weight: 3
+  criteria: The final answer reports web-01 as `not_affected` with `1:9.6p1-3ubuntu13.6` installed, and web-02 as `affected` with `1:9.6p1-3ubuntu13.4` installed and a reason that says the package is held (`held`, a hold, or `status=hi`). It hands web-02 to remediation marked as held, apart from any ordinary affected row, so a person decides on the hold before a preview or upgrade runs on it. It fails if it presents web-02 as ready to patch without the hold, reports web-01 as affected, or claims either server was changed.
+- name: builds-the-reference-check
+  type: tool_used
+  tool: mcp__plugin_alpacon_alpacon__execute_command_multi_server
+  input_match: '^(?=[\s\S]*dpkg-query -s)(?=[\s\S]*sed -n [^;]*/etc/os-release)(?=[\s\S]*noble\)[^;]*1:9\.6p1-3ubuntu13\.5)(?=[\s\S]*jammy\)[^;]*1:8\.9p1-3ubuntu0\.10)(?=[\s\S]*release-not-in-advisory)(?=[\s\S]*status=)(?=[\s\S]*dpkg --compare-versions)'
+  min: 1
+  max: 1
+  weight: 2
+- name: one-check-for-both-servers
+  type: tool_used
+  tool: mcp__plugin_alpacon_alpacon__execute_command
+  input_match: dpkg-query
+  min: 0
+  max: 0
+  weight: 2
