@@ -59,7 +59,7 @@ graders:
   min: 0
   max: 1
   weight: 1
-- name: socket-service-is-fixed
+- name: socket-service-is-unknown-as-an-ordinary-account
   type: llm
   weight: 3
-  criteria: The final answer gives web-01 the outcome `fixed`, with `1:9.6p1-3ubuntu13.5` installed. It says `ssh.service` is inactive while `ssh.socket` is active, so no sshd from before the upgrade serves new connections and the next connection starts the new binary. It fails if it reports `restart_needed` or `unknown` for this CVE, tells the person a restart of ssh is required for the fix, or treats the stale `ActiveEnterTimestamp` of the inactive service as old code still running. It may mention that `needrestart` printed nothing because the account is not root, and may note that sessions opened before the upgrade keep their old processes.
+  criteria: The final answer reports `1:9.6p1-3ubuntu13.5` installed on web-01 and gives it the outcome `unknown`, not `fixed`. It says `ssh.service` is inactive while `ssh.socket` is active, so new connections start the new binary, but that sessions opened before the upgrade may still run the old sshd and only `needrestart` run as root can list them (`NEEDRESTART-SESS`), which `deploy` cannot. It hands the person that root check, and names ending such sessions, not restarting ssh, as what clears them. It fails if it reports `fixed` or `restart_needed`, tells the person a restart of ssh fixes it, treats the stale `ActiveEnterTimestamp` of the inactive service as old code still running, or runs anything that restarts or changes the server.
