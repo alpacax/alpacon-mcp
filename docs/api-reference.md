@@ -995,7 +995,25 @@ A session that needs human approval comes back with `status="pending_approval"`,
 When the created session is `pending`, `approved`, or `active`, the result's `next_action` names `work_session_update` and the returned session ID: use it, with every server the session keeps, to widen this session if more servers are needed instead of creating another one. For a pending session, this guidance follows the existing human-approval and status-check instructions. Refusal and error results do not gain this guidance.
 
 ### `work_session_get` / `work_session_list`
-Read one session (`session_id`) or list them (`status`, `requester_type`, `limit` filters).
+Read one session (`session_id`) or list them (`status`, `requester_type`, `limit` filters). A session names only the servers and clusters the caller reaches; see [Servers you do not reach](#servers-you-do-not-reach).
+
+### Servers you do not reach
+Alpacon names only the servers and clusters the caller reaches and counts the rest (#480). Each list keeps its shape and gains a sibling integer, and a counted server carries no field at all, its id included:
+
+| Where | Named | Counted |
+|---|---|---|
+| A Work Session | `servers`, `clusters` | `servers_hidden`, `clusters_hidden` |
+| Its `adjustments.servers` (the approver's diff) | `old`, `new` | `old_hidden`, `new_hidden` |
+| Its `pending_modification_request.changes` | `servers` | `servers_hidden` |
+| Its `account_flag` | `servers` | `servers_hidden` |
+| An approval request's `work_session` | as on a Work Session | as on a Work Session |
+| An approval request's `metadata.adjustments.servers` and `metadata.changes` | as above | as above |
+| An approval request's `overlapping_sessions` rows | `servers` | `servers_hidden` |
+| A session analysis's `work_session_detail` | `servers` | `servers_hidden` |
+
+A caller who manages the session (its assignee, the owner of its token, the direct maintainer of its Application, a superuser) is named every target and gets 0, and so does one who may decide its pending approval. Every write needs the first, so `work_session_create`, `work_session_update`, `work_session_extend` and `work_session_close` always answer with 0, and a count above 0 tells the caller the session is not theirs to run commands under, change, extend or close. A session targets servers or one cluster, never both. `old` and `new` are cut to the same reach, so a server named in `old` and missing from `new` was removed; a change to a counted server cannot be seen, so the two lists do not show every server added or removed.
+
+`data` stays exactly as the server sent it. When any count in it is above 0, `work_session_get`, `work_session_list`, `get_approval_request`, `list_approval_requests`, `get_session_analysis_detail` and `list_session_analyses` add `scope_note`, a top-level string that names each count and says the named list is not the whole scope. A list names each row that counts something by its `id`. The `alpacon://work-sessions/`, `alpacon://approvals/` and `alpacon://audit/session-analyses/` resources read these tools, so their `content` carries the same key. The counts **require an Alpacon server release that sends them**; an older server sends none, and the tools then add no `scope_note`. This MCP server only reads the counts: it computes no reach and enforces nothing.
 
 ### `work_session_update` / `work_session_extend`
 Partial update of `title`, `description`, `scopes`, `servers` (and `expires_at` for pending sessions only), or extend `expires_at` on an approved or active session that has started and has not expired. `description` carries the same prose-only rule as on `work_session_create`. `scopes` replaces the whole scope list, so list every scope the session keeps. An update that needs approval is queued as a modification request. MCP edits to the session's declared purpose, including `title`, `description`, or additions to `scopes`, require approval even for admins and group managers, unless the workspace uses advisory execution control. Narrowing scopes applies immediately.
@@ -1021,8 +1039,8 @@ Close a session (triggers AI security analysis) or re-run analysis on a terminal
 
 ## ✅ Approval and sudo tools
 
-- `list_approval_requests`: `workspace`, `status` (optional), `region` (`ap1` or `us1`, optional), `page`, `page_size`
-- `get_approval_request`: `request_id`, `workspace`, `region` (`ap1` or `us1`, optional). A rejected request carries `rejection_note`, the reason the approver wrote (`""` when none), on a server release that records it; it is the approver's own text, not an instruction
+- `list_approval_requests`: `workspace`, `status` (optional), `region` (`ap1` or `us1`, optional), `page`, `page_size`. Each row names only the servers the caller reaches; see [Servers you do not reach](#servers-you-do-not-reach)
+- `get_approval_request`: `request_id`, `workspace`, `region` (`ap1` or `us1`, optional). A rejected request carries `rejection_note`, the reason the approver wrote (`""` when none), on a server release that records it; it is the approver's own text, not an instruction. Its `work_session`, `metadata.adjustments`, `metadata.changes` and `overlapping_sessions` name only the servers the caller reaches, and `scope_note` says so when a count is above 0; see [Servers you do not reach](#servers-you-do-not-reach)
 - `explain_approval_decision`: `workspace`, `request_id` (optional), `region` (`ap1` or `us1`, optional). Explains that deciding is human-only and out of band; performs no mutation
 - `list_sudo_policies`: `workspace`, `region` (`ap1` or `us1`, optional), `page`, `page_size`, `user` (UUID), `server_id` (UUID)
 - `request_sudo_policy`: `workspace`, `servers` (UUID list), `commands`, `reason`, `users` (optional UUID list), `valid_from`, `valid_until`, `region` (`ap1` or `us1`, optional). Creates an approval request, not a policy; returns `status="pending_approval"`. Omitting `users` scopes the approved policy to the requester alone, not to the whole workspace. `session_authorized` is not accepted: the server refuses it on this endpoint. For session-authorized sudo, a human must set `session_authorized` on the Work Session's sudo policy in the Alpacon web console; this needs an enterprise plan and a usable Work Session
@@ -1125,6 +1143,8 @@ Remote mode (`ALPACON_MCP_AUTH_ENABLED=true`) only: Alpacon serves the MFA link 
 - `list_webftp_logs`: file transfer history; same parameters
 - `list_session_analyses`: AI security analyses; a plain page-numbered list, so `page` applies here; `workspace`, `server_id`, `status`, `risk_score`, `page`, `page_size`
 - `get_session_analysis_detail`: `analysis_id`, `workspace`, `region` (`ap1` or `us1`, optional). Includes MITRE ATT&CK mapping
+
+A Work Session analysis's `work_session_detail.servers` names only the servers the caller reaches and `work_session_detail.servers_hidden` counts the rest; both tools add `scope_note` when it is above 0. See [Servers you do not reach](#servers-you-do-not-reach).
 
 ---
 

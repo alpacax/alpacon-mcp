@@ -1,12 +1,18 @@
 """Unit tests for work_session_tools module."""
 
+import copy
 from http import HTTPStatus
 
 import pytest
 from mcp.types import CallToolResult
 
 from server import mcp
-from tests.conftest import http_client_fixture, published_rule, tool_descriptions
+from tests.conftest import (
+    http_client_fixture,
+    published_rule,
+    tool_descriptions,
+    work_session_body,
+)
 from tools.work_session_tools import (
     _SCOPES_DESCRIPTION,
     _SESSION_DESCRIPTION,
@@ -1584,3 +1590,97 @@ async def test_extend_description_states_the_window_the_api_requires():
 
     assert 'has not started' in text
     assert 'expires_at has passed' in text
+
+
+class TestUnreachedServersAreCounted:
+    """#480: Alpacon names only the targets the caller reaches and counts the
+    rest; the body passes through and scope_note says the list is partial."""
+
+    @pytest.mark.asyncio
+    async def test_get_keeps_the_body_and_notes_the_count(
+        self, mock_http_client, mock_token_manager
+    ):
+        body = work_session_body(servers_hidden=2)
+        mock_http_client.get.return_value = copy.deepcopy(body)
+
+        result = await work_session_get(
+            session_id=SESSION_ID, workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'success'
+        assert result['data'] == body
+        assert '2 more servers' in result['scope_note']
+        assert '`servers_hidden`' in result['scope_note']
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'body',
+        [
+            {'id': SESSION_ID, 'status': 'active', 'servers': []},  # older server
+            {
+                'id': SESSION_ID,
+                'status': 'active',
+                'servers': [],
+                'servers_hidden': 0,
+                'clusters_hidden': 0,
+            },
+        ],
+        ids=['without-counts', 'counts-of-zero'],
+    )
+    async def test_get_without_a_count_adds_no_note(
+        self, mock_http_client, mock_token_manager, body
+    ):
+        mock_http_client.get.return_value = body
+
+        result = await work_session_get(
+            session_id=SESSION_ID, workspace='testworkspace', region='ap1'
+        )
+
+        assert 'scope_note' not in result
+
+    @pytest.mark.asyncio
+    async def test_list_names_each_partial_row(
+        self, mock_http_client, mock_token_manager
+    ):
+        page = {
+            'count': 2,
+            'next': None,
+            'results': [
+                work_session_body(id='s-full'),
+                work_session_body(
+                    id='s-partial',
+                    pending_modification_request={
+                        'id': 'mod-1',
+                        'changes': {'servers': [], 'servers_hidden': 3},
+                    },
+                ),
+            ],
+        }
+        mock_http_client.get.return_value = copy.deepcopy(page)
+
+        result = await work_session_list(workspace='testworkspace', region='ap1')
+
+        assert result['data'] == page
+        assert 's-partial (modification: 3 more servers)' in result['scope_note']
+        assert 's-full' not in result['scope_note']
+
+    @pytest.mark.asyncio
+    async def test_list_without_counts_adds_no_note(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {
+            'count': 1,
+            'results': [work_session_body()],
+        }
+
+        result = await work_session_list(workspace='testworkspace', region='ap1')
+
+        assert 'scope_note' not in result
+
+    @pytest.mark.asyncio
+    async def test_descriptions_name_the_counts(self):
+        descriptions = await tool_descriptions()
+
+        for name in ('work_session_get', 'work_session_list'):
+            assert 'servers_hidden' in descriptions[name]
+            assert 'scope_note' in descriptions[name]

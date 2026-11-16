@@ -1,12 +1,19 @@
 """Unit tests for approval and sudo policy tools module."""
 
+import copy
 import inspect
 import sys
 from http import HTTPStatus
 
 import pytest
 
-from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture, published_rule
+from tests.conftest import (
+    HTTP_ERROR_ENVELOPE,
+    http_client_fixture,
+    published_rule,
+    tool_descriptions,
+    work_session_body,
+)
 from tools.approval_tools import (
     explain_approval_decision,
     get_approval_request,
@@ -390,3 +397,79 @@ async def test_single_argument_rule_lives_on_the_parameter(
     # Then the parameter states the rule and the tool no longer does
     assert phrase in on_parameter
     assert gone not in on_tool
+
+
+REQUEST_ID = '550e8400-e29b-41d4-a716-446655440030'
+
+
+def _work_session_request(**session_fields: object) -> dict[str, object]:
+    """A pending work_session request as a reader who reaches one server gets it."""
+    return {
+        'id': REQUEST_ID,
+        'request_type': 'work_session',
+        'status': 'pending',
+        'work_session': work_session_body(
+            status='pending', approval_request_id=REQUEST_ID, **session_fields
+        ),
+        'metadata': {},
+        'overlapping_sessions': [],
+    }
+
+
+class TestUnreachedServersAreCounted:
+    """#480: an approval names only the servers its reader reaches."""
+
+    @pytest.mark.asyncio
+    async def test_get_keeps_the_body_and_notes_the_count(
+        self, mock_http_client, mock_token_manager
+    ):
+        body = _work_session_request(servers_hidden=2)
+        mock_http_client.get.return_value = copy.deepcopy(body)
+
+        result = await get_approval_request(
+            request_id=REQUEST_ID, workspace='testworkspace', region='ap1'
+        )
+
+        assert result['data'] == body
+        assert '`work_session.servers_hidden`' in result['scope_note']
+        assert '2 more servers' in result['scope_note']
+
+    @pytest.mark.asyncio
+    async def test_get_without_counts_adds_no_note(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = _work_session_request()
+
+        result = await get_approval_request(
+            request_id=REQUEST_ID, workspace='testworkspace', region='ap1'
+        )
+
+        assert 'scope_note' not in result
+
+    @pytest.mark.asyncio
+    async def test_list_names_each_partial_row(
+        self, mock_http_client, mock_token_manager
+    ):
+        partial = _work_session_request()
+        partial['overlapping_sessions'] = [
+            {'id': 'other', 'servers': [], 'servers_hidden': 1}
+        ]
+        page = {'count': 2, 'results': [{'id': 'req-plain'}, partial]}
+        mock_http_client.get.return_value = copy.deepcopy(page)
+
+        result = await list_approval_requests(workspace='testworkspace', region='ap1')
+
+        assert result['data'] == page
+        assert (
+            f'request {REQUEST_ID} (overlapping session other: 1 more shared server)'
+            in result['scope_note']
+        )
+        assert 'req-plain' not in result['scope_note']
+
+    @pytest.mark.asyncio
+    async def test_descriptions_name_the_counts(self):
+        descriptions = await tool_descriptions()
+
+        for name in ('get_approval_request', 'list_approval_requests'):
+            assert 'servers_hidden' in descriptions[name]
+            assert 'scope_note' in descriptions[name]

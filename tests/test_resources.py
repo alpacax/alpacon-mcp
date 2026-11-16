@@ -1,9 +1,11 @@
 """Tests for alpacon:// MCP resources."""
 
 import inspect
+import json
 import re
 
 import pytest
+from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.shared.uri_template import UriTemplate
 
 import tools.resources as res
@@ -11,6 +13,7 @@ from server import ALL_TOOL_MODULES, ALWAYS_ON_MODULES, mcp
 from tests.conftest import http_client_fixture, tool_descriptions
 
 mock_metrics_http_client = http_client_fixture('tools.metrics_tools')
+mock_session_http_client = http_client_fixture('tools.work_session_tools')
 
 
 @pytest.fixture(scope='module', autouse=True)
@@ -184,6 +187,28 @@ class TestResourceRegistration:
         )
         assert stale.description is not None
         assert "state='stale'" in stale.description
+
+    @pytest.mark.asyncio
+    async def test_work_session_resource_carries_the_scope_note(
+        self, mock_session_http_client, mock_token_manager
+    ):
+        """#480: a resource reads its tool, so a counted server reaches it too."""
+        session_id = '550e8400-e29b-41d4-a716-446655440020'
+        mock_session_http_client.get.return_value = {
+            'id': session_id,
+            'status': 'active',
+            'servers': [],
+            'servers_hidden': 1,
+        }
+
+        [contents] = await mcp.read_resource(
+            f'alpacon://work-sessions/ap1/testworkspace/{session_id}'
+        )
+
+        assert isinstance(contents, ReadResourceContents)
+        assert isinstance(contents.content, str)
+        body = json.loads(contents.content)
+        assert '1 more server' in body['content']['scope_note']
 
     @pytest.mark.asyncio
     async def test_metrics_latest_stale_pins_state_on_the_real_request(
