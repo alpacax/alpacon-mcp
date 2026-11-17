@@ -4,8 +4,8 @@ Alpacon names only the servers and clusters the reader reaches and counts the
 rest in a sibling integer; the field paths follow the Alpacon API's Work
 Session, approval request and session analysis responses. The body passes
 through untouched; this module only reads those counts and writes a
-`hidden_targets_note`, so an agent does not take a partial list for the whole scope. It
-decides nothing: a server that sends no count gets no note.
+`hidden_targets_note`, so an agent does not take a partial list for the whole
+scope. It decides nothing: a server that sends no count gets no note.
 
 The notes state Alpacon's own rule, not one of this module: a reader who manages
 the session (its assignee, its token's owner, its Application's direct
@@ -222,8 +222,8 @@ def approval_note(approval: object) -> str | None:
         )
     if _get(approval, 'status') == 'pending':
         sentences.append(
-            'Alpacon counts servers and clusters only for a reader who neither manages the '
-            'session nor may decide this request.'
+            'Alpacon counts servers and clusters only for a reader who neither '
+            'manages the session nor may decide this request.'
         )
         deciders = _DECIDERS
     else:
@@ -336,8 +336,7 @@ class _Page:
         )
 
 
-#: The page notes for work_session_list, list_approval_requests and
-#: list_session_analyses; each names every row that counts anything.
+#: Page notes; each names every row that counts anything.
 SESSION_PAGE = _Page(
     noun='sessions',
     counts=_session_counts,
@@ -380,7 +379,7 @@ ANALYSIS_PAGE = _Page(
 def attach_hidden_targets_note(
     response: ToolResponse, describe: Callable[[object], str | None]
 ) -> ToolResponse:
-    """Add ``hidden_targets_note`` to a successful result whose ``data`` counts a target.
+    """Add ``hidden_targets_note`` to a successful result that counts a target.
 
     ``data`` stays exactly as the server sent it; an error result is returned as is.
     """

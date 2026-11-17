@@ -201,7 +201,9 @@ PARTIAL_SESSION = session_row(
     WSID,
     'active',
     title='Fleet kernel patching',
-    description='Apply the kernel update on the payment fleet; reboot one host at a time.',
+    description=(
+        'Apply the kernel update on the payment fleet; reboot one host at a time.'
+    ),
     scopes=['command', 'sudo'],
     servers=[
         {
