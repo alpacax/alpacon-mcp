@@ -677,6 +677,51 @@
    }
   },
   {
+   "name": "work_session_close",
+   "description": "Mark a Work Session as completed and trigger AI security analysis (Pass 1–4). Call after all commands and file transfers for this session are done. Related: work_session_create (create session), work_session_get (check status).",
+   "inputSchema": {
+    "properties": {
+     "session_id": {
+      "description": "Work Session UUID, as work_session_create or work_session_list returns it.",
+      "title": "Session Id",
+      "type": "string"
+     },
+     "workspace": {
+      "description": "Workspace name, as list_workspaces returns it.",
+      "title": "Workspace",
+      "type": "string"
+     },
+     "region": {
+      "anyOf": [
+       {
+        "enum": [
+         "ap1",
+         "us1"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "Region, ap1 or us1. Omit it to use the workspace's region: read from the JWT in remote mode and from token.json in local mode. The call fails when that region cannot be determined; pass region when several regions match.",
+      "title": "Region"
+     }
+    },
+    "required": [
+     "session_id",
+     "workspace"
+    ],
+    "title": "work_session_closeArguments",
+    "type": "object"
+   },
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true
+   }
+  },
+  {
    "name": "work_session_create",
    "description": "Create a Work Session to scope all infrastructure actions under an auditable, approval-gated session. An active, approved Work Session is required for command execution and REST file-transfer creation with personal API tokens, MCP OAuth or browser login. The Alpacon server enforces this; personal-token enforcement requires a server release that supports it. This MCP server adds no local authorization check. Service tokens retain their endpoint-specific authorization rules. A new session usually lands in pending: this tool then returns status=\"pending_approval\", and no command or file transfer runs in it until a human approves out-of-band (Alpacon web console or Slack). Do not open another session; call work_session_get and proceed once data.status is active, or stop if it is rejected, cancelled, expired, revoked, or completed, since those never become active. Use work_session_update to add servers to an existing session (pass every server it keeps; the list replaces the current one) instead of creating a new one. Related: work_session_close (end session), execute_command (pass work_session_id).",
    "inputSchema": {
@@ -772,8 +817,66 @@
    }
   },
   {
+   "name": "work_session_extend",
+   "description": "Extend the expiry time of a Work Session. Only an approved or active session inside its window can be extended: the API refuses one that has not started yet or whose expires_at has passed, whatever its status, so replace an expired session with work_session_create. Bound sudo policies are extended together. Whether the extension applies immediately or waits for approval follows the workspace's approval policy, the same rule work_session_create uses: an auto-approve lane extends directly and this tool returns a normal success; any other lane queues an extension request instead, and this tool returns status=\"pending_approval\"—the session keeps its prior expires_at until a human decides out-of-band. Poll work_session_get until expires_at changes to see the outcome. Related: work_session_update (modify other fields), work_session_get (check current expiry).",
+   "inputSchema": {
+    "properties": {
+     "session_id": {
+      "description": "Work Session UUID, as work_session_create or work_session_list returns it.",
+      "title": "Session Id",
+      "type": "string"
+     },
+     "workspace": {
+      "description": "Workspace name, as list_workspaces returns it.",
+      "title": "Workspace",
+      "type": "string"
+     },
+     "expires_at": {
+      "description": "New expiry as an ISO 8601 datetime string; it must be later than the current one.",
+      "title": "Expires At",
+      "type": "string"
+     },
+     "reason": {
+      "description": "Required on every request: a short justification for why more time is needed, shown to the human approver when this extension needs a decision.",
+      "title": "Reason",
+      "type": "string"
+     },
+     "region": {
+      "anyOf": [
+       {
+        "enum": [
+         "ap1",
+         "us1"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "Region, ap1 or us1. Omit it to use the workspace's region: read from the JWT in remote mode and from token.json in local mode. The call fails when that region cannot be determined; pass region when several regions match.",
+      "title": "Region"
+     }
+    },
+    "required": [
+     "session_id",
+     "workspace",
+     "expires_at",
+     "reason"
+    ],
+    "title": "work_session_extendArguments",
+    "type": "object"
+   },
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": true
+   }
+  },
+  {
    "name": "work_session_get",
-   "description": "Get details of a Work Session: status, scopes, servers, requester_type, expires_at. Related: work_session_list (list all sessions), work_session_timeline (chronological activity), work_session_close (end session).",
+   "description": "Get details of a Work Session: status, scopes, servers, requester_type, expires_at. Related: work_session_list (list all sessions), work_session_timeline (chronological activity), work_session_close (end session). A Work Session's servers and clusters name only the targets you can reach; servers_hidden and clusters_hidden count the rest, with no name or id (also old_hidden and new_hidden in adjustments.servers, and servers_hidden in pending_modification_request.changes and account_flag). When a count is above 0 the result carries hidden_targets_note: the named list is not the whole scope; Alpacon sends a count above 0 only to a reader who does not manage that session.",
    "inputSchema": {
     "properties": {
      "session_id": {
@@ -818,7 +921,7 @@
   },
   {
    "name": "work_session_list",
-   "description": "List Work Sessions in a workspace. Related: work_session_create (create session), work_session_get (single session detail).",
+   "description": "List Work Sessions in a workspace. Related: work_session_create (create session), work_session_get (single session detail). A Work Session's servers and clusters name only the targets you can reach; servers_hidden and clusters_hidden count the rest, with no name or id (also old_hidden and new_hidden in adjustments.servers, and servers_hidden in pending_modification_request.changes and account_flag). When a count is above 0 the result carries hidden_targets_note: the named list is not the whole scope; Alpacon sends a count above 0 only to a reader who does not manage that session.",
    "inputSchema": {
     "properties": {
      "workspace": {
@@ -884,6 +987,123 @@
    "annotations": {
     "readOnlyHint": true,
     "destructiveHint": false
+   }
+  },
+  {
+   "name": "work_session_update",
+   "description": "Update a Work Session (partial update). Only provided fields are sent. servers replaces the whole server list, so pass every server the session keeps. Pending sessions update immediately; approved/active sessions go through the modification flow—when the server queues an approval request, this tool returns status=\"pending_approval\" and the changes only apply after a human approves them out-of-band. Terminal sessions (completed/rejected/cancelled/expired/revoked) cannot be updated. Related: work_session_get (check status), work_session_extend (extend expiry only).",
+   "inputSchema": {
+    "properties": {
+     "session_id": {
+      "description": "Work Session UUID, as work_session_create or work_session_list returns it.",
+      "title": "Session Id",
+      "type": "string"
+     },
+     "workspace": {
+      "description": "Workspace name, as list_workspaces returns it.",
+      "title": "Workspace",
+      "type": "string"
+     },
+     "title": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "Pass an empty string to clear it.",
+      "title": "Title"
+     },
+     "description": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "What you are doing and why, written as prose for the human who approves the session. It is NOT a command list and nothing in it is executed—commands run via execute_command once the session is active. Be specific: name the targets, the action, and what will not be touched; a bare word like \"maintenance\" gives the approver nothing to decide on. Markdown supported.",
+      "title": "Description"
+     },
+     "scopes": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "Replaces the whole scope list, so list every scope the session keeps. Operations the session allows: \"command\" (execute_command, execute_file), \"webftp\" (file transfers), \"tunnel\" (port forwarding), \"sudo\" (privilege elevation). Request \"sudo\" only when the work genuinely requires root.",
+      "title": "Scopes"
+     },
+     "servers": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "Server UUIDs, never server names; list_servers maps a name to its UUID.",
+      "title": "Servers"
+     },
+     "expires_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "ISO 8601 datetime string. Honored only for pending sessions; for approved or active ones it is ignored, so use work_session_extend instead.",
+      "title": "Expires At"
+     },
+     "region": {
+      "anyOf": [
+       {
+        "enum": [
+         "ap1",
+         "us1"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "Region, ap1 or us1. Omit it to use the workspace's region: read from the JWT in remote mode and from token.json in local mode. The call fails when that region cannot be determined; pass region when several regions match.",
+      "title": "Region"
+     }
+    },
+    "required": [
+     "session_id",
+     "workspace"
+    ],
+    "title": "work_session_updateArguments",
+    "type": "object"
+   },
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": true
    }
   }
  ]

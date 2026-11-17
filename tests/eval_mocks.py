@@ -194,6 +194,111 @@ def _rollout_mocks(case: str, session: dict[str, Sequence[str]]) -> list[Mock]:
     ]
 
 
+PARTIAL_CASE = 'report-partial-session-scope/mocks/alpacon'
+# Another person's session, as a reader who reaches web-01 only gets it (#480):
+# ServerNestedSerializer rows for what is named, a count for the rest.
+PARTIAL_SESSION = session_row(
+    WSID,
+    'active',
+    title='Fleet kernel patching',
+    description=(
+        'Apply the kernel update on the payment fleet; reboot one host at a time.'
+    ),
+    scopes=['command', 'sudo'],
+    servers=[
+        {
+            'id': SID,
+            'name': 'web-01',
+            'os': 'Ubuntu 24.04',
+            'platform': 'debian',
+            'is_connected': True,
+            'is_deleted': False,
+        }
+    ],
+    servers_hidden=2,
+    clusters_hidden=0,
+    can_manage=False,
+)
+_NOT_YOURS = httpx.Response(
+    403, json={'detail': 'You do not have permission to perform this action.'}
+)
+
+
+def _partial_scope_mocks() -> list[Mock]:
+    return [
+        Mock(
+            f'{PARTIAL_CASE}/work_session_get.md',
+            {('GET', f'{SESSIONS}{WSID}/'): httpx.Response(200, json=PARTIAL_SESSION)},
+            lambda: work_session_tools.work_session_get(
+                session_id=WSID, workspace=WS, region=REGION
+            ),
+        ),
+        Mock(
+            f'{PARTIAL_CASE}/work_session_list.md',
+            {('GET', SESSIONS): page([PARTIAL_SESSION])},
+            lambda: work_session_tools.work_session_list(workspace=WS, region=REGION),
+        ),
+        Mock(  # the server list is filtered by the same reach
+            f'{PARTIAL_CASE}/list_servers.md',
+            {
+                ('GET', '/api/servers/servers/'): page(
+                    [
+                        {
+                            'id': SID,
+                            'name': 'web-01',
+                            'is_connected': True,
+                            'os_name': 'Ubuntu',
+                            'os_version': '24.04',
+                        }
+                    ]
+                )
+            },
+            lambda: server_tools.list_servers(workspace=WS, region=REGION),
+        ),
+        Mock(  # only a manager may write the session
+            f'{PARTIAL_CASE}/work_session_update.md',
+            {('PATCH', f'{SESSIONS}{WSID}/'): _NOT_YOURS},
+            lambda: work_session_tools.work_session_update(
+                session_id=WSID, workspace=WS, region=REGION, servers=[SID]
+            ),
+        ),
+        Mock(
+            f'{PARTIAL_CASE}/work_session_extend.md',
+            {('POST', f'{SESSIONS}{WSID}/extend/'): _NOT_YOURS},
+            lambda: work_session_tools.work_session_extend(
+                session_id=WSID,
+                workspace=WS,
+                region=REGION,
+                expires_at='2099-11-06T18:00:00Z',
+                reason='More time for the kernel patching.',
+            ),
+        ),
+        Mock(  # a session of the agent's own would wait for approval
+            f'{PARTIAL_CASE}/work_session_create.md',
+            {
+                ('POST', SESSIONS): httpx.Response(
+                    201, json=session_row(WSID_NEW, 'pending', started_at=None)
+                )
+            },
+            lambda: work_session_tools.work_session_create(
+                workspace=WS,
+                region=REGION,
+                scopes=['command'],
+                servers=[SID],
+                expires_at='2099-11-05T18:00:00Z',
+                description='List the servers of the kernel patching session.',
+            ),
+        ),
+        Mock(
+            f'{PARTIAL_CASE}/work_session_close.md',
+            {('POST', f'{SESSIONS}{WSID}/complete/'): _NOT_YOURS},
+            lambda: work_session_tools.work_session_close(
+                session_id=WSID, workspace=WS, region=REGION
+            ),
+        ),
+    ]
+
+
 MOCKS: list[Mock] = [
     Mock(
         f'{SHARED}/list_servers.md',
@@ -413,6 +518,7 @@ MOCKS: list[Mock] = [
             server_id=SID, command='free -m', workspace=WS, region=REGION
         ),
     ),
+    *_partial_scope_mocks(),
     *_rollout_mocks(PATCH_CASE, PATCH_SESSION),
     *_rollout_mocks(SECOND_CASE, SECOND_SESSION),
     *(

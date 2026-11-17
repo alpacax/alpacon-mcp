@@ -24,6 +24,12 @@ from utils.error_handler import format_validation_error
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
 from utils.types import OptionalServerIds, ServerIds, SessionId, ToolResponse
+from utils.unreached_targets import (
+    SESSION_PAGE,
+    SESSION_TARGETS_DESCRIPTION,
+    attach_hidden_targets_note,
+    session_note,
+)
 
 _API_SESSIONS = '/api/work-sessions/sessions/'
 
@@ -265,8 +271,9 @@ async def work_session_close(
     description=(
         'Get details of a Work Session: status, scopes, servers, requester_type, expires_at. '
         'Related: work_session_list (list all sessions), work_session_timeline '
-        '(chronological activity), work_session_close (end session).'
-    ),
+        '(chronological activity), work_session_close (end session). '
+    )
+    + SESSION_TARGETS_DESCRIPTION,
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'work session get detail status timeline'},
 )
@@ -279,7 +286,7 @@ async def work_session_get(
     """Get detailed information about a specific Work Session."""
     token = kwargs.get('token')
 
-    return await http_call_response(
+    response = await http_call_response(
         http_client.get,
         region=region,
         workspace=workspace,
@@ -288,13 +295,15 @@ async def work_session_get(
         default_message='Failed to get Work Session',
         session_id=session_id,
     )
+    return attach_hidden_targets_note(response, session_note)
 
 
 @mcp_tool_handler(
     description=(
         'List Work Sessions in a workspace. '
-        'Related: work_session_create (create session), work_session_get (single session detail).'
-    ),
+        'Related: work_session_create (create session), work_session_get (single session detail). '
+    )
+    + SESSION_TARGETS_DESCRIPTION,
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'work session list history audit'},
 )
@@ -315,7 +324,7 @@ async def work_session_list(
         page_size=limit, status=status, requester_type=requester_type
     )
 
-    return await http_call_response(
+    response = await http_call_response(
         http_client.get,
         region=region,
         workspace=workspace,
@@ -324,6 +333,7 @@ async def work_session_list(
         default_message='Failed to list Work Sessions',
         params=params,
     )
+    return attach_hidden_targets_note(response, SESSION_PAGE)
 
 
 # IDEMPOTENT_WRITE: repeated PATCH cannot stack approval requests (server WORK_SESSION_MOD_ALREADY_PENDING guard).

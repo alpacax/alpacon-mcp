@@ -15,6 +15,12 @@ from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import READ_ONLY
 from utils.types import OptionalServerId, ToolResponse
+from utils.unreached_targets import (
+    ANALYSIS_PAGE,
+    ANALYSIS_TARGETS_DESCRIPTION,
+    analysis_note,
+    attach_hidden_targets_note,
+)
 
 # ===============================
 # ACTIVITY LOG TOOLS
@@ -210,7 +216,8 @@ async def list_webftp_logs(
 
 
 @mcp_tool_handler(
-    description='List AI security analysis results for Websh sessions across the workspace. Filterable by server, risk score, or analysis status. Returns summary, risk scores, and analysis timestamps. Useful for security auditing and threat monitoring. Related: work_session_timeline (session command timeline), work_session_analyze (trigger analysis manually).',
+    description='List AI security analysis results for Websh sessions across the workspace. Filterable by server, risk score, or analysis status. Returns summary, risk scores, and analysis timestamps. Useful for security auditing and threat monitoring. Related: work_session_timeline (session command timeline), work_session_analyze (trigger analysis manually). '
+    + ANALYSIS_TARGETS_DESCRIPTION,
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'session analysis security risk threat'},
 )
@@ -248,7 +255,7 @@ async def list_session_analyses(
         risk_score=risk_score,
     )
 
-    return await http_call_response(
+    response = await http_call_response(
         http_client.get,
         region=region,
         workspace=workspace,
@@ -258,10 +265,12 @@ async def list_session_analyses(
         params=params,
         server_id=server_id,
     )
+    return attach_hidden_targets_note(response, ANALYSIS_PAGE)
 
 
 @mcp_tool_handler(
-    description='Get detailed AI security analysis for a specific session analysis record. Returns full analysis including risk factors, MITRE ATT&CK mapping, attack chain analysis, threat indicators, timeline analysis, and recommended actions. Related: work_session_timeline (session command timeline), work_session_analyze (trigger analysis manually).',
+    description='Get detailed AI security analysis for a specific session analysis record. Returns full analysis including risk factors, MITRE ATT&CK mapping, attack chain analysis, threat indicators, timeline analysis, and recommended actions. Related: work_session_timeline (session command timeline), work_session_analyze (trigger analysis manually). '
+    + ANALYSIS_TARGETS_DESCRIPTION,
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'session analysis detail mitre attack threat'},
 )
@@ -283,7 +292,7 @@ async def get_session_analysis_detail(
     """
     token = kwargs.get('token')
 
-    return await http_call_response(
+    response = await http_call_response(
         http_client.get,
         region=region,
         workspace=workspace,
@@ -292,3 +301,4 @@ async def get_session_analysis_detail(
         default_message='Failed to get session analysis details',
         analysis_id=analysis_id,
     )
+    return attach_hidden_targets_note(response, analysis_note)
