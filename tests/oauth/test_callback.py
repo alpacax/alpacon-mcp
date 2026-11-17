@@ -622,8 +622,6 @@ def _mfa_stage1_callback(app, auth0_client, redirect_uri, **state_extra):
 
 
 class TestMfaStage1Failure:
-    """A failed Stage 1 exchange ends the flow; Stage 2 never starts (#250)."""
-
     @pytest.mark.parametrize(
         'auth0_client',
         [
