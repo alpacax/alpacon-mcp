@@ -281,6 +281,34 @@ def _brief(counts: _Counts) -> str:
     return '; '.join(parts)
 
 
+#: Tool description sentences, kept beside the field paths they name.
+SESSION_TARGETS_DESCRIPTION = (
+    "A Work Session's servers and clusters name only the targets you can reach; "
+    'servers_hidden and clusters_hidden count the rest, with no name or id (also '
+    'old_hidden and new_hidden in adjustments.servers, and servers_hidden in '
+    'pending_modification_request.changes and account_flag). When a count is above '
+    '0 the result carries hidden_targets_note: the named list is not the whole '
+    'scope; Alpacon sends a count above 0 only to a reader who does not manage that '
+    'session.'
+)
+
+APPROVAL_TARGETS_DESCRIPTION = (
+    'Server and cluster lists name only the targets you can reach, and a sibling '
+    'count holds the rest with no name or id: servers_hidden and clusters_hidden on '
+    'work_session, old_hidden and new_hidden in metadata.adjustments.servers, '
+    'servers_hidden in metadata.changes and each overlapping_sessions row. When a '
+    'count is above 0 the result carries hidden_targets_note: the named list is not '
+    "the request's whole scope."
+)
+
+ANALYSIS_TARGETS_DESCRIPTION = (
+    'In a Work Session analysis, work_session_detail.servers names only the servers '
+    'you can reach, and work_session_detail.servers_hidden counts the rest with no '
+    'name or id. When it is above 0 the result carries hidden_targets_note: the '
+    'named list is not every server the session covered.'
+)
+
+
 @dataclass(frozen=True)
 class _Page:
     """How to read and name one kind of row; calling it gives a page's note."""

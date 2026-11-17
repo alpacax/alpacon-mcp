@@ -430,6 +430,7 @@ class TestUnreachedServersAreCounted:
             request_id=REQUEST_ID, workspace='testworkspace', region='ap1'
         )
 
+        assert result['status'] == 'success'
         assert result['data'] == body
         assert '`work_session.servers_hidden`' in result['hidden_targets_note']
         assert '2 more servers' in result['hidden_targets_note']
@@ -438,12 +439,15 @@ class TestUnreachedServersAreCounted:
     async def test_get_without_counts_adds_no_note(
         self, mock_http_client, mock_token_manager
     ):
-        mock_http_client.get.return_value = _work_session_request()
+        body = _work_session_request()
+        mock_http_client.get.return_value = copy.deepcopy(body)
 
         result = await get_approval_request(
             request_id=REQUEST_ID, workspace='testworkspace', region='ap1'
         )
 
+        assert result['status'] == 'success'
+        assert result['data'] == body
         assert 'hidden_targets_note' not in result
 
     @pytest.mark.asyncio
@@ -459,6 +463,7 @@ class TestUnreachedServersAreCounted:
 
         result = await list_approval_requests(workspace='testworkspace', region='ap1')
 
+        assert result['status'] == 'success'
         assert result['data'] == page
         assert (
             f'request {REQUEST_ID} (overlapping session other: 1 more shared server)'

@@ -17,6 +17,7 @@ from utils.tool_annotations import READ_ONLY
 from utils.types import OptionalServerId, ToolResponse
 from utils.unreached_targets import (
     ANALYSIS_PAGE,
+    ANALYSIS_TARGETS_DESCRIPTION,
     analysis_note,
     attach_hidden_targets_note,
 )
@@ -213,17 +214,10 @@ async def list_webftp_logs(
 # SESSION ANALYSIS HISTORY TOOLS
 # ===============================
 
-_UNREACHED_DESCRIPTION = (
-    'work_session_detail.servers names only the servers you can reach, and '
-    'work_session_detail.servers_hidden counts the rest with no name or id. When '
-    'it is above 0 the result carries hidden_targets_note: the named list is not every '
-    'server the session covered.'
-)
-
 
 @mcp_tool_handler(
     description='List AI security analysis results for Websh sessions across the workspace. Filterable by server, risk score, or analysis status. Returns summary, risk scores, and analysis timestamps. Useful for security auditing and threat monitoring. Related: work_session_timeline (session command timeline), work_session_analyze (trigger analysis manually). '
-    + _UNREACHED_DESCRIPTION,
+    + ANALYSIS_TARGETS_DESCRIPTION,
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'session analysis security risk threat'},
 )
@@ -276,7 +270,7 @@ async def list_session_analyses(
 
 @mcp_tool_handler(
     description='Get detailed AI security analysis for a specific session analysis record. Returns full analysis including risk factors, MITRE ATT&CK mapping, attack chain analysis, threat indicators, timeline analysis, and recommended actions. Related: work_session_timeline (session command timeline), work_session_analyze (trigger analysis manually). '
-    + _UNREACHED_DESCRIPTION,
+    + ANALYSIS_TARGETS_DESCRIPTION,
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'session analysis detail mitre attack threat'},
 )

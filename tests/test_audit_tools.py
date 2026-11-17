@@ -300,6 +300,7 @@ class TestUnreachedServersAreCounted:
             analysis_id='analysis-1', workspace='test-ws', region='ap1'
         )
 
+        assert result['status'] == 'success'
         assert result['data'] == body
         assert '`work_session_detail.servers_hidden`' in result['hidden_targets_note']
         assert '2 more servers' in result['hidden_targets_note']
@@ -308,12 +309,15 @@ class TestUnreachedServersAreCounted:
     async def test_detail_without_counts_adds_no_note(
         self, mock_http_client, mock_token_manager
     ):
-        mock_http_client.get.return_value = self._analysis(0)
+        body = self._analysis(0)
+        mock_http_client.get.return_value = copy.deepcopy(body)
 
         result = await get_session_analysis_detail(
             analysis_id='analysis-1', workspace='test-ws', region='ap1'
         )
 
+        assert result['status'] == 'success'
+        assert result['data'] == body
         assert 'hidden_targets_note' not in result
 
     @pytest.mark.asyncio
@@ -326,6 +330,7 @@ class TestUnreachedServersAreCounted:
 
         result = await list_session_analyses(workspace='test-ws', region='ap1')
 
+        assert result['status'] == 'success'
         assert result['data'] == page
         assert (
             f'analysis analysis-1 of session {self.SESSION_ID} (1 more server)'

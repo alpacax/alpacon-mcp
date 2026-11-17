@@ -1630,12 +1630,14 @@ class TestUnreachedServersAreCounted:
     async def test_get_without_a_count_adds_no_note(
         self, mock_http_client, mock_token_manager, body
     ):
-        mock_http_client.get.return_value = body
+        mock_http_client.get.return_value = copy.deepcopy(body)
 
         result = await work_session_get(
             session_id=SESSION_ID, workspace='testworkspace', region='ap1'
         )
 
+        assert result['status'] == 'success'
+        assert result['data'] == body
         assert 'hidden_targets_note' not in result
 
     @pytest.mark.asyncio
@@ -1660,6 +1662,7 @@ class TestUnreachedServersAreCounted:
 
         result = await work_session_list(workspace='testworkspace', region='ap1')
 
+        assert result['status'] == 'success'
         assert result['data'] == page
         assert (
             's-partial (modification: 3 more servers)' in result['hidden_targets_note']
@@ -1670,13 +1673,13 @@ class TestUnreachedServersAreCounted:
     async def test_list_without_counts_adds_no_note(
         self, mock_http_client, mock_token_manager
     ):
-        mock_http_client.get.return_value = {
-            'count': 1,
-            'results': [work_session_body()],
-        }
+        page = {'count': 1, 'results': [work_session_body()]}
+        mock_http_client.get.return_value = copy.deepcopy(page)
 
         result = await work_session_list(workspace='testworkspace', region='ap1')
 
+        assert result['status'] == 'success'
+        assert result['data'] == page
         assert 'hidden_targets_note' not in result
 
     @pytest.mark.asyncio

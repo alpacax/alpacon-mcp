@@ -26,6 +26,7 @@ from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ
 from utils.types import OptionalServerIds, ServerIds, SessionId, ToolResponse
 from utils.unreached_targets import (
     SESSION_PAGE,
+    SESSION_TARGETS_DESCRIPTION,
     attach_hidden_targets_note,
     session_note,
 )
@@ -116,16 +117,6 @@ _SCOPES_DESCRIPTION = (
     'Operations the session allows: "command" (execute_command, execute_file), '
     '"webftp" (file transfers), "tunnel" (port forwarding), "sudo" (privilege elevation). '
     'Request "sudo" only when the work genuinely requires root.'
-)
-
-_UNREACHED_DESCRIPTION = (
-    'servers and clusters name only the targets you can reach; servers_hidden '
-    'and clusters_hidden count the rest, with no name or id (also old_hidden and '
-    'new_hidden in adjustments.servers, and servers_hidden in '
-    'pending_modification_request.changes and account_flag). When a count is '
-    'above 0 the result carries hidden_targets_note: the named list is not the whole '
-    'scope; Alpacon sends a count above 0 only to a reader who does not manage '
-    'that session.'
 )
 
 _SESSION_DESCRIPTION = (
@@ -280,9 +271,9 @@ async def work_session_close(
     description=(
         'Get details of a Work Session: status, scopes, servers, requester_type, expires_at. '
         'Related: work_session_list (list all sessions), work_session_timeline '
-        '(chronological activity), work_session_close (end session). Its '
+        '(chronological activity), work_session_close (end session). '
     )
-    + _UNREACHED_DESCRIPTION,
+    + SESSION_TARGETS_DESCRIPTION,
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'work session get detail status timeline'},
 )
@@ -311,9 +302,8 @@ async def work_session_get(
     description=(
         'List Work Sessions in a workspace. '
         'Related: work_session_create (create session), work_session_get (single session detail). '
-        'In each row, '
     )
-    + _UNREACHED_DESCRIPTION,
+    + SESSION_TARGETS_DESCRIPTION,
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'work session list history audit'},
 )

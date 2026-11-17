@@ -876,7 +876,7 @@
   },
   {
    "name": "work_session_get",
-   "description": "Get details of a Work Session: status, scopes, servers, requester_type, expires_at. Related: work_session_list (list all sessions), work_session_timeline (chronological activity), work_session_close (end session). Its servers and clusters name only the targets you can reach; servers_hidden and clusters_hidden count the rest, with no name or id (also old_hidden and new_hidden in adjustments.servers, and servers_hidden in pending_modification_request.changes and account_flag). When a count is above 0 the result carries hidden_targets_note: the named list is not the whole scope; Alpacon sends a count above 0 only to a reader who does not manage that session.",
+   "description": "Get details of a Work Session: status, scopes, servers, requester_type, expires_at. Related: work_session_list (list all sessions), work_session_timeline (chronological activity), work_session_close (end session). A Work Session's servers and clusters name only the targets you can reach; servers_hidden and clusters_hidden count the rest, with no name or id (also old_hidden and new_hidden in adjustments.servers, and servers_hidden in pending_modification_request.changes and account_flag). When a count is above 0 the result carries hidden_targets_note: the named list is not the whole scope; Alpacon sends a count above 0 only to a reader who does not manage that session.",
    "inputSchema": {
     "properties": {
      "session_id": {
@@ -921,7 +921,7 @@
   },
   {
    "name": "work_session_list",
-   "description": "List Work Sessions in a workspace. Related: work_session_create (create session), work_session_get (single session detail). In each row, servers and clusters name only the targets you can reach; servers_hidden and clusters_hidden count the rest, with no name or id (also old_hidden and new_hidden in adjustments.servers, and servers_hidden in pending_modification_request.changes and account_flag). When a count is above 0 the result carries hidden_targets_note: the named list is not the whole scope; Alpacon sends a count above 0 only to a reader who does not manage that session.",
+   "description": "List Work Sessions in a workspace. Related: work_session_create (create session), work_session_get (single session detail). A Work Session's servers and clusters name only the targets you can reach; servers_hidden and clusters_hidden count the rest, with no name or id (also old_hidden and new_hidden in adjustments.servers, and servers_hidden in pending_modification_request.changes and account_flag). When a count is above 0 the result carries hidden_targets_note: the named list is not the whole scope; Alpacon sends a count above 0 only to a reader who does not manage that session.",
    "inputSchema": {
     "properties": {
      "workspace": {
