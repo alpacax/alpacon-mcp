@@ -14,6 +14,7 @@ from utils.oauth._http import (
     _AUTH0_TIMEOUT_SECONDS,
     _AUTH0_TOKEN_PATH,
     _DEFAULT_SCOPES,
+    _ERROR_ACCESS_DENIED,
     _ERROR_INVALID_REQUEST,
     _FORM_HEADERS,
     _GRANT_AUTHORIZATION_CODE,
@@ -254,14 +255,15 @@ async def _complete_mfa_stage(
     request: Request, state: _CallbackState, code: str
 ) -> Response:
     """Exchange the MFA code for its side effect, then redirect on to the ledger
-    stage if one was asked, else to the regular audience."""
-    logger.info(
-        'Stage 1 complete: MFA authorization code received, '
-        'exchanging and proceeding to Stage 2 (regular audience)'
-    )
+    stage if one was asked, else to the regular audience; a failed exchange ends
+    the flow with access_denied."""
+    logger.info('Stage 1 complete: MFA authorization code received, exchanging')
     config = _require_oauth_config()
     server_url = _get_server_url(request)
-    await _confirm_mfa_completion(config, server_url, code)
+    if not await _confirm_mfa_completion(config, server_url, code):
+        return _end_flow_with_error(
+            state, _ERROR_ACCESS_DENIED, 'MFA verification failed'
+        )
 
     if state.ledger_org:
         # The ledger stage hands over to the regular audience itself.
@@ -292,9 +294,9 @@ async def _complete_mfa_stage(
 
 async def _confirm_mfa_completion(
     config: dict[str, str], server_url: str, code: str
-) -> None:
-    """Exchange the MFA code and discard the token: only the MFA completion it leaves
-    in the Auth0 session matters, so a failure is logged and the flow goes on."""
+) -> bool:
+    """Exchange the MFA code and discard the token; True only on a 2xx, since
+    anything else means Auth0 never confirmed MFA and Stage 2 must not start."""
     try:
         async with httpx.AsyncClient(timeout=_AUTH0_TIMEOUT_SECONDS) as client:
             mfa_response = await client.post(
@@ -308,16 +310,18 @@ async def _confirm_mfa_completion(
                 },
                 headers=_FORM_HEADERS,
             )
-            if mfa_response.status_code >= HTTPStatus.BAD_REQUEST:
-                logger.warning(
-                    'MFA token exchange returned %s (non-fatal): %s',
-                    mfa_response.status_code,
-                    escape_for_log(mfa_response.text, max_chars=200),
-                )
-            else:
-                logger.info('MFA token exchange succeeded (token discarded)')
     except httpx.HTTPError as e:
-        logger.warning('MFA token exchange failed (non-fatal): %s', e)
+        logger.warning('MFA token exchange failed: %s', e)
+        return False
+    if not HTTPStatus.OK <= mfa_response.status_code < HTTPStatus.MULTIPLE_CHOICES:
+        logger.warning(
+            'MFA token exchange returned %s: %s',
+            mfa_response.status_code,
+            escape_for_log(mfa_response.text, max_chars=200),
+        )
+        return False
+    logger.info('MFA token exchange succeeded (token discarded)')
+    return True
 
 
 def _final_stage_url(
