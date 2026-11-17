@@ -227,6 +227,14 @@ def _forward_auth0_error(
         escape_for_log(error),
         escape_for_log(error_description),
     )
+    return _end_flow_with_error(state, error, error_description)
+
+
+def _end_flow_with_error(
+    state: _CallbackState, error: str, error_description: str
+) -> Response:
+    """The OAuth error at the client's redirect_uri, or as JSON, with the flow's
+    cookies spent."""
     response: Response
     if state.client_redirect_uri:
         params = {'error': error, 'error_description': error_description}
