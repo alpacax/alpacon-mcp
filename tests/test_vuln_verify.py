@@ -46,7 +46,6 @@ def test_combined_line_avoids_the_constructs_the_approval_gate_grades_high():
 
 
 class TestCombinedLine:
-    # happy path
     def test_reports_the_verdict_the_units_and_the_stale_services(self, tmp_path: Path):
         result = _combined_line(
             tmp_path, 'echo "NEEDRESTART-VER: 3.6"; echo "NEEDRESTART-SVC: ssh.service"'
@@ -60,7 +59,6 @@ class TestCombinedLine:
             'NEEDRESTART-SVC: ssh.service'
         ]
 
-    # edge cases
     @pytest.mark.parametrize(
         'needrestart',
         ['echo "NEEDRESTART-VER: 3.6"', 'exit 127'],

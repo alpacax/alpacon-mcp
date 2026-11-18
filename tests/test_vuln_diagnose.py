@@ -197,7 +197,6 @@ def test_checks_avoid_the_constructs_the_approval_gate_grades_high():
 
 
 class TestDebianCheck:
-    # happy path
     @pytest.mark.parametrize(
         ('status', 'compare_exit', 'expected'),
         [
@@ -229,7 +228,6 @@ class TestDebianCheck:
         assert result.returncode == 0, result.stderr
         assert result.stdout == expected + '\n'
 
-    # unhappy paths
     @pytest.mark.parametrize(
         ('stanza', 'dpkg_exit', 'reason'),
         [
@@ -272,7 +270,6 @@ class TestDebianCheck:
             'verdict=unknown release=questing reason=release-not-in-advisory\n'
         )
 
-    # edge cases
     @pytest.mark.parametrize(
         ('stanza', 'dpkg_exit', 'status'),
         [
@@ -312,7 +309,6 @@ class TestDebianCheck:
 
 
 class TestKernelCheck:
-    # happy path
     def test_a_fixed_image_installed_beside_an_old_running_kernel_is_reboot_pending(
         self, tmp_path: Path
     ):
@@ -326,7 +322,6 @@ class TestKernelCheck:
             ' fixed=6.8.0-45.45 reason=reboot-pending\n'
         )
 
-    # edge cases
     def test_an_image_with_only_config_files_left_is_not_reboot_pending(
         self, tmp_path: Path
     ):
