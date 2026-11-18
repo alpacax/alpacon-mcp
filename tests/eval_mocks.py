@@ -79,6 +79,12 @@ READ_CASES = {
         'target_account_username': 'deploy',
         'description': 'Verify the CVE-2026-31337 openssh-server fix took effect on web-01.',
     },
+    'verify-keeps-a-root-session-unknown/mocks/alpacon': PATCH_SESSION
+    | {
+        'servers': [SID],
+        'scopes': ['command'],
+        'description': 'Verify the CVE-2026-31337 openssh-server fix took effect on web-01.',
+    },
 }
 SERVER_NAMES = {SID: 'web-01', SID2: 'web-02', SID3: 'web-03'}
 SERVER = {'id': SID, 'name': 'web-01'}
