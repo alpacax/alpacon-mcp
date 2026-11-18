@@ -579,3 +579,37 @@ def test_the_debian_preflight_passes_a_pattern_shaped_name_literally(tmp_path: P
 
     calls = (tmp_path / 'argv').read_text().splitlines()
     assert calls[0] == f'-s -q install --only-upgrade {pattern}'
+
+
+@pytest.mark.parametrize(
+    ('output', 'exit_code', 'expected'),
+    [
+        ('Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease', 0, 'refresh=ok'),
+        (
+            (
+                'W: Failed to fetch http://security.ubuntu.com/ubuntu/dists/noble-security/InRelease\n'
+                'W: Some index files failed to download. They have been ignored, or old ones used instead.'
+            ),
+            0,
+            'refresh=failed',
+        ),
+        ('E: Could not get lock /var/lib/apt/lists/lock', 100, 'refresh=failed'),
+    ],
+)
+def test_the_refresh_line_reports_a_failed_index_download(
+    tmp_path: Path, output: str, exit_code: int, expected: str
+):
+    line = doc_blocks(CHECK, 'sh')[1]
+    install_fakes(
+        tmp_path,
+        {'apt-get': 'printf \'%s\\n\' "$UPDATE_OUTPUT"; exit "$UPDATE_EXIT"'},
+    )
+
+    result = run_with_fakes(
+        ['/bin/sh', '-c', line],
+        tmp_path,
+        UPDATE_OUTPUT=output,
+        UPDATE_EXIT=str(exit_code),
+    )
+
+    assert result.stdout == expected + '\n'
