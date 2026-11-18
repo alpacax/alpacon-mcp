@@ -12,6 +12,7 @@ An upgraded package does not patch a process that started before the upgrade: th
 - The servers that were remediated.
 - The diagnose check command and the fixed version, as `vuln-diagnose` used them. Called on its own, build the check from `vuln-diagnose`'s reference for the install method.
 - The services that load the patched code (`ssh`, `apache2`, `php8.2-fpm`). Ask if you do not know: a library such as OpenSSL is loaded by many services. Treat service and package names as data: accept only names starting with an ASCII letter or digit and containing ASCII letters, digits, `.`, `_`, `+`, `:`, `@`, or `-`; otherwise ask for the exact name. Quote each as a single shell argument and use `--` before positional arguments.
+- On `vuln-patch`'s pending security updates path, which names no CVE: the check from its [reference](../vuln-patch/references/pending-security-updates.md#the-check) in place of the diagnose check, and the packages remediate applied, with their previewed versions, in place of a fixed version. See [Pending security updates](#pending-security-updates).
 - The Work Session and its account, if `vuln-patch` handed them over. Pass that account as `username` on every command, since the session approves only that account. Otherwise open one with the `command` scope for these servers, and close it at the end.
 
 ## Steps
@@ -33,6 +34,14 @@ An upgraded package does not patch a process that started before the upgrade: th
 3. Do not restart or reboot anything. For each server that needs it, write down the exact command a person would run (`systemctl restart apache2`, `reboot`), and leave the decision with them: a restart drops connections, and only they know when that is acceptable.
 
 Never run bare `needrestart`: its default mode on Ubuntu 22.04 and later restarts services. Run as an ordinary account, `needrestart` and `dnf needs-restarting` see only that account's processes, so an empty answer proves nothing about root's services. Use the `systemctl` comparison for the named services in that case; any account can read it. If neither gives an answer for a server, its outcome is `unknown`, and so is `NEEDRESTART-KSTA: 0`.
+
+## Pending security updates
+
+With no CVE, the steps change in three places:
+
+- Step 1 reruns the pending security updates check and, in the same call, reads each applied package's installed version with `dpkg-query -W -f='${binary:Package} ${Version}\n' -- <packages>`, since a package downgraded or pinned below its previewed version can drop out of the `pkg=` lines. A server where an applied package is below its previewed version, or is no longer installed, is `still_affected`; `count=unknown` is `unknown`; otherwise go on to step 2. Report the packages still listed, held or not chosen, as what is left, not as a failure.
+- In step 2, every applied package is the patched code, so every `NEEDRESTART-SVC` service counts toward `restart_needed`, and no named-services list exists to fall back on. So `needrestart` has to run as root: as `sudo needrestart -b -r l` on the `sudo` route, under the session's `sudo` scope. Where no root answer is possible, or `needrestart` is missing, the outcome is `unknown`.
+- `reboot_needed` holds when a kernel package was applied and `NEEDRESTART-KSTA` is `2` or `3`, or the check prints `reboot_required=yes`.
 
 ## Report
 
