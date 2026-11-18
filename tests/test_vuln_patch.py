@@ -181,11 +181,16 @@ class TestPendingSecurityUpdatesCheck:
         assert keys['kernel'] == 'linux-oem-24.04'
         assert keys['count'] == '2'
 
-    @pytest.mark.parametrize('version', ['10', '"9"'])
+    @pytest.mark.parametrize(
+        ('distribution', 'version'),
+        [('debian', '10'), ('debian', '"9"'), ('"debian"', '"10"')],
+    )
     def test_debian_10_or_older_is_unknown_and_never_nothing_pending(
-        self, tmp_path: Path, shell: str, version: str
+        self, tmp_path: Path, shell: str, distribution: str, version: str
     ):
-        (tmp_path / 'os-release').write_text(f'ID=debian\nVERSION_ID={version}\n')
+        (tmp_path / 'os-release').write_text(
+            f'ID={distribution}\nVERSION_ID={version}\nVERSION_CODENAME=buster\n'
+        )
 
         _, _, stdout = _check(tmp_path, shell, KERNEL_META)
 
@@ -492,6 +497,23 @@ class TestMultiPackageRecipe:
 
         assert result.returncode != 0
         assert 'UPDATE_REACHED' not in result.stdout
+
+    @pytest.mark.parametrize(
+        'targets',
+        [
+            'openssl 1.0\nvim 2:9.1.0016-1ubuntu7.9',
+            'openssl 3.0.13-0ubuntu3.5 extra\nvim 2:9.1.0016-1ubuntu7.9',
+            'openssl 3.0.13-0ubuntu3.5\ncurl 8.5.0-2ubuntu10.7',
+        ],
+    )
+    def test_refuses_a_target_the_approved_preview_does_not_install(
+        self, tmp_path: Path, targets: str
+    ):
+        result = _recipe(tmp_path, targets=targets, before=FIXED)
+
+        assert result.returncode != 0
+        assert 'UPDATE_REACHED' not in result.stdout
+        assert ' after=' not in result.stdout
 
     def test_the_unfilled_template_fails_before_touching_the_server(
         self, tmp_path: Path

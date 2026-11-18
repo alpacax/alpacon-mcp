@@ -188,7 +188,7 @@ Running as an ordinary account with `sudo`, put the environment on the `sudo` li
 
 ## Several packages
 
-The pending security updates path in `vuln-patch` ([pending-security-updates.md](../../vuln-patch/references/pending-security-updates.md)) upgrades a set of packages with no CVE to name. This template keeps what the single-package one has: the approved `Inst` and `Remv` lines, a refusal when the simulated transaction differs or removes anything, `--no-remove`, and no restart of its own. `targets` holds one `<package> <version>` line per agreed package, with the candidate version that server's preview showed; both placeholders fail closed.
+The pending security updates path in `vuln-patch` ([pending-security-updates.md](../../vuln-patch/references/pending-security-updates.md)) upgrades a set of packages with no CVE to name. This template keeps what the single-package one has: the approved `Inst` and `Remv` lines, a refusal when the simulated transaction differs or removes anything, `--no-remove`, and no restart of its own. `targets` holds one `<package> <version>` line per agreed package, with the candidate version that server's preview showed, and the recipe refuses a target whose `Inst` line in `approved_changes` installs another version; both placeholders fail closed.
 
 ```bash
 #!/bin/bash
@@ -198,6 +198,7 @@ approved_changes='COPY THE APPROVED Inst AND Remv LINES HERE'
 pkgs=()
 while read -r p v; do
   [[ $p =~ ^[a-z0-9][a-z0-9.+-]+(:[a-z0-9]+)?$ && $v =~ ^[A-Za-z0-9.+:~-]+$ ]] || { echo "not a package and a version: $p $v" >&2; exit 1; }
+  printf '%s\n' "$approved_changes" | awk -v p="$p" -v v="$v" '$1 == "Inst" && $2 == p && index($0, "(" v " ") {f = 1} END {exit !f}' || { echo "not in the approved preview: $p $v" >&2; exit 1; }
   pkgs+=("$p")
 done <<<"$targets"
 at_target() {

@@ -25,7 +25,7 @@ Read-only, one call per server, as an ordinary account; nothing in it needs root
 
 ```sh
 export LC_ALL=C
-if grep -q '^ID=debian$' /etc/os-release 2>/dev/null && grep -Eq '^VERSION_ID="?([1-9]|10)"?$' /etc/os-release; then echo "count=unknown reason=release-not-covered"; exit 0; fi
+if grep -Eq '^ID="?debian"?$' /etc/os-release 2>/dev/null && grep -Eq '^VERSION_ID="?([1-9]|10)"?$' /etc/os-release; then echo "count=unknown reason=release-not-covered"; exit 0; fi
 grep -Eq '^ID="?(ubuntu|debian)"?$' /etc/os-release 2>/dev/null || { echo "count=unknown reason=distribution-not-covered"; exit 0; }
 codename=$(sed -n 's/^VERSION_CODENAME=//p' /etc/os-release 2>/dev/null | tr -d '"')
 [ -n "$codename" ] || { echo "count=unknown reason=no-codename"; exit 0; }
