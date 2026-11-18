@@ -16,6 +16,8 @@ from utils.common import (
     FILE_EXEC_INLINE_CREDENTIAL_HINT,
     FILE_EXEC_REFUSAL_HINTS,
     INLINE_CREDENTIAL_HINT,
+    PAUSE_DENIAL_CODES,
+    WORK_SESSION_PAUSED_NEXT_ACTION,
     WORK_SESSION_PURPOSE_APPROVAL_HINT,
     UnexpectedResponseShapeError,
     build_list_params,
@@ -1877,6 +1879,32 @@ _COMMAND_IN_PROGRESS = frozenset(
 _COMMAND_REFUSED = frozenset({'denied', 'rejected'})
 
 
+def _attach_work_session_pause(response: ToolResponse, result: _CommandRecord) -> None:
+    """Mark a row that paused its Work Session, or that the pause refused or closed,
+    and tell the agent to stop until a person resumes the session."""
+    marked = result.get('work_session_paused') is True
+    code = result.get('denial_code')
+    pause_code = code if isinstance(code, str) and code in PAUSE_DENIAL_CODES else None
+    if not (marked or pause_code):
+        return
+    if marked:
+        response['work_session_paused'] = True
+    if pause_code:
+        response['denial_code'] = pause_code
+    if isinstance(session_id := result.get('work_session_id'), str) and session_id:
+        response['work_session_id'] = session_id
+    if response.get('status') == 'error':
+        response['message'] += ' The Work Session is paused.'
+        response['next_action'] = WORK_SESSION_PAUSED_NEXT_ACTION
+    else:
+        held = response.get('next_action')
+        response['next_action'] = (
+            f'{held} {WORK_SESSION_PAUSED_NEXT_ACTION}'
+            if isinstance(held, str) and held
+            else WORK_SESSION_PAUSED_NEXT_ACTION
+        )
+
+
 def _settled_response(
     result: _CommandRecord,
     *,
@@ -1887,6 +1915,28 @@ def _settled_response(
     stdin_fed: bool,
 ) -> ToolResponse | None:
     """The tool answer for a command row, or None while it has nothing to report yet."""
+    response = _settled_row_response(
+        result,
+        command_id=command_id,
+        region=region,
+        workspace=workspace,
+        echo=echo,
+        stdin_fed=stdin_fed,
+    )
+    if response is not None:
+        _attach_work_session_pause(response, result)
+    return response
+
+
+def _settled_row_response(
+    result: _CommandRecord,
+    *,
+    command_id: str,
+    region: str,
+    workspace: str,
+    echo: Mapping[str, str],
+    stdin_fed: bool,
+) -> ToolResponse | None:
     status = result.get('status', '')
 
     if (

@@ -138,6 +138,18 @@ _NEXT_ACTION_BY_CATEGORY: dict[str, str] = {
 }
 _DEFAULT_NEXT_ACTION = _NEXT_ACTION_BY_CATEGORY['SUDO_APPROVAL_REQUIRED']
 
+# Command denial codes for work a Work Session pause refused or closed.
+PAUSE_DENIAL_CODES: frozenset[str] = frozenset(
+    {'session_paused', 'superseded_by_pause'}
+)
+
+WORK_SESSION_PAUSED_NEXT_ACTION = (
+    'The Work Session is paused. Stop: do not retry, resubmit, or open another '
+    'Work Session to get around it. Only a person can resume or end it, in the '
+    'Alpacon web console. Tell the user, then wait: check work_session_get and '
+    'continue only once data.status is active again.'
+)
+
 # Mirrors alpacon-cli worksession_error.go.
 type WorkSessionGateCode = Literal[
     'work_session_not_active',
@@ -912,6 +924,13 @@ def unwrap_http_result(
     if hint is not None:
         separator = ' ' if message.endswith('.') else '. '
         message = f'{message}{separator}{hint}'
+    if code == 'session_paused' and body is not None:
+        # Only a person resumes a paused session; the console link stays with
+        # the local signal, as for every other refusal.
+        if isinstance(session_id := body.get('work_session_id'), str) and session_id:
+            error_kwargs['work_session_id'] = session_id
+        error_kwargs['requires_human_approval'] = True
+        error_kwargs['next_action'] = WORK_SESSION_PAUSED_NEXT_ACTION
 
     return remember_console_link(error_response(message, **error_kwargs), body)
 

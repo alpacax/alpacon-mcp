@@ -24,7 +24,11 @@ from xml.sax.saxutils import escape
 
 import httpx
 
-from utils.common import is_work_session_gate_code, resolve_work_session_id
+from utils.common import (
+    PAUSE_DENIAL_CODES,
+    is_work_session_gate_code,
+    resolve_work_session_id,
+)
 from utils.http_client import http_client
 from utils.logger import get_logger
 from utils.notification_context import ConsoleLinks
@@ -550,7 +554,19 @@ def _from_result(
         value in ('presence', 'role', 'token_scope', 'auth')
         for value in missing_classes
     )
-    if status == 'error' and code == 'session_paused':
+    paused_session = (
+        tool_name.startswith('work_session_') and row.get('status') == 'paused'
+    )
+    pause_marked = any(
+        source.get('work_session_paused') is True
+        or _string(source, 'denial_code') in PAUSE_DENIAL_CODES
+        for source in (result, row)
+    )
+    if (
+        (status == 'error' and code == 'session_paused')
+        or pause_marked
+        or paused_session
+    ):
         kind: SignalKind = 'paused'
     elif status == 'pending_approval' or (
         tool_name in SUDO_PENDING_TOOLS
@@ -584,7 +600,7 @@ def _from_result(
         result, 'session_id'
     )
     work_session_wait = result.get('category') == 'WORK_SESSION_PENDING'
-    if work_session_wait:
+    if work_session_wait or kind == 'paused':
         session_id = session_id or _raw_string(row, 'work_session_id')
     session_id = session_id or _raw_string(arguments, 'work_session_id')
     session_id = session_id or _raw_string(row, 'work_session')

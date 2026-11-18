@@ -839,6 +839,119 @@ async def test_hook_classification_and_unchanged_result(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'tool_name, result',
+    [
+        (
+            'execute_command',
+            {
+                'status': 'pending_approval',
+                'gate': 'approval',
+                'work_session_paused': True,
+                'work_session_id': 'paused-1',
+            },
+        ),
+        (
+            'check_command_status',
+            {
+                'status': 'error',
+                'gate': 'risk',
+                'details': {
+                    'status': 'denied',
+                    'work_session_paused': True,
+                    'work_session_id': 'paused-1',
+                },
+            },
+        ),
+        (
+            'check_command_status',
+            {
+                'status': 'error',
+                'denial_code': 'session_paused',
+                'work_session_id': 'paused-1',
+                'details': {'status': 'rejected'},
+            },
+        ),
+        (
+            'check_command_status',
+            {
+                'status': 'error',
+                'details': {
+                    'status': 'rejected',
+                    'denial_code': 'superseded_by_pause',
+                    'work_session_id': 'paused-1',
+                },
+            },
+        ),
+        (
+            'work_session_get',
+            {'status': 'success', 'data': {'id': 'paused-1', 'status': 'paused'}},
+        ),
+    ],
+)
+async def test_pause_markers_signal_the_paused_session(
+    desktop_notifications, tool_name, result
+):
+    original = deepcopy(result)
+
+    async def tool(**kwargs):
+        return result
+
+    tool.__name__ = tool_name
+    with local_signal.stdio_transport():
+        answer = await with_error_handling(tool)(work_session_id='other')
+    await drain_signals()
+
+    assert answer == original
+    desktop_notifications.assert_called_once()
+    title, body = desktop_notifications.call_args.args[:2]
+    assert title == 'Alpacon: session paused'
+    assert body.startswith('Work Session paused-1 is paused')
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'tool_name, result, expected_title',
+    [
+        (
+            'check_command_status',
+            {
+                'status': 'error',
+                'gate': 'risk',
+                'details': {'status': 'denied', 'work_session_paused': False},
+            },
+            'Alpacon: command denied',
+        ),
+        (
+            'execute_command',
+            {'status': 'pending_approval', 'work_session_paused': 'true'},
+            'Alpacon: approval pending',
+        ),
+        (
+            'work_session_get',
+            {'status': 'success', 'data': {'id': 's1', 'status': 'active'}},
+            None,
+        ),
+    ],
+)
+async def test_only_a_true_pause_marker_signals_a_pause(
+    desktop_notifications, tool_name, result, expected_title
+):
+    async def tool(**kwargs):
+        return result
+
+    tool.__name__ = tool_name
+    with local_signal.stdio_transport():
+        await with_error_handling(tool)(work_session_id='s1')
+    await drain_signals()
+
+    if expected_title is None:
+        desktop_notifications.assert_not_called()
+    else:
+        assert desktop_notifications.call_args.args[0] == expected_title
+
+
+@pytest.mark.asyncio
 async def test_validated_arguments_and_http_refusal(
     monkeypatch, mock_token_manager, desktop_notifications
 ):

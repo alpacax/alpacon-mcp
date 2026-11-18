@@ -6420,3 +6420,72 @@ class TestHeldSudoApproval:
 
         assert result['status'] == 'success'
         assert result['data']['results'][0]['sudo_denial'] == _TODAYS_SUDO_DENIAL
+
+
+class TestWorkSessionPause:
+    """A command row that paused its Work Session, or that the pause refused."""
+
+    _PAUSED = 'The Work Session is paused. Stop: do not retry'
+
+    @staticmethod
+    async def _check(**fields: object) -> ToolResponse:
+        row = {'id': 'cmd-p1', 'handled_at': None, **fields}
+        with patch('tools.command_tools._get_command_result', return_value=row):
+            return await check_command_status(
+                command_id='cmd-p1', workspace='testworkspace', region='ap1'
+            )
+
+    @pytest.mark.asyncio
+    async def test_the_denial_that_paused_the_session_says_so(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await self._check(
+            status='rejected', work_session_paused=True, work_session_id='ws-1'
+        )
+
+        assert result['status'] == 'error'
+        assert result['work_session_paused'] is True
+        assert result['work_session_id'] == 'ws-1'
+        assert result['next_action'].startswith(self._PAUSED)
+        assert 'paused' in result['message']
+
+    @pytest.mark.asyncio
+    async def test_the_hold_that_paused_the_session_says_so(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await self._check(
+            status='awaiting_approval', work_session_paused=True, work_session_id='ws-1'
+        )
+
+        assert result['status'] == 'pending_approval'
+        assert result['work_session_paused'] is True
+        assert result['work_session_id'] == 'ws-1'
+        assert self._PAUSED in result['next_action']
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('code', ['session_paused', 'superseded_by_pause'])
+    async def test_a_pause_denial_code_is_kept_with_the_stop_guidance(
+        self, code, mock_http_client, mock_token_manager
+    ):
+        result = await self._check(
+            status='rejected', denial_code=code, work_session_id='ws-1'
+        )
+
+        assert result['status'] == 'error'
+        assert result['denial_code'] == code
+        assert result['work_session_id'] == 'ws-1'
+        assert result['next_action'].startswith(self._PAUSED)
+        assert 'work_session_paused' not in result
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('status', ['rejected', 'awaiting_approval'])
+    async def test_an_unmarked_row_keeps_todays_result(
+        self, status, mock_http_client, mock_token_manager
+    ):
+        baseline = await self._check(status=status)
+
+        result = await self._check(status=status, work_session_paused=False)
+
+        assert {k: v for k, v in result.items() if k != 'details'} == {
+            k: v for k, v in baseline.items() if k != 'details'
+        }

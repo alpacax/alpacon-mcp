@@ -51,3 +51,7 @@ A command or transfer the session does not cover fails before it runs with `stat
 - `work_session_assignee_mismatch`: the session belongs to someone else. Use your own.
 
 `work_session_not_active` is reported as `pending_approval` with `category="WORK_SESSION_PENDING"`: wait for the session as above.
+
+## A paused session
+
+A critical denial or hold can pause the session. The result that paused it carries `work_session_paused: true`; later attempts fail with `error_code="session_paused"`; a queued command the pause closed carries `denial_code="superseded_by_pause"`; and `work_session_get` reports `data.status` `paused`. Each carries a `next_action`: stop. Do not retry, resubmit, or open another session to get around the pause. Tell the person that only they, or an approver, can resume or end the session in the Alpacon web console, then wait and poll `work_session_get`. Continue only once `data.status` is `active` again; resend a superseded command only then, and only if it is still needed.
