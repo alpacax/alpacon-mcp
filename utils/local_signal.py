@@ -554,19 +554,14 @@ def _from_result(
         value in ('presence', 'role', 'token_scope', 'auth')
         for value in missing_classes
     )
-    paused_session = (
-        tool_name.startswith('work_session_') and row.get('status') == 'paused'
-    )
+    # The pause trigger, a pause refusal or a pause denial code; a plain read
+    # of a paused session's status is not a new pause.
     pause_marked = any(
         source.get('work_session_paused') is True
         or _string(source, 'denial_code') in PAUSE_DENIAL_CODES
         for source in (result, row)
     )
-    if (
-        (status == 'error' and code == 'session_paused')
-        or pause_marked
-        or paused_session
-    ):
+    if (status == 'error' and code in PAUSE_DENIAL_CODES) or pause_marked:
         kind: SignalKind = 'paused'
     elif status == 'pending_approval' or (
         tool_name in SUDO_PENDING_TOOLS

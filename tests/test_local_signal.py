@@ -883,10 +883,6 @@ async def test_hook_classification_and_unchanged_result(
                 },
             },
         ),
-        (
-            'work_session_get',
-            {'status': 'success', 'data': {'id': 'paused-1', 'status': 'paused'}},
-        ),
     ],
 )
 async def test_pause_markers_signal_the_paused_session(
@@ -930,6 +926,20 @@ async def test_pause_markers_signal_the_paused_session(
         (
             'work_session_get',
             {'status': 'success', 'data': {'id': 's1', 'status': 'active'}},
+            None,
+        ),
+        # A status read is guidance for the agent, not a new pause to announce.
+        (
+            'work_session_get',
+            {'status': 'success', 'data': {'id': 's1', 'status': 'paused'}},
+            None,
+        ),
+        (
+            'work_session_list',
+            {
+                'status': 'success',
+                'data': {'results': [{'id': 's1', 'status': 'paused'}]},
+            },
             None,
         ),
     ],

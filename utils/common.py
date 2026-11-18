@@ -143,6 +143,9 @@ PAUSE_DENIAL_CODES: frozenset[str] = frozenset(
     {'session_paused', 'superseded_by_pause'}
 )
 
+# The stored status of a paused Work Session.
+WORK_SESSION_STATUS_PAUSED = 'paused'
+
 WORK_SESSION_PAUSED_NEXT_ACTION = (
     'The Work Session is paused. Stop: do not retry, resubmit, or open another '
     'Work Session to get around it. Only a person can resume or end it, in the '
@@ -924,7 +927,7 @@ def unwrap_http_result(
     if hint is not None:
         separator = ' ' if message.endswith('.') else '. '
         message = f'{message}{separator}{hint}'
-    if code == 'session_paused' and body is not None:
+    if code in PAUSE_DENIAL_CODES and body is not None:
         # Only a person resumes a paused session; the console link stays with
         # the local signal, as for every other refusal.
         if isinstance(session_id := body.get('work_session_id'), str) and session_id:
