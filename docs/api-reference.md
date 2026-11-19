@@ -657,6 +657,9 @@ An entry whose `rejection_cause` is `use_file_execution` gains `error_code: "use
 the same `next_action` as on `execute_command`, naming that entry's server and account, plus a
 reminder to rerun only that server rather than the original target set.
 A rejected entry gains `rejection_hint` beside the row's own `rejection_cause` and `rejection_gate`, as described under `execute_command` (#242).
+An entry marked `work_session_paused: true` or carrying denial code `session_paused` or
+`superseded_by_pause` also gains `requires_human_approval: true` and a `next_action` to stop
+until a person resumes or ends the Work Session in the Alpacon web console.
 
 ### `check_command_status`
 Read one command's state and result by `command_id`, in a single call that never waits.
@@ -670,6 +673,11 @@ Read one command's state and result by `command_id`, in a single call that never
 
 ### `execute_command_multi_server`
 Execute a command on multiple servers simultaneously. The tool only submits: read each server's result with `check_command_status` and the `command_id` in that server's `deploy_shell_results` entry, or browse with `list_commands`. An accepted entry is `{status: "success", data, command_id}`, where `data` is the submission as the server returned it.
+
+If the submitted row is marked `work_session_paused: true` or carries denial code
+`session_paused` or `superseded_by_pause`, its entry also carries that marker or code,
+`work_session_id` when present, `requires_human_approval: true`, and a `next_action` to stop
+until a person resumes or ends the Work Session in the Alpacon web console.
 
 **Parameters:**
 - `server_ids` (array): List of server IDs

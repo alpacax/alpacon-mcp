@@ -976,6 +976,7 @@ async def list_commands(
             _attach_file_phase_hint(entry)
             _attach_use_file_execution(entry)
             attach_rejection(entry)
+            _attach_work_session_pause(entry, entry)
 
     return success_response(
         data=result,
@@ -1149,6 +1150,8 @@ def _submitted_entry(result: JsonValue) -> dict[str, JsonValue]:
     row = result[0] if isinstance(result, list) and result else result
     if isinstance(row, dict) and isinstance(command_id := row.get('id'), str):
         entry['command_id'] = command_id
+    if isinstance(row, dict):
+        _attach_work_session_pause(entry, row)
     return entry
 
 
@@ -1879,7 +1882,9 @@ _COMMAND_IN_PROGRESS = frozenset(
 _COMMAND_REFUSED = frozenset({'denied', 'rejected'})
 
 
-def _attach_work_session_pause(response: ToolResponse, result: _CommandRecord) -> None:
+def _attach_work_session_pause(
+    response: MutableMapping[str, JsonValue], result: _CommandRecord
+) -> None:
     """Mark a row that paused its Work Session, or that the pause refused or closed,
     and tell the agent to stop until a person resumes the session."""
     marked = result.get('work_session_paused') is True
@@ -1887,6 +1892,7 @@ def _attach_work_session_pause(response: ToolResponse, result: _CommandRecord) -
     pause_code = code if isinstance(code, str) and code in PAUSE_DENIAL_CODES else None
     if not (marked or pause_code):
         return
+    response['requires_human_approval'] = True
     if marked:
         response['work_session_paused'] = True
     if pause_code:
@@ -1894,7 +1900,8 @@ def _attach_work_session_pause(response: ToolResponse, result: _CommandRecord) -
     if isinstance(session_id := result.get('work_session_id'), str) and session_id:
         response['work_session_id'] = session_id
     if response.get('status') == 'error':
-        response['message'] += ' The Work Session is paused.'
+        if isinstance(message := response.get('message'), str):
+            response['message'] = message + ' The Work Session is paused.'
         response['next_action'] = WORK_SESSION_PAUSED_NEXT_ACTION
     else:
         held = response.get('next_action')

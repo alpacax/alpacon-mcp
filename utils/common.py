@@ -138,7 +138,6 @@ _NEXT_ACTION_BY_CATEGORY: dict[str, str] = {
 }
 _DEFAULT_NEXT_ACTION = _NEXT_ACTION_BY_CATEGORY['SUDO_APPROVAL_REQUIRED']
 
-# Command denial codes for work a Work Session pause refused or closed.
 PAUSE_DENIAL_CODES: frozenset[str] = frozenset(
     {'session_paused', 'superseded_by_pause'}
 )

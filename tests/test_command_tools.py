@@ -6489,3 +6489,104 @@ class TestWorkSessionPause:
         assert {k: v for k, v in result.items() if k != 'details'} == {
             k: v for k, v in baseline.items() if k != 'details'
         }
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'fields',
+        [
+            {'work_session_paused': True},
+            {'denial_code': 'session_paused'},
+            {'denial_code': 'superseded_by_pause'},
+        ],
+    )
+    async def test_pause_errors_require_human_approval(
+        self, fields, mock_http_client, mock_token_manager
+    ):
+        result = await self._check(status='rejected', **fields)
+
+        assert result['status'] == 'error'
+        assert result['requires_human_approval'] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('parallel', [True, False])
+    @pytest.mark.parametrize('as_list', [True, False])
+    @pytest.mark.parametrize(
+        'fields',
+        [
+            {'work_session_paused': True},
+            {'denial_code': 'session_paused'},
+            {'denial_code': 'superseded_by_pause'},
+        ],
+    )
+    async def test_multi_server_pause_rows_carry_stop_guidance(
+        self, fields, parallel, as_list, mock_http_client, mock_token_manager
+    ):
+        row = {
+            'id': 'cmd-p1',
+            'status': 'rejected',
+            'work_session_id': 'ws-1',
+            **fields,
+        }
+        submitted = [row] if as_list else row
+        mock_http_client.post.return_value = submitted
+
+        result = await execute_command_multi_server(
+            server_ids=[VALID_SERVER_ID],
+            command='ls',
+            workspace='testworkspace',
+            region='ap1',
+            parallel=parallel,
+        )
+
+        entry = result['deploy_shell_results'][VALID_SERVER_ID]
+        assert entry['command_id'] == 'cmd-p1'
+        assert entry['data'] == submitted
+        assert entry['work_session_id'] == 'ws-1'
+        assert entry['requires_human_approval'] is True
+        assert entry['next_action'].startswith(self._PAUSED)
+        for key, value in fields.items():
+            assert entry[key] == value
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'fields',
+        [
+            {'work_session_paused': True},
+            {'denial_code': 'session_paused'},
+            {'denial_code': 'superseded_by_pause'},
+        ],
+    )
+    async def test_history_pause_rows_carry_stop_guidance(
+        self, fields, mock_http_client, mock_token_manager
+    ):
+        ordinary = {'id': 'cmd-ordinary', 'status': 'rejected'}
+        mock_http_client.get.return_value = {
+            'count': 2,
+            'results': [
+                {
+                    'id': 'cmd-p1',
+                    'status': 'rejected',
+                    'work_session_id': 'ws-1',
+                    **fields,
+                },
+                ordinary.copy(),
+            ],
+        }
+
+        result = await list_commands(workspace='testworkspace', region='ap1')
+
+        entry, unchanged = result['data']['results']
+        assert entry['status'] == 'rejected'
+        assert entry['work_session_id'] == 'ws-1'
+        assert entry['requires_human_approval'] is True
+        assert entry['next_action'].startswith(self._PAUSED)
+        assert unchanged['id'] == ordinary['id']
+        assert unchanged['status'] == ordinary['status']
+        assert unchanged['rejection_hint']
+        assert {
+            'work_session_paused',
+            'denial_code',
+            'work_session_id',
+            'requires_human_approval',
+            'next_action',
+        }.isdisjoint(unchanged)

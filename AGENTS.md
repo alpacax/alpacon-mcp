@@ -159,6 +159,10 @@ Things the code will not tell you at a glance:
   container or launched over SSH attempts delivery on that host, not on the
   user's desktop. Never enable `stdio_transport()` outside that run; a
   remote equivalent belongs in a client-side hook.
+- **Pause guidance covers command rows as well as tool envelopes.** A
+  `work_session_paused` marker or pause denial code adds `requires_human_approval`
+  and stop guidance to settled responses, multi-server submission entries, and
+  command history rows. Keep their pause normalization shared.
 - **Transport settings live at the entry point, not on the constructor.** SDK 2.x
   takes `host`, `json_response` and `stateless_http` on
   `mcp.streamable_http_app()`, so `create_streamable_http_app(host=...)` carries
