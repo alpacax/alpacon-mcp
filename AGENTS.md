@@ -165,6 +165,8 @@ Things the code will not tell you at a glance:
   them. `host` decides DNS rebinding protection—the SDK enables it for loopback
   addresses only—and must be the address uvicorn actually binds, or a deployment
   on `0.0.0.0` rejects its own public Host header with a 421.
+  `ALPACON_MCP_ALLOWED_HOSTS` turns the protection on for a non-loopback bind
+  and replaces the loopback defaults.
 - **`server.run()` refuses streamable-http.** It serves stdio only;
   `main_http.py` composes that transport itself, wrapping
   `create_streamable_http_app()` in `UpstreamAuthErrorMiddleware`. An app built
