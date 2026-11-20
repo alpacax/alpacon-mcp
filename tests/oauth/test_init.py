@@ -9,7 +9,6 @@ from tests.oauth._support import (
     EVIL_REDIRECT_URI,
     PKCE_PARAMS,
     TEST_AUTH0_ALPACON_DOMAIN,
-    TEST_CLIENT_ID,
     _mock_auth0_response,
 )
 from utils.oauth._http import (
@@ -20,7 +19,7 @@ from utils.oauth._http import (
     _JSON_CONTENT_TYPE,
     _RESPONSE_TYPE_CODE,
 )
-from utils.oauth._sealing import _seal_code
+from utils.oauth._sealing import _registered_device_id, _seal_code
 
 
 class TestOAuthFallbackRoutes:
@@ -66,14 +65,14 @@ class TestOAuthFallbackRoutes:
         assert location.startswith(f'https://{TEST_AUTH0_ALPACON_DOMAIN}/authorize')
 
     def test_register_fallback_returns_client_id(self, oauth_app):
-        """POST /register should return the configured client_id."""
+        """POST /register returns an installation client_id."""
         response = oauth_app.post(
             _FALLBACK_REGISTER_PATH,
             content=json.dumps({'client_name': 'test'}).encode(),
             headers={'content-type': _JSON_CONTENT_TYPE},
         )
         assert response.status_code == HTTPStatus.CREATED
-        assert response.json()['client_id'] == TEST_CLIENT_ID
+        assert _registered_device_id(response.json()['client_id']) is not None
 
     def test_register_fallback_rejects_an_unlisted_redirect_uri(self, oauth_app):
         """The fallback delegates, so the check must not be bypassable through it."""
