@@ -190,14 +190,22 @@ async def update_iam_user(
 
 
 @mcp_tool_handler(
-    description='Permanently delete an IAM user account from the workspace. This action cannot be undone. Use update_iam_user to deactivate a user instead if you want to preserve the account.',
+    description='Permanently delete an IAM user account from the workspace. This action cannot be undone. On supported Alpacon deployments, the home directory is kept by default. Set archive_home=true to move it under /home/deleted_users/. Older deployments may archive the home even when archive_home is omitted. Use update_iam_user to deactivate a user instead if you want to preserve the account.',
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'iam user delete remove'},
 )
 async def delete_iam_user(
-    user_id: str, workspace: str, region: str = '', **kwargs: str
+    user_id: str,
+    workspace: str,
+    region: str = '',
+    archive_home: bool = False,
+    **kwargs: str,
 ) -> ToolResponse:
-    """Delete an IAM user."""
+    """Delete an IAM user.
+
+    On supported deployments, keep the home directory by default.
+    Set archive_home to move it under /home/deleted_users/.
+    """
     err = uuid_field_error('user_id', user_id)
     if err:
         return err
@@ -211,6 +219,7 @@ async def delete_iam_user(
         endpoint=f'/api/iam/users/{user_id}/',
         token=token,
         default_message='Failed to delete IAM user',
+        params={'archive_home': 'true'} if archive_home else None,
         user_id=user_id,
     )
 
