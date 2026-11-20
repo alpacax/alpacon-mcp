@@ -67,6 +67,87 @@ async def drain_signals():
         await asyncio.gather(*local_signal._tasks)
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize('status', ['active', 'completed', 'expired', None])
+async def test_historical_pause_with_current_state_does_not_notify(
+    status, desktop_notifications
+):
+    result = {
+        'status': 'error',
+        'work_session_status': status,
+        'work_session_paused': True,
+        'denial_code': 'superseded_by_pause',
+        'details': {'id': 'cmd-old', 'status': 'rejected', 'rejection_gate': 'risk'},
+    }
+    with local_signal.stdio_transport():
+        local_signal.signal_result(
+            result,
+            {'workspace': 'testworkspace', 'region': 'ap1'},
+            tool_name='check_command_status',
+        )
+        await drain_signals()
+
+    desktop_notifications.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_pause_episode_only_notifies_once_after_rate_windows(
+    monkeypatch, desktop_notifications
+):
+    now = [0.0]
+    monkeypatch.setattr(local_signal, 'monotonic', lambda: now[0])
+    result = {
+        'status': 'error',
+        'work_session_id': 'ws-1',
+        'work_session_status': 'paused',
+        'work_session_paused_at': '2026-11-20T07:00:00Z',
+        'work_session_paused': True,
+        'command_id': 'cmd-old',
+    }
+    with local_signal.stdio_transport():
+        for timestamp in (0, 61, 601, 86401):
+            now[0] = timestamp
+            local_signal.signal_result(
+                result,
+                {'workspace': 'testworkspace', 'region': 'ap1'},
+                tool_name='check_command_status',
+            )
+            await drain_signals()
+        assert desktop_notifications.call_count == 1
+
+        result['work_session_paused_at'] = '2026-11-21T07:00:00Z'
+        now[0] += 61
+        local_signal.signal_result(
+            result,
+            {'workspace': 'testworkspace', 'region': 'ap1'},
+            tool_name='check_command_status',
+        )
+        await drain_signals()
+
+    assert desktop_notifications.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_resumed_hold_still_notifies_the_pending_approval(desktop_notifications):
+    result = {
+        'status': 'pending_approval',
+        'work_session_status': 'active',
+        'work_session_paused': True,
+        'work_session_id': 'ws-1',
+        'command_id': 'cmd-held',
+    }
+    with local_signal.stdio_transport():
+        local_signal.signal_result(
+            result,
+            {'workspace': 'testworkspace', 'region': 'ap1'},
+            tool_name='check_command_status',
+        )
+        await drain_signals()
+
+    assert desktop_notifications.call_count == 1
+    assert desktop_notifications.call_args.args[0] == 'Alpacon: approval pending'
+
+
 _CLOUD_WORKSPACE = 'https://alpacax.ap1.alpacon.io'
 CONSOLE_LINK_CASES = [
     pytest.param(
@@ -836,6 +917,129 @@ async def test_hook_classification_and_unchanged_result(
     else:
         desktop_notifications.assert_not_called()
     assert capsys.readouterr() == ('', '')
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'tool_name, result',
+    [
+        (
+            'execute_command',
+            {
+                'status': 'pending_approval',
+                'gate': 'approval',
+                'work_session_paused': True,
+                'work_session_id': 'paused-1',
+            },
+        ),
+        (
+            'check_command_status',
+            {
+                'status': 'error',
+                'gate': 'risk',
+                'details': {
+                    'status': 'denied',
+                    'work_session_paused': True,
+                    'work_session_id': 'paused-1',
+                },
+            },
+        ),
+        (
+            'check_command_status',
+            {
+                'status': 'error',
+                'denial_code': 'session_paused',
+                'work_session_id': 'paused-1',
+                'details': {'status': 'rejected'},
+            },
+        ),
+        (
+            'check_command_status',
+            {
+                'status': 'error',
+                'details': {
+                    'status': 'rejected',
+                    'denial_code': 'superseded_by_pause',
+                    'work_session_id': 'paused-1',
+                },
+            },
+        ),
+    ],
+)
+async def test_pause_markers_signal_the_paused_session(
+    desktop_notifications, tool_name, result
+):
+    original = deepcopy(result)
+
+    async def tool(**kwargs):
+        return result
+
+    tool.__name__ = tool_name
+    with local_signal.stdio_transport():
+        answer = await with_error_handling(tool)(work_session_id='other')
+    await drain_signals()
+
+    assert answer == original
+    desktop_notifications.assert_called_once()
+    title, body = desktop_notifications.call_args.args[:2]
+    assert title == 'Alpacon: session paused'
+    assert body.startswith('Work Session paused-1 is paused')
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'tool_name, result, expected_title',
+    [
+        (
+            'check_command_status',
+            {
+                'status': 'error',
+                'gate': 'risk',
+                'details': {'status': 'denied', 'work_session_paused': False},
+            },
+            'Alpacon: command denied',
+        ),
+        (
+            'execute_command',
+            {'status': 'pending_approval', 'work_session_paused': 'true'},
+            'Alpacon: approval pending',
+        ),
+        (
+            'work_session_get',
+            {'status': 'success', 'data': {'id': 's1', 'status': 'active'}},
+            None,
+        ),
+        # A status read is guidance for the agent, not a new pause to announce.
+        (
+            'work_session_get',
+            {'status': 'success', 'data': {'id': 's1', 'status': 'paused'}},
+            None,
+        ),
+        (
+            'work_session_list',
+            {
+                'status': 'success',
+                'data': {'results': [{'id': 's1', 'status': 'paused'}]},
+            },
+            None,
+        ),
+    ],
+)
+async def test_only_a_true_pause_marker_signals_a_pause(
+    desktop_notifications, tool_name, result, expected_title
+):
+    async def tool(**kwargs):
+        return result
+
+    tool.__name__ = tool_name
+    with local_signal.stdio_transport():
+        await with_error_handling(tool)(work_session_id='s1')
+    await drain_signals()
+
+    if expected_title is None:
+        desktop_notifications.assert_not_called()
+    else:
+        assert desktop_notifications.call_args.args[0] == expected_title
 
 
 @pytest.mark.asyncio

@@ -432,6 +432,19 @@ Search events by criteria.
 
 > ⚠️ **ACL configuration required**: Command API tools require pre-approved commands in your token's Access Control List (ACL). Configure permissions by clicking on your token in the Alpacon web interface → ACL settings.
 
+**Historical pauses:** a command's `work_session_paused: true` marker and pause denial codes
+are retained after Resume. Command results and history entries preserve that evidence and
+add `work_session_status` from a current session read. Only a currently paused session adds
+pause stop guidance and `requires_human_approval: true`; an unavailable status is `null` and
+asks the agent to verify with `work_session_get`, without claiming the session is paused.
+A paused result also carries `work_session_paused_at` when the server supplies `paused_at`.
+Session reads are reused only within one batch or history call, never across calls.
+For a held command, approval can be recorded while paused, but delivery needs both approval
+and Resume; Resume does not approve or replay a command. Stop polling if the session ends
+or expires (`completed`, `revoked`, `expired`, `rejected` or `cancelled`).
+A terminal session's historical approval-pending command returns a read-success envelope
+with its original command state in `data`, rather than claiming approval is still pending.
+
 ### `execute_command`
 Execute a command on a server and wait for the result, or with `wait: false` return its `command_id` at once.
 
@@ -657,6 +670,9 @@ An entry whose `rejection_cause` is `use_file_execution` gains `error_code: "use
 the same `next_action` as on `execute_command`, naming that entry's server and account, plus a
 reminder to rerun only that server rather than the original target set.
 A rejected entry gains `rejection_hint` beside the row's own `rejection_cause` and `rejection_gate`, as described under `execute_command` (#242).
+An entry marked `work_session_paused: true` or carrying denial code `session_paused` or
+`superseded_by_pause` follows the current-session rules above; the marker alone does not
+mean the session is still paused.
 
 ### `check_command_status`
 Read one command's state and result by `command_id`, in a single call that never waits.
@@ -670,6 +686,11 @@ Read one command's state and result by `command_id`, in a single call that never
 
 ### `execute_command_multi_server`
 Execute a command on multiple servers simultaneously. The tool only submits: read each server's result with `check_command_status` and the `command_id` in that server's `deploy_shell_results` entry, or browse with `list_commands`. An accepted entry is `{status: "success", data, command_id}`, where `data` is the submission as the server returned it.
+
+If the submitted row is marked `work_session_paused: true` or carries denial code
+`session_paused` or `superseded_by_pause`, its entry also carries that marker or code,
+`work_session_id` when present, and `work_session_status` from a current read. It adds
+`requires_human_approval: true` and a stop `next_action` only while that session is paused.
 
 **Parameters:**
 - `server_ids` (array): List of server IDs
@@ -995,6 +1016,12 @@ A session that needs human approval comes back with `status="pending_approval"`,
 When the created session is `pending`, `approved`, or `active`, the result's `next_action` names `work_session_update` and the returned session ID: use it, with every server the session keeps, to widen this session if more servers are needed instead of creating another one. For a pending session, this guidance follows the existing human-approval and status-check instructions. Refusal and error results do not gain this guidance.
 
 ### `work_session_get` / `work_session_list`
+
+A paused `work_session_get` result adds top-level `requires_human_approval: true` and
+`next_action` to wait for a person to resume or end the session in the web console.
+Continue only when `data.status` is `active`; stop polling when it ends or expires
+(`completed`, `revoked`, `expired`, `rejected` or `cancelled`). Reading status does not notify.
+
 Read one session (`session_id`) or list them (`status`, `requester_type`, `limit` filters). A session names only the servers and clusters the caller reaches; see [Servers you do not reach](#servers-you-do-not-reach).
 
 ### Servers you do not reach
@@ -1348,7 +1375,7 @@ A server `hint` is appended to `message` and replaces every local hint: the per-
 
 ### Local desktop signals
 
-When the MCP server runs locally over stdio, a command or file-transfer refusal raises `Alpacon: command denied` or `Alpacon: file transfer denied`, a result awaiting human approval raises `Alpacon: approval pending` (`Alpacon: confirmation pending` when its `approval_lane` is `assignee`, with a body that reads `<command> needs your own confirmation.`, names the session, and says `Confirm or reject it in the Alpacon web console.`, followed by the console link, under the same rate limit), and a refusal with code `session_paused` raises `Alpacon: session paused`. A denial alone does not indicate a paused session. Approvals and session recovery still require a human; the notification does not grant access or retry an operation. `explain_approval_decision` only explains how a human decides and never notifies. Sudo policy requests are described as sudo policy requests waiting for approval, rather than Work Session waits.
+When the MCP server runs locally over stdio, a command or file-transfer refusal raises `Alpacon: command denied` or `Alpacon: file transfer denied`, a result awaiting human approval raises `Alpacon: approval pending` (`Alpacon: confirmation pending` when its `approval_lane` is `assignee`, with a body that reads `<command> needs your own confirmation.`, names the session, and says `Confirm or reject it in the Alpacon web console.`, followed by the console link, under the same rate limit), and a refusal with code `session_paused`, or a command result marked `work_session_paused: true` or carrying the denial code `session_paused` or `superseded_by_pause` whose current Work Session is still paused, raises `Alpacon: session paused`; reading a paused session's status does not. A denial alone does not indicate a paused session. Approvals and session recovery still require a human; the notification does not grant access or retry an operation. `explain_approval_decision` only explains how a human decides and never notifies. Sudo policy requests are described as sudo policy requests waiting for approval, rather than Work Session waits.
 
 Refusal notifications are limited to `execute_command`, `execute_command_multi_server`, `execute_file`, `check_command_status`, `state_command_purpose`, `webftp_upload_file`, `webftp_upload_content`, `webftp_download_file`, `webftp_bulk_upload`, `webftp_bulk_download`, `restart_agent`, `upgrade_agent`, `install_pam`, `update_information`, `install_system_package`, `remove_system_package`, `install_python_package`, and `remove_python_package` (`DENIAL_TOOLS` in `utils/local_signal.py`), and the gates `server_reach`, `command_preapproval`, `command_acl`, `file_acl`, `risk`, `approval`, `sudo`, `work_session`, and `block`. Approval expiry, cancellation or rule change, authentication and MFA errors, and missing presence, role, token scope, or authentication do not raise refusal notifications. Reading history through a `list_*` tool never notifies, including entries with sudo approval guidance. A pending `sudo_denial` read through `check_command_status`, `execute_command`, `execute_command_multi_server`, `execute_file`, or `state_command_purpose` does notify.
 
@@ -1356,7 +1383,7 @@ Notifications contain only the event kind, command's first word with its path st
 
 Console links must share the workspace API origin, or, for a workspace on a subdomain of the built-in cloud domain `alpacon.io`, use `alpacon.io` or one of its subdomains with the same scheme and its default port. All links must be ASCII, at most 2048 characters, and free of whitespace, fragments, and userinfo, and are re-serialized before display. Validation applies on every platform. A validated link can appear in the body; only the Windows toast renders it as a clickable launch target, while `osascript` and `notify-send` receive no separate link.
 
-An approval-pending item is announced once per command id, Work Session id for a Work Session wait (including waits returned by command or file-transfer tools), or sudo policy request id when available, scoped to workspace and region. A denial is likewise announced once per command id or file-transfer id when available. The remembered identity includes the event kind, so a pending item that is later denied announces both states. An announced item can notify again on its next read after 10 minutes; repeated reads within those 10 minutes neither notify nor count as folded events. An item with an id folded into a 60-second window counts once in that window and is announced on a later read after the window closes, without counting itself in `+N more`. The process remembers up to 256 announced identities, evicting the oldest first; restarting the server clears them. Paused events and results without an item id use the rate limit normally. The rate-limit key is `(session_id, kind, workspace, region)`; a missing session id falls back to `ALPACON_WORK_SESSION`, then to an empty id. Each key allows one notification per 60 seconds, and a later notification appends `+N more` for distinct events folded during the previous window. Folded events surface only when a later event arrives; no timer sends a summary.
+An approval-pending item is announced once per command id, Work Session id for a Work Session wait (including waits returned by command or file-transfer tools), or sudo policy request id when available, scoped to workspace and region. A denial is likewise announced once per command id or file-transfer id when available. The remembered identity includes the event kind, so a pending item that is later denied announces both states. An announced item can notify again on its next read after 10 minutes; repeated reads within those 10 minutes neither notify nor count as folded events. An item with an id folded into a 60-second window counts once in that window and is announced on a later read after the window closes, without counting itself in `+N more`. The process remembers up to 256 announced identities, evicting the oldest first; restarting the server clears them. For a normalized paused command, the process also remembers its last 256 pause episodes by session id, workspace, region and `work_session_paused_at` (falling back to command id when no pause timestamp is available), so another read of the same episode does not notify after the rate-limit window; a later pause can notify again. Results without a pause or item identity use the rate limit normally. The rate-limit key is `(session_id, kind, workspace, region)`; a missing session id falls back to `ALPACON_WORK_SESSION`, then to an empty id. Each key allows one notification per 60 seconds, and a later notification appends `+N more` for distinct events folded during the previous window. Folded events surface only when a later event arrives; no timer sends a summary.
 
 The streamable-http server never raises desktop notifications. The hosted server, including access through `mcp-remote` or the `alpacon` plugin, never raises a notification: the notifier runs on the host the MCP server runs on. A stdio server in a container or launched over SSH attempts delivery on that host, not on the user's desktop.
 

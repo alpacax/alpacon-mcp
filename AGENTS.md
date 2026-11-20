@@ -159,6 +159,12 @@ Things the code will not tell you at a glance:
   container or launched over SSH attempts delivery on that host, not on the
   user's desktop. Never enable `stdio_transport()` outside that run; a
   remote equivalent belongs in a client-side hook.
+- **Pause guidance covers command rows as well as tool envelopes.** A
+  command's `work_session_paused` marker and pause denial code are historical.
+  Read its current Work Session before attaching stop guidance; only a currently
+  paused session gets `requires_human_approval` for the pause. Keep lookups local
+  to the call, and deduplicate desktop alerts by pause episode rather than by a
+  time window. Approval during pause is recorded but delivery still needs Resume.
 - **Transport settings live at the entry point, not on the constructor.** SDK 2.x
   takes `host`, `json_response` and `stateless_http` on
   `mcp.streamable_http_app()`, so `create_streamable_http_app(host=...)` carries

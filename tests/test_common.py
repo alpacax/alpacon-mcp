@@ -1112,6 +1112,48 @@ class TestUnwrapHttpResultRefusalFields:
             'message': 'HTTP 403',
         }
 
+    def test_a_paused_session_refusal_tells_the_agent_to_stop_and_wait(self):
+        session = '11111111-1111-4111-8111-111111111111'
+        hint = (
+            'This work session is paused. A person must resume or end it; '
+            "wait for the session's status to change."
+        )
+
+        out = _unwrap_error(
+            _refusal(
+                code='session_paused',
+                gate='work_session',
+                missing='work_session',
+                work_session_id=session,
+                console_url=f'https://ws.example/work-sessions/{session}',
+                next=f'/api/work-sessions/sessions/{session}/',
+                hint=hint,
+            ),
+            default_message='failed',
+        )
+
+        assert out == {
+            'status': 'error',
+            'status_code': HTTPStatus.FORBIDDEN,
+            'error_code': 'session_paused',
+            'gate': 'work_session',
+            'missing': 'work_session',
+            'next': f'/api/work-sessions/sessions/{session}/',
+            'hint': hint,
+            'message': f'HTTP 403. {hint}',
+            'work_session_id': session,
+            'requires_human_approval': True,
+            'next_action': (
+                'The Work Session is paused. Stop: do not retry, resubmit, or open '
+                'another Work Session to get around it. Only a person can resume or '
+                'end it, in the Alpacon web console. Tell the user, then wait: '
+                'check work_session_get and continue only once data.status is '
+                'active again. If the session has ended '
+                '(completed, revoked, expired, rejected or cancelled), stop polling '
+                'and tell the user; that session cannot resume.'
+            ),
+        }
+
     def test_an_unknown_gate_rides_through_with_no_local_hint(self):
         out = _unwrap_error(
             _refusal(code='new_code', gate='some_future_gate'),

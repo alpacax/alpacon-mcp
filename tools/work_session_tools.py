@@ -7,6 +7,8 @@ from pydantic import Field
 from utils.api_call import http_call_response
 from utils.command_rejection import attach_rejection
 from utils.common import (
+    WORK_SESSION_PAUSED_NEXT_ACTION,
+    WORK_SESSION_STATUS_PAUSED,
     build_list_params,
     error_response,
     exclude_none,
@@ -295,6 +297,10 @@ async def work_session_get(
         default_message='Failed to get Work Session',
         session_id=session_id,
     )
+    data = response.get('data')
+    if isinstance(data, dict) and data.get('status') == WORK_SESSION_STATUS_PAUSED:
+        response['requires_human_approval'] = True
+        response['next_action'] = WORK_SESSION_PAUSED_NEXT_ACTION
     return attach_hidden_targets_note(response, session_note)
 
 
