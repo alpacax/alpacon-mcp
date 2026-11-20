@@ -11,7 +11,7 @@ Answer one question per server: does it expose a listed port, a Docker API, or a
 
 - What to check: ports, endpoints, and default credentials, a preset from [checks.md](references/checks.md#presets) (Docker API, MinIO), or both.
 - Each value goes into the command as data. A port is `^[1-9][0-9]{0,4}$` and at most 65535, a path is `^/[A-Za-z0-9._~/-]*$`, an endpoint method is `GET` or `WS`, a scheme is `http` or `https`. Ask about anything else and do not build the command.
-- A credential is only a publicly documented factory default (`minioadmin:minioadmin`). The command text, credential included, is recorded in Alpacon's command history, so never put a real password in it. A credential holding a `'` or a newline cannot go inside the command's quotes: ask.
+- A credential is only a publicly documented factory default (`minioadmin:minioadmin`); never a real password. It goes in the `env` argument as `EXPOSURE_BASIC` or `EXPOSURE_BODY`, never in the command text, which Alpacon records in its command history.
 
 ## Steps
 
@@ -20,7 +20,7 @@ Answer one question per server: does it expose a listed port, a Docker API, or a
 3. Reuse a supplied active Work Session whose servers, `command` scope and ordinary account cover the check, and leave it open afterwards. Otherwise open one with the `command` scope only and `target_account_username` set to that account, described as "read listening sockets and Docker settings, probe the listed endpoints; changes nothing", and close it once the results are read.
 4. Run the check once with `execute_command_multi_server`, passing that account as `username` and a `purpose` that says it only reads sockets and settings and probes the listed endpoints, and read each server's result with `check_command_status`.
 5. Show each server's `verdict`, `findings` and `unknowns`, then its `listen` lines. A server whose command failed or whose output does not parse is `unknown`.
-6. Default credentials, only when the input or preset names one: run [the login check](references/checks.md#default-credential-login) on the servers whose check shows that port listening beyond loopback. Before it runs, show the filled login command exactly as it will run, with those servers and the account, ask separately, and say that it is a real login attempt, one per address the port listens on, that it lands in the service's access log and may count toward a lockout, and that its command text with the credential is recorded in Alpacon's command history. Skip it if the person declines; never treat their agreement to the first check as agreement to this one. An `accepted` result makes the server `exposed`.
+6. Default credentials, only when the input or preset names one: run [the login check](references/checks.md#default-credential-login) on the servers whose check shows that port listening beyond loopback. Before it runs, show the filled login command and its `env` exactly as they will be sent, with those servers and the account, ask separately, and say that it is a real login attempt, one per address the port listens on, that it lands in the service's access log and may count toward a lockout. Skip it if the person declines; never treat their agreement to the first check as agreement to this one. An `accepted` result makes the server `exposed`.
 
 ## Verdicts
 

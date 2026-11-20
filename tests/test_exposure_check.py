@@ -15,14 +15,17 @@ FAKES = {
     'ss': 'printf \'%s\\n\' "$SS_OUT"; exit "${SS_EXIT:-0}"',
     'curl': """for a; do last=$a; done
 printf '%s\\n' "$*" >> "$CURL_LOG"
+case " $* " in (*' -D '*) printf '%s\\n' "${HEADERS-}" ;; esac
 printf '%s\\n' "$CODES" | awk -v u="$last" '$1 == u {printf "%s", $2; f = 1} END {if (!f) printf "000"}'""",
-    'systemctl': '[ "$*" != \'show -p ExecStart docker.service\' ] || printf \'%s\\n\' "$UNIT"',
-    'ps': 'printf \'%s\\n\' "$PS_OUT"',
-    'stat': 'printf \'%s\\n\' "$3" | sed "s/%a/$SOCK_MODE/; s/%U/root/; s/%G/docker/"',
+    'systemctl': '[ "$*" != \'show -p ExecStart docker.service\' ] || printf \'%s\\n\' "$UNIT"; exit "${UNIT_EXIT:-0}"',
+    'ps': 'printf \'%s\\n\' "$PS_OUT"; exit "${PS_EXIT:-0}"',
+    'stat': '[ -z "$STAT_EXIT" ] || exit "$STAT_EXIT"; printf \'%s\\n\' "$3" | sed "s/%a/$SOCK_MODE/; s/%U/root/; s/%G/docker/"',
 }
 SS_HEADER = 'State  Recv-Q Send-Q Local Address:Port Peer Address:Port Process'
 SSHD = 'LISTEN 0 128 0.0.0.0:22 0.0.0.0:* users:(("sshd",pid=812,fd=3))'
 DOCKERD = 'LISTEN 0 4096 0.0.0.0:2375 0.0.0.0:* users:(("dockerd",pid=901,fd=7))'
+MINIO_BODY = '{"accessKey":"minioadmin","secretKey":"minioadmin"}'
+MINIO_TOKEN = 'HTTP/1.1 204 No Content\r\nSet-Cookie: token=abc; Path=/; HttpOnly'
 
 
 def _ss(*rows: str) -> str:
@@ -89,12 +92,15 @@ def _check(
     return keys, [line for line in lines if ' ' in line], calls
 
 
-def _login(tmp_path: Path, shell: str, **env: str) -> tuple[str, str]:
-    """Run the documented default credential login with its MinIO values."""
+def _login(
+    tmp_path: Path, shell: str, values: dict[str, str] | None = None, **env: str
+) -> tuple[str, str]:
+    """Run the documented default credential login, sent the MinIO credential in its env."""
     assert 'accepted=' in doc_blocks(CHECKS, 'sh')[1], (
         'the second sh block is no longer the login check'
     )
-    return _run(tmp_path, shell, 1, {}, sock=None, **env)
+    env = {'EXPOSURE_BODY': MINIO_BODY, 'HEADERS': MINIO_TOKEN} | env
+    return _run(tmp_path, shell, 1, values or {}, sock=None, **env)
 
 
 @pytest.fixture
@@ -313,6 +319,16 @@ class TestExposureCheck:
             'docker_host source=process host=tcp://10.0.0.1:2375 scope=interface',
         ]
 
+    def test_a_daemon_json_with_unicode_escapes_is_unknown(
+        self, tmp_path: Path, shell: str
+    ):
+        (tmp_path / 'daemon.json').write_text('{"\\u0068osts": ["tcp://0.0.0.0:2375"]}')
+
+        keys, _, _ = _check(tmp_path, shell)
+
+        assert keys['verdict'] == 'unknown'
+        assert keys['unknowns'] == 'docker_host:daemon.json'
+
     def test_reads_tcp_hosts_from_the_running_dockerd(self, tmp_path: Path, shell: str):
         keys, rows, _ = _check(
             tmp_path,
@@ -354,6 +370,38 @@ class TestExposureCheck:
         assert (
             f'docker_sock path={docker_sock} mode=660 owner=root group=docker' in rows
         )
+
+    def test_reports_a_world_writable_socket_the_daemon_is_configured_to_use(
+        self, tmp_path: Path, shell: str, docker_sock: Path
+    ):
+        (tmp_path / 'daemon.json').write_text(f'{{"hosts": ["unix://{docker_sock}"]}}')
+
+        keys, rows, _ = _check(tmp_path, shell, SOCK_MODE='666')
+
+        assert keys['findings'] == 'docker_sock:world_writable'
+        assert (
+            f'docker_sock path={docker_sock} mode=666 owner=root group=docker' in rows
+        )
+
+    def test_an_unreadable_docker_socket_mode_is_unknown(
+        self, tmp_path: Path, shell: str, docker_sock: Path
+    ):
+        keys, _, _ = _check(tmp_path, shell, sock=docker_sock, STAT_EXIT='1')
+
+        assert keys['verdict'] == 'unknown'
+        assert keys['unknowns'] == 'docker_sock:unreadable'
+
+    def test_a_failing_process_list_is_unknown(self, tmp_path: Path, shell: str):
+        keys, _, _ = _check(tmp_path, shell, PS_EXIT='1')
+
+        assert keys['verdict'] == 'unknown'
+        assert keys['unknowns'] == 'docker_host:process'
+
+    def test_a_failing_systemctl_is_unknown(self, tmp_path: Path, shell: str):
+        keys, _, _ = _check(tmp_path, shell, UNIT_EXIT='1')
+
+        assert keys['verdict'] == 'unknown'
+        assert keys['unknowns'] == 'docker_host:unit'
 
     def test_a_redirect_is_unknown_not_safe(self, tmp_path: Path, shell: str):
         keys, rows, _ = _check(
@@ -414,6 +462,20 @@ class TestExposureCheck:
                 'LISTEN 0 511 [::]:8080 [::]:*',
             ),
             CODES='http://127.0.0.1:8080/admin 401\nhttp://[::1]:8080/admin 200',
+        )
+
+        assert keys['findings'] == 'endpoint:8080/admin'
+        assert len(calls.splitlines()) == 2
+
+    def test_probes_both_families_of_a_dual_stack_listener(
+        self, tmp_path: Path, shell: str
+    ):
+        keys, _, calls = _check(
+            tmp_path,
+            shell,
+            endpoints='GET http 8080 /admin',
+            SS_OUT=_ss('LISTEN 0 511 *:8080 *:*'),
+            CODES='http://127.0.0.1:8080/admin 403\nhttp://[::1]:8080/admin 204',
         )
 
         assert keys['findings'] == 'endpoint:8080/admin'
@@ -503,7 +565,7 @@ class TestDefaultCredentialLogin:
         out, calls = _login(
             tmp_path,
             shell,
-            SS_OUT=_ss('LISTEN 0 4096 *:9001 *:*'),
+            SS_OUT=_ss('LISTEN 0 4096 0.0.0.0:9001 0.0.0.0:*'),
             CODES='http://127.0.0.1:9001/api/v1/login 204',
         )
 
@@ -512,10 +574,28 @@ class TestDefaultCredentialLogin:
             == 'login url=http://127.0.0.1:9001/api/v1/login code=204 result=accepted\n'
         )
         assert calls.startswith('-q --noproxy * ')
-        assert (
-            'Content-Type: application/json --data-binary {"accessKey":"minioadmin","secretKey":"minioadmin"}'
-            in calls
+        assert f'Content-Type: application/json --data-binary {MINIO_BODY}' in calls
+
+    def test_keeps_the_credential_out_of_the_command_text(
+        self, tmp_path: Path, shell: str
+    ):
+        script = doc_blocks(CHECKS, 'sh')[1]
+
+        assert 'minioadmin' not in script
+        assert '"$EXPOSURE_BODY"' in script
+
+    def test_a_204_without_the_services_session_cookie_is_unclear(
+        self, tmp_path: Path, shell: str
+    ):
+        out, _ = _login(
+            tmp_path,
+            shell,
+            SS_OUT=_ss('LISTEN 0 4096 0.0.0.0:9001 0.0.0.0:*'),
+            CODES='http://127.0.0.1:9001/api/v1/login 204',
+            HEADERS='HTTP/1.1 204 No Content',
         )
+
+        assert out.endswith('code=204 result=unclear\n')
 
     def test_reports_a_changed_credential_as_rejected(self, tmp_path: Path, shell: str):
         out, _ = _login(
@@ -557,6 +637,21 @@ class TestDefaultCredentialLogin:
             'login url=http://10.0.0.2:9001/api/v1/login code=204 result=accepted',
         ]
 
+    def test_tries_both_families_of_a_dual_stack_listener(
+        self, tmp_path: Path, shell: str
+    ):
+        out, _ = _login(
+            tmp_path,
+            shell,
+            SS_OUT=_ss('LISTEN 0 4096 *:9001 *:*'),
+            CODES='http://127.0.0.1:9001/api/v1/login 401\nhttp://[::1]:9001/api/v1/login 204',
+        )
+
+        assert out.splitlines() == [
+            'login url=http://127.0.0.1:9001/api/v1/login code=401 result=rejected',
+            'login url=http://[::1]:9001/api/v1/login code=204 result=accepted',
+        ]
+
     def test_never_logs_in_where_nothing_listens(self, tmp_path: Path, shell: str):
         out, calls = _login(tmp_path, shell)
 
@@ -566,25 +661,16 @@ class TestDefaultCredentialLogin:
     def test_sends_basic_auth_instead_of_a_body_when_given(
         self, tmp_path: Path, shell: str
     ):
-        script = _fill(
-            doc_blocks(CHECKS, 'sh')[1],
-            port='8080',
-            path='/manager/html',
-            basic='tomcat:tomcat',
-            body='',
-            accepted='200',
-        )
-        install_fakes(tmp_path / 'bin', FAKES)
-
-        result = run_with_fakes(
-            [shell, '-c', script],
-            tmp_path / 'bin',
+        out, calls = _login(
+            tmp_path,
+            shell,
+            {'port': '8080', 'path': '/manager/html', 'accepted': '200', 'expect': ''},
+            EXPOSURE_BASIC='tomcat:tomcat',
+            EXPOSURE_BODY='',
             SS_OUT=_ss('LISTEN 0 100 0.0.0.0:8080 0.0.0.0:*'),
             CODES='http://127.0.0.1:8080/manager/html 200',
-            CURL_LOG=str(tmp_path / 'curl.log'),
         )
 
-        assert result.stdout.endswith('result=accepted\n')
-        calls = (tmp_path / 'curl.log').read_text()
+        assert out.endswith('result=accepted\n')
         assert '-u tomcat:tomcat' in calls
         assert '--data-binary' not in calls
