@@ -210,11 +210,11 @@ class TestIAMToolsEndToEnd:
         assert captured_body == {'email': 'updated@example.com'}
 
     @pytest.mark.parametrize(
-        ('arguments', 'expected_params'),
+        ('arguments', 'expected_query'),
         [
-            ({}, {}),
-            ({'archive_home': False}, {}),
-            ({'archive_home': True}, {'archive_home': 'true'}),
+            pytest.param({}, b'', id='default'),
+            pytest.param({'archive_home': False}, b'', id='false'),
+            pytest.param({'archive_home': True}, b'archive_home=true', id='true'),
         ],
     )
     async def test_delete_iam_user(
@@ -222,12 +222,12 @@ class TestIAMToolsEndToEnd:
         patched_http_client,
         mock_token_for_integration,
         arguments,
-        expected_params,
+        expected_query,
     ):
         def handler(request: httpx.Request) -> httpx.Response:
             assert request.method == 'DELETE'
             assert request.url.path == f'/api/iam/users/{USER_ID}/'
-            assert dict(request.url.params) == expected_params
+            assert request.url.query == expected_query
             return httpx.Response(HTTPStatus.NO_CONTENT)
 
         patched_http_client.set_handler(handler)

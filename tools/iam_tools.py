@@ -190,7 +190,7 @@ async def update_iam_user(
 
 
 @mcp_tool_handler(
-    description='Permanently delete an IAM user account from the workspace. This action cannot be undone. On supported Alpacon deployments, the home directory is kept by default. Set archive_home=true to move it under /home/deleted_users/. Older deployments may archive the home even when archive_home is omitted. Use update_iam_user to deactivate a user instead if you want to preserve the account.',
+    description='Permanently delete an IAM user account from the workspace. This action cannot be undone. On supported Alpacon deployments, the home directory is kept by default. Set archive_home=true to move it under /home/deleted_users/. Passing archive_home=false and omitting the argument send the same request, with no archive_home query parameter. On deployments running agents older than the version that keeps home directories by default, both calls may still archive the home directory. Use update_iam_user to deactivate a user instead if you want to preserve the account.',
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'iam user delete remove'},
 )
