@@ -149,7 +149,9 @@ WORK_SESSION_PAUSED_NEXT_ACTION = (
     'The Work Session is paused. Stop: do not retry, resubmit, or open another '
     'Work Session to get around it. Only a person can resume or end it, in the '
     'Alpacon web console. Tell the user, then wait: check work_session_get and '
-    'continue only once data.status is active again.'
+    'continue only once data.status is active again. If the session has ended '
+    '(completed, revoked, expired, rejected or cancelled), stop polling and tell '
+    'the user; that session cannot resume.'
 )
 
 # Mirrors alpacon-cli worksession_error.go.

@@ -1148,7 +1148,9 @@ class TestUnwrapHttpResultRefusalFields:
                 'another Work Session to get around it. Only a person can resume or '
                 'end it, in the Alpacon web console. Tell the user, then wait: '
                 'check work_session_get and continue only once data.status is '
-                'active again.'
+                'active again. If the session has ended '
+                '(completed, revoked, expired, rejected or cancelled), stop polling '
+                'and tell the user; that session cannot resume.'
             ),
         }
 

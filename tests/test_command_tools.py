@@ -6427,9 +6427,28 @@ class TestWorkSessionPause:
 
     _PAUSED = 'The Work Session is paused. Stop: do not retry'
 
+    @pytest.fixture(autouse=True)
+    def current_session(self, mock_http_client):
+        self.session: dict[str, JsonValue] = {
+            'status': 'paused',
+            'paused_at': '2026-11-20T07:00:00Z',
+        }
+
+        async def get(*, endpoint, **kwargs):
+            if endpoint.startswith('/api/work-sessions/sessions/'):
+                return self.session
+            return mock_http_client.get.return_value
+
+        mock_http_client.get.side_effect = get
+
     @staticmethod
     async def _check(**fields: object) -> ToolResponse:
-        row = {'id': 'cmd-p1', 'handled_at': None, **fields}
+        row = {
+            'id': 'cmd-p1',
+            'handled_at': None,
+            'work_session_id': 'ws-1',
+            **fields,
+        }
         with patch('tools.command_tools._get_command_result', return_value=row):
             return await check_command_status(
                 command_id='cmd-p1', workspace='testworkspace', region='ap1'
@@ -6590,3 +6609,175 @@ class TestWorkSessionPause:
             'requires_human_approval',
             'next_action',
         }.isdisjoint(unchanged)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'fields',
+        [{'work_session_paused': True}, {'denial_code': 'superseded_by_pause'}],
+    )
+    async def test_resumed_command_keeps_history_without_pause_guidance(
+        self, fields, mock_http_client, mock_token_manager
+    ):
+        self.session['status'] = 'active'
+
+        result = await self._check(status='rejected', **fields)
+
+        assert result['work_session_status'] == 'active'
+        for key, value in fields.items():
+            assert result[key] == value
+        assert 'requires_human_approval' not in result
+        assert 'next_action' not in result
+        assert 'is paused' not in result['message']
+
+    @pytest.mark.asyncio
+    async def test_resumed_history_preserves_pause_evidence(
+        self, mock_http_client, mock_token_manager
+    ):
+        self.session['status'] = 'active'
+        mock_http_client.get.return_value = {
+            'results': [
+                {
+                    'id': 'cmd-p1',
+                    'status': 'rejected',
+                    'work_session_id': 'ws-1',
+                    'work_session_paused': True,
+                    'denial_code': 'superseded_by_pause',
+                }
+            ]
+        }
+
+        result = await list_commands(workspace='testworkspace', region='ap1')
+
+        entry = result['data']['results'][0]
+        assert entry['work_session_paused'] is True
+        assert entry['denial_code'] == 'superseded_by_pause'
+        assert entry['work_session_status'] == 'active'
+        assert 'requires_human_approval' not in entry
+        assert 'next_action' not in entry
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('status', ['awaiting_approval', 'queued'])
+    async def test_paused_delivery_requires_approval_and_resume(
+        self, status, mock_http_client, mock_token_manager
+    ):
+        result = await self._check(status=status, work_session_paused=True)
+
+        assert result['work_session_status'] == 'paused'
+        assert result['requires_human_approval'] is True
+        assert (
+            'Approval recorded while paused does not release the command'
+            in result['message']
+        )
+        assert 'Resume does not approve' in result['next_action']
+        assert 'runs automatically' not in result['message']
+
+    @pytest.mark.asyncio
+    async def test_unknown_session_status_does_not_claim_a_current_pause(
+        self, mock_http_client, mock_token_manager
+    ):
+        self.session = {'error': 'Forbidden', 'status_code': 403}
+
+        result = await self._check(status='rejected', work_session_paused=True)
+
+        assert result['work_session_paused'] is True
+        assert result['work_session_status'] is None
+        assert 'requires_human_approval' not in result
+        assert 'Check work_session_get' in result['next_action']
+        assert 'is paused' not in result['message']
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('wait', [True, False])
+    async def test_approved_command_waits_for_resume_without_resubmitting(
+        self, wait, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {'id': 'cmd-p1'}
+        row = {
+            'id': 'cmd-p1',
+            'status': 'queued',
+            'work_session_paused': True,
+            'work_session_id': 'ws-1',
+        }
+        mock_http_client.get.return_value = row
+        if not wait:
+            mock_http_client.post.return_value = row
+
+        result = await execute_command(
+            server_id=VALID_SERVER_ID,
+            command='ls',
+            workspace='testworkspace',
+            region='ap1',
+            wait=wait,
+        )
+
+        assert result['work_session_status'] == 'paused'
+        assert result['requires_human_approval'] is True
+        assert 'delivery waits for both approval and Resume' in result['message']
+        assert mock_http_client.post.call_count == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('session_status', ['completed', 'revoked', 'expired'])
+    @pytest.mark.parametrize('command_status', ['awaiting_approval', 'queued'])
+    async def test_terminal_session_stops_command_polling(
+        self, session_status, command_status, mock_http_client, mock_token_manager
+    ):
+        self.session['status'] = session_status
+
+        result = await self._check(status=command_status, work_session_paused=True)
+
+        assert result['work_session_status'] == session_status
+        assert 'stop polling' in result['next_action'].lower()
+        assert session_status in result['message']
+        assert 'requires_human_approval' not in result
+        assert 'runs automatically' not in result['message']
+        assert result['status'] == 'success'
+        assert result['data']['status'] == command_status
+        assert 'category' not in result
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('lane', [None, 'assignee'])
+    async def test_unverified_session_does_not_promise_approval_releases_a_hold(
+        self, lane, mock_http_client, mock_token_manager
+    ):
+        self.session = {'error': 'Forbidden'}
+
+        result = await self._check(
+            status='awaiting_approval', work_session_paused=True, approval_lane=lane
+        )
+
+        assert result['work_session_status'] is None
+        assert 'could not be verified' in result['message']
+        assert 'delivery also waits for Resume' in result['message']
+        assert 'runs automatically' not in result['message']
+        assert 'Check work_session_get' in result['next_action']
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('session_status', ['expired', None])
+    async def test_wait_returns_terminal_or_unknown_session_guidance(
+        self, session_status, mock_http_client, mock_token_manager
+    ):
+        self.session = (
+            {'status': session_status} if session_status else {'error': 'Forbidden'}
+        )
+        mock_http_client.post.return_value = {'id': 'cmd-p1'}
+        mock_http_client.get.return_value = {
+            'id': 'cmd-p1',
+            'status': 'queued',
+            'work_session_id': 'ws-1',
+            'work_session_paused': True,
+        }
+
+        result = await execute_command(
+            server_id=VALID_SERVER_ID,
+            command='ls',
+            workspace='testworkspace',
+            region='ap1',
+            timeout=1,
+        )
+
+        assert result['work_session_status'] == session_status
+        if session_status:
+            assert 'stop polling' in result['next_action'].lower()
+        else:
+            assert 'Check work_session_get' in result['next_action']
+        assert mock_http_client.get.call_count == 2
+        assert mock_http_client.post.call_count == 1

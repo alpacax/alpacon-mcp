@@ -299,6 +299,7 @@ async def work_session_get(
     )
     data = response.get('data')
     if isinstance(data, dict) and data.get('status') == WORK_SESSION_STATUS_PAUSED:
+        response['requires_human_approval'] = True
         response['next_action'] = WORK_SESSION_PAUSED_NEXT_ACTION
     return attach_hidden_targets_note(response, session_note)
 

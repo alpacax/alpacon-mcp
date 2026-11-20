@@ -67,6 +67,87 @@ async def drain_signals():
         await asyncio.gather(*local_signal._tasks)
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize('status', ['active', 'completed', 'expired', None])
+async def test_historical_pause_with_current_state_does_not_notify(
+    status, desktop_notifications
+):
+    result = {
+        'status': 'error',
+        'work_session_status': status,
+        'work_session_paused': True,
+        'denial_code': 'superseded_by_pause',
+        'details': {'id': 'cmd-old', 'status': 'rejected', 'rejection_gate': 'risk'},
+    }
+    with local_signal.stdio_transport():
+        local_signal.signal_result(
+            result,
+            {'workspace': 'testworkspace', 'region': 'ap1'},
+            tool_name='check_command_status',
+        )
+        await drain_signals()
+
+    desktop_notifications.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_pause_episode_only_notifies_once_after_rate_windows(
+    monkeypatch, desktop_notifications
+):
+    now = [0.0]
+    monkeypatch.setattr(local_signal, 'monotonic', lambda: now[0])
+    result = {
+        'status': 'error',
+        'work_session_id': 'ws-1',
+        'work_session_status': 'paused',
+        'work_session_paused_at': '2026-11-20T07:00:00Z',
+        'work_session_paused': True,
+        'command_id': 'cmd-old',
+    }
+    with local_signal.stdio_transport():
+        for timestamp in (0, 61, 601, 86401):
+            now[0] = timestamp
+            local_signal.signal_result(
+                result,
+                {'workspace': 'testworkspace', 'region': 'ap1'},
+                tool_name='check_command_status',
+            )
+            await drain_signals()
+        assert desktop_notifications.call_count == 1
+
+        result['work_session_paused_at'] = '2026-11-21T07:00:00Z'
+        now[0] += 61
+        local_signal.signal_result(
+            result,
+            {'workspace': 'testworkspace', 'region': 'ap1'},
+            tool_name='check_command_status',
+        )
+        await drain_signals()
+
+    assert desktop_notifications.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_resumed_hold_still_notifies_the_pending_approval(desktop_notifications):
+    result = {
+        'status': 'pending_approval',
+        'work_session_status': 'active',
+        'work_session_paused': True,
+        'work_session_id': 'ws-1',
+        'command_id': 'cmd-held',
+    }
+    with local_signal.stdio_transport():
+        local_signal.signal_result(
+            result,
+            {'workspace': 'testworkspace', 'region': 'ap1'},
+            tool_name='check_command_status',
+        )
+        await drain_signals()
+
+    assert desktop_notifications.call_count == 1
+    assert desktop_notifications.call_args.args[0] == 'Alpacon: approval pending'
+
+
 _CLOUD_WORKSPACE = 'https://alpacax.ap1.alpacon.io'
 CONSOLE_LINK_CASES = [
     pytest.param(

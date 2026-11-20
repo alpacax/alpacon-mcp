@@ -257,6 +257,7 @@ class Signal:
     workspace_url: str = ''
     # `assignee` when the session's assignee confirms the held command (ADR 0114).
     lane: str = ''
+    pause_id: str = ''
 
     def __post_init__(self) -> None:
         if not _ACCOUNT.fullmatch(self.account):
@@ -345,6 +346,7 @@ class RateLimiter:
             tuple[str, SignalKind, str, str], tuple[float, int, set[PendingKey]]
         ] = OrderedDict()
         self._pending: OrderedDict[PendingKey, float] = OrderedDict()
+        self._pauses: OrderedDict[tuple[str, str, str, str], None] = OrderedDict()
 
     def take(
         self,
@@ -355,14 +357,22 @@ class RateLimiter:
         *,
         target: SignalTarget = 'command',
         pending_id: str = '',
+        pause_id: str = '',
     ) -> int | None:
         now = monotonic()
+        pause_key = (session_id[:128], pause_id[:128], workspace, region)
+        if kind == 'paused' and pause_id and pause_key in self._pauses:
+            return None
         while (
             self._pending and now - next(iter(self._pending.values())) >= _PENDING_TTL
         ):
             self._pending.popitem(last=False)
         pending_key = None
-        if kind in ('approval_pending', 'denied') and pending_id:
+        if (kind in ('approval_pending', 'denied') and pending_id) or (
+            kind == 'paused' and pause_id
+        ):
+            if kind == 'paused':
+                pending_id = f'{session_id[:128]}:{pause_id[:128]}'
             pending_key = (kind, target, pending_id, workspace, region)
             if pending_key in self._pending:
                 return None
@@ -391,6 +401,10 @@ class RateLimiter:
             self._pending[pending_key] = now
             if len(self._pending) > 256:
                 self._pending.popitem(last=False)
+        if kind == 'paused' and pause_id:
+            self._pauses[pause_key] = None
+            if len(self._pauses) > 256:
+                self._pauses.popitem(last=False)
         return folded
 
 
@@ -556,18 +570,30 @@ def _from_result(
     )
     # The pause trigger, a pause refusal or a pause denial code; a plain read
     # of a paused session's status is not a new pause.
+    approval_pending = status == 'pending_approval' or (
+        tool_name in SUDO_PENDING_TOOLS
+        and isinstance(sudo_denial, dict)
+        and sudo_denial.get('status') == 'pending_approval'
+    )
     pause_marked = any(
         source.get('work_session_paused') is True
         or _string(source, 'denial_code') in PAUSE_DENIAL_CODES
         for source in (result, row)
     )
+    if pause_marked and (
+        'work_session_status' in result or 'work_session_status' in row
+    ):
+        current_status = result.get(
+            'work_session_status', row.get('work_session_status')
+        )
+        if current_status != 'paused':
+            if current_status == 'active' and approval_pending:
+                pause_marked = False
+            else:
+                return None
     if (status == 'error' and code in PAUSE_DENIAL_CODES) or pause_marked:
         kind: SignalKind = 'paused'
-    elif status == 'pending_approval' or (
-        tool_name in SUDO_PENDING_TOOLS
-        and isinstance(sudo_denial, dict)
-        and sudo_denial.get('status') == 'pending_approval'
-    ):
+    elif approval_pending:
         kind = 'approval_pending'
     elif (
         tool_name in DENIAL_TOOLS
@@ -650,6 +676,11 @@ def _from_result(
         console_url=console_url,
         workspace_url=workspace_url,
         lane=_string(result, 'approval_lane'),
+        pause_id=(
+            _raw_string(result, 'work_session_paused_at') or pending_id
+            if kind == 'paused' and result.get('work_session_status') == 'paused'
+            else ''
+        ),
     )
 
 
@@ -686,6 +717,7 @@ def signal_result(
                 _string(arguments, 'region'),
                 target=signal.target,
                 pending_id=signal.pending_id,
+                pause_id=signal.pause_id,
             )
             if folded is not None:
                 task = asyncio.create_task(_deliver(*signal.text(folded), signal))

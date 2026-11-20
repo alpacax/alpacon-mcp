@@ -412,6 +412,20 @@ class TestWorkSessionGet:
         assert 'next_action' not in result
 
     @pytest.mark.asyncio
+    async def test_pause_wait_requires_a_person_and_stops_on_terminal_status(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {'id': SESSION_ID, 'status': 'paused'}
+
+        result = await work_session_get(
+            session_id=SESSION_ID, workspace='testworkspace', region='ap1'
+        )
+
+        assert result['requires_human_approval'] is True
+        for status in ('completed', 'revoked', 'expired'):
+            assert status in result['next_action']
+
+    @pytest.mark.asyncio
     async def test_get_propagates_api_error(self, mock_http_client, mock_token_manager):
 
         mock_http_client.get.return_value = {
