@@ -4,6 +4,7 @@ import os
 import re
 import signal
 import sys
+import unicodedata
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from types import FrameType
@@ -43,6 +44,14 @@ ServedTransport = Literal['stdio']
 
 DEFAULT_HOST = '127.0.0.1'
 DEFAULT_PORT = 8237  # MCAR - MCP Alpacon Remote
+
+_AUTHORITY = re.compile(r'(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9._-]+)(?::([0-9]{1,5}|\*))?')
+# WHATWG parses a host whose last label looks like this as IPv4
+_IPV4_LAST_LABEL = re.compile(r'[0-9]+|0x[0-9a-f]*')
+_DEFAULT_PORTS: dict[str, str] = {'http': '80', 'https': '443'}
+_REFUSED_CATEGORIES: frozenset[str] = frozenset(
+    {'Cc', 'Cs', 'Co', 'Cn', 'Zs', 'Zl', 'Zp'}
+)
 
 # 1 MiB above the SDK default so a >3 MiB upload reaches webftp_upload_content's
 # own check instead of failing as a bare HTTP 413 (see #144).
@@ -147,7 +156,8 @@ def resolve_host() -> str:
     return os.getenv('ALPACON_MCP_HOST', DEFAULT_HOST)
 
 
-_AUTHORITY = re.compile(r'(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9._-]+)(?::(\d{1,5}|\*))?')
+def resolve_port() -> int:
+    return int(os.getenv('ALPACON_MCP_PORT', str(DEFAULT_PORT)))
 
 
 def _split_authority(authority: str) -> tuple[str, str | None] | None:
@@ -175,7 +185,7 @@ def _canonical_ip(host: str) -> str | None:
             return f'[::ffff:{high:x}:{low:x}]'
         return f'[{address}]'
     last_label = host.rstrip('.').rsplit('.', 1)[-1]
-    if re.fullmatch(r'\d+|0x[0-9a-f]*', last_label):
+    if _IPV4_LAST_LABEL.fullmatch(last_label):
         try:
             return str(ipaddress.IPv4Address(host))
         except ValueError:
@@ -183,10 +193,24 @@ def _canonical_ip(host: str) -> str | None:
     return host
 
 
+def _is_decodable_a_label(label: str) -> bool:
+    """False for an xn-- label a browser refuses: bad Punycode, ASCII only, uppercase
+    or non-NFC text, or a control, unassigned or space code point."""
+    try:
+        decoded = label.removeprefix('xn--').encode().decode('punycode')
+    except UnicodeError:
+        return False
+    return (
+        not decoded.isascii()
+        and decoded == unicodedata.normalize('NFC', decoded).lower()
+        and not any(unicodedata.category(c) in _REFUSED_CATEGORIES for c in decoded)
+    )
+
+
 def _is_browser_origin(origin: str) -> bool:
     """True when origin is spelled exactly as a browser serializes it."""
     scheme, separator, authority = origin.partition('://')
-    default_port = {'http': '80', 'https': '443'}.get(scheme)
+    default_port = _DEFAULT_PORTS.get(scheme)
     parts = _split_authority(authority) if separator else None
     if default_port is None or parts is None:
         return False
@@ -194,6 +218,11 @@ def _is_browser_origin(origin: str) -> bool:
     return (
         host == host.lower()
         and _canonical_ip(host) == host
+        and all(
+            _is_decodable_a_label(label)
+            for label in host.split('.')
+            if label.startswith('xn--')
+        )
         and port != default_port
         and (port in (None, '*') or port == str(int(port)))
     )
@@ -225,10 +254,6 @@ def resolve_transport_security() -> TransportSecuritySettings | None:
         allowed_hosts=allowed_hosts,
         allowed_origins=allowed_origins,
     )
-
-
-def resolve_port() -> int:
-    return int(os.getenv('ALPACON_MCP_PORT', str(DEFAULT_PORT)))
 
 
 def _create_mcp_server() -> MCPServer[None]:
