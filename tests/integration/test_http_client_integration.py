@@ -305,5 +305,25 @@ class TestURLConstruction:
         )
 
         assert captured_headers['authorization'] == 'token=my-secret-token'
-        assert captured_headers['content-type'] == 'application/json'
+        # A bodyless request declares no Content-Type.
+        assert 'content-type' not in captured_headers
         assert captured_headers['accept'] == 'application/json'
+
+    async def test_json_body_carries_content_type(self, patched_http_client):
+        """A request with a JSON body still declares it."""
+        captured_headers = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured_headers.update(dict(request.headers))
+            return httpx.Response(HTTPStatus.OK, json={'ok': True})
+
+        patched_http_client.set_handler(handler)
+
+        await http_client.request(
+            method='POST',
+            url='https://test.ap1.alpacon.io/api/test/',
+            token='my-secret-token',
+            json_data={'a': 1},
+        )
+
+        assert captured_headers['content-type'] == 'application/json'
