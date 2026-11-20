@@ -16,14 +16,15 @@ Alpacon is reached only through its MCP tools. Clients name them differently (`l
 
 - Branch on `status`, not on prose: `success`, `error`, `pending_approval`, `purpose_required`, and `mfa_required` are the common values. For any other value, read `message` and `next_action`.
 - When a result carries `next_action`, do what it says. `requires_human_approval: true` means a person decides; `approvable_by_agent: false` means no tool of yours can.
-- A command result can say `success` and still carry `sudo_denial` or `sudo_hint`: the sudo inside it did not run. With `sudo_denial`, a person can resolve it; rerun the command after they act, knowing the whole line runs again. With `sudo_hint` alone, it is a hard denial: do not wait for it and do not rerun it unchanged.
+- A command result can say `success` and still carry `sudo_denial` or `sudo_hint`: the sudo inside it did not run. With `sudo_denial`, a person can resolve it; follow its `next_action`, which says when to rerun, knowing the whole line runs again. With `sudo_hint` alone, it is a hard denial: do not wait for it and do not rerun it unchanged. When `sudo_denial` says another sudo call was denied outright, `sudo_hint` names that call, and a rerun hits it again.
+- A Work Session, approval or session analysis names only the servers you can reach. A result carrying `hidden_targets_note`, or any `*_hidden` count above 0, holds more than it names: never report the named list as the whole scope, and never guess the rest.
 - A refusal carrying `rejection_cause`, `gate`, or `missing` is not cleared by resending it unchanged. Follow its hint: some ask you to fix the call, some to wait for a person's decision or MFA, after which the same call can succeed.
 
 ## Run commands inside a Work Session
 
 Personal API tokens, MCP OAuth and browser callers use an active, approved Work Session for command execution and REST file-transfer creation. The Alpacon server enforces this requirement; personal-token enforcement requires a server release that supports it. This MCP server adds no local authorization check. Service tokens retain their endpoint-specific authorization rules.
 
-1. Reuse a session that covers the task (`work_session_list`), or open one with `work_session_create`: the `scopes` (`command`; add `webftp` for transfers and for `execute_file` with `write_file` or `read_from_server`; `sudo` only to elevate), every target server UUID, `expires_at`, and a `description` that tells the approver which servers, what action, and what will not be touched. To run as another OS account such as `root`, set `target_account_username` here and pass the same account as `username` on each command.
+1. Reuse a session of yours that covers the task (`work_session_list`; one with a `*_hidden` count above 0 is someone else's), or open one with `work_session_create`: the `scopes` (`command`; add `webftp` for transfers and for `execute_file` with `write_file` or `read_from_server`; `sudo` only to elevate), every target server UUID, `expires_at`, and a `description` that tells the approver which servers, what action, and what will not be touched. To run as another OS account such as `root`, set `target_account_username` here and pass the same account as `username` on each command.
 2. If it returns `status="pending_approval"`, tell the person the session waits for approval, then poll `work_session_get` until `data.status` is `active`. Stop on `rejected`, `cancelled`, `expired`, `revoked`, or `completed`.
 3. Pass its id as `work_session_id` on every command and transfer. When the task is done, close a session you opened for it with `work_session_close`; leave a session you reused open.
 
@@ -53,7 +54,7 @@ An error carrying `outcome_unknown: true` means the request may have reached the
 
 - [approvals.md](references/approvals.md): any `pending_approval`, sudo result, or question about why something waits.
 - [refusals.md](references/refusals.md): an `error` with `rejection_cause`, `gate`, `missing`, a plan limit, or a credential refusal.
-- [work-sessions.md](references/work-sessions.md): changing, extending, or closing a session, or a Work Session gate `code`.
+- [work-sessions.md](references/work-sessions.md): changing, extending, or closing a session, a Work Session gate `code`, or reporting which servers a session covers.
 - [files.md](references/files.md): `execute_file`, WebFTP transfers, `file_exec_*` codes.
 - [mfa.md](references/mfa.md): `status="mfa_required"` or `show_mfa`.
 - [fleet.md](references/fleet.md): `execute_command_multi_server`, `wait=false`, timeouts.

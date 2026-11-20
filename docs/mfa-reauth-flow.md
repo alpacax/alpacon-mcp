@@ -125,6 +125,12 @@ sequenceDiagram
         B->>A0: MFA response
         A0->>S: /oauth/callback?code=MFA_CODE<br/>state={stage:'mfa'}
         S->>A0: Exchange MFA code (discard token)
+        A0-->>S: Token response
+    end
+
+    opt Exchange not 2xx, or it raised an HTTP error
+        S-->>B: 302 to redirect_uri?error=access_denied&state=...<br/>(JSON OAuth error when no trusted redirect_uri)
+        Note over S,B: Flow ends here; Stage 2 never starts
     end
 
     rect rgb(230, 245, 255)

@@ -16,6 +16,8 @@ Answer one question per server: is the installed software older than the fixed v
 
 If the fixed version is missing or comes only from a secondary source, ask for the vendor advisory before running anything: a wrong fixed version turns every verdict wrong at once.
 
+If the request names no CVE or advisory at all ("any vulnerabilities on this server? fix them if so"), do not write a check of your own. Stop and offer two routes: name a CVE or advisory, or check the distribution's pending security updates by the path in `vuln-patch`'s [pending-security-updates.md](../vuln-patch/references/pending-security-updates.md), which says what it covers and what it does not. Follow its steps 1 to 5, which only read, and go past them only when the person asked for a fix, as `vuln-patch`.
+
 For a distribution package, including the kernel, take each fixed version from the distribution's tracker or errata—the Ubuntu USN or CVE page, Debian security tracker, or RHSA—never upstream. Distributions backport fixes without changing the upstream version; for example, Ubuntu's `1:8.9p1-3ubuntu0.10` includes a fix upstream released later. If the tracker still marks a release vulnerable and has no fixed package, give its check a `none` arm: installed rows are `affected` with `reason=no-fix-available`, and no recipe follows.
 
 ## Steps

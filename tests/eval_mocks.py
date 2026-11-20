@@ -47,6 +47,24 @@ SECOND_SESSION = PATCH_SESSION | {
     'servers': [SID, SID2, SID3],
     'description': 'Upgrade openssh-server for CVE-2026-31337 on web-01 to web-03; no restarts.',
 }
+PREFLIGHT_CASES = {  # each mock dir and the session its rollout runs in
+    f'{case}/mocks/alpacon': session
+    for case, session in {
+        'remediate-asks-on-preflight-anomaly': SECOND_SESSION,
+        'remediate-asks-on-unreadable-preflight': PATCH_SESSION,
+        'remediate-reports-an-already-fixed-server-without-asking': PATCH_SESSION,
+        'remediate-asks-on-an-already-fixed-server-with-a-read-only-disk': PATCH_SESSION,
+        'remediate-asks-on-an-empty-preview-below-the-fixed-version': PATCH_SESSION,
+    }.items()
+}
+NO_CVE_CASE = 'patch-finds-kept-back-security-updates-without-a-cve/mocks/alpacon'
+NO_CVE_SESSION = {
+    'servers': [SID],
+    'scopes': ['command'],
+    'target_account_username': 'ubuntu',
+    'description': 'Read pending security updates on web-01; changes nothing.',
+}
+CMD_CHECK = 'a3b4c5d6-7e8f-4a1b-9c2d-3e4f5a6b7c8d'
 SERVER_NAMES = {SID: 'web-01', SID2: 'web-02', SID3: 'web-03'}
 SERVER = {'id': SID, 'name': 'web-01'}
 ECHO = 'ECHO-INPUT-COMMAND'
@@ -98,7 +116,7 @@ def session_row(sid: str, status: str, **extra: object) -> dict[str, object]:
         'clusters': [],
         'target_account_username': None,
         'starts_at': '2026-11-05T09:00:00Z',
-        'expires_at': '2026-11-05T18:00:00Z',
+        'expires_at': '2099-11-05T18:00:00Z',  # far ahead, or a model refuses an expired session
         'started_at': '2026-11-05T09:00:00Z',
         'pending_modification_request': None,
         'pending_extension_request': None,
@@ -180,6 +198,111 @@ def _rollout_mocks(case: str, session: dict[str, Sequence[str]]) -> list[Mock]:
             f'{case}/work_session_list.md',
             {('GET', SESSIONS): page([row])},
             lambda: work_session_tools.work_session_list(workspace=WS, region=REGION),
+        ),
+    ]
+
+
+PARTIAL_CASE = 'report-partial-session-scope/mocks/alpacon'
+# Another person's session, as a reader who reaches web-01 only gets it (#480):
+# ServerNestedSerializer rows for what is named, a count for the rest.
+PARTIAL_SESSION = session_row(
+    WSID,
+    'active',
+    title='Fleet kernel patching',
+    description=(
+        'Apply the kernel update on the payment fleet; reboot one host at a time.'
+    ),
+    scopes=['command', 'sudo'],
+    servers=[
+        {
+            'id': SID,
+            'name': 'web-01',
+            'os': 'Ubuntu 24.04',
+            'platform': 'debian',
+            'is_connected': True,
+            'is_deleted': False,
+        }
+    ],
+    servers_hidden=2,
+    clusters_hidden=0,
+    can_manage=False,
+)
+_NOT_YOURS = httpx.Response(
+    403, json={'detail': 'You do not have permission to perform this action.'}
+)
+
+
+def _partial_scope_mocks() -> list[Mock]:
+    return [
+        Mock(
+            f'{PARTIAL_CASE}/work_session_get.md',
+            {('GET', f'{SESSIONS}{WSID}/'): httpx.Response(200, json=PARTIAL_SESSION)},
+            lambda: work_session_tools.work_session_get(
+                session_id=WSID, workspace=WS, region=REGION
+            ),
+        ),
+        Mock(
+            f'{PARTIAL_CASE}/work_session_list.md',
+            {('GET', SESSIONS): page([PARTIAL_SESSION])},
+            lambda: work_session_tools.work_session_list(workspace=WS, region=REGION),
+        ),
+        Mock(  # the server list is filtered by the same reach
+            f'{PARTIAL_CASE}/list_servers.md',
+            {
+                ('GET', '/api/servers/servers/'): page(
+                    [
+                        {
+                            'id': SID,
+                            'name': 'web-01',
+                            'is_connected': True,
+                            'os_name': 'Ubuntu',
+                            'os_version': '24.04',
+                        }
+                    ]
+                )
+            },
+            lambda: server_tools.list_servers(workspace=WS, region=REGION),
+        ),
+        Mock(  # only a manager may write the session
+            f'{PARTIAL_CASE}/work_session_update.md',
+            {('PATCH', f'{SESSIONS}{WSID}/'): _NOT_YOURS},
+            lambda: work_session_tools.work_session_update(
+                session_id=WSID, workspace=WS, region=REGION, servers=[SID]
+            ),
+        ),
+        Mock(
+            f'{PARTIAL_CASE}/work_session_extend.md',
+            {('POST', f'{SESSIONS}{WSID}/extend/'): _NOT_YOURS},
+            lambda: work_session_tools.work_session_extend(
+                session_id=WSID,
+                workspace=WS,
+                region=REGION,
+                expires_at='2099-11-06T18:00:00Z',
+                reason='More time for the kernel patching.',
+            ),
+        ),
+        Mock(  # a session of the agent's own would wait for approval
+            f'{PARTIAL_CASE}/work_session_create.md',
+            {
+                ('POST', SESSIONS): httpx.Response(
+                    201, json=session_row(WSID_NEW, 'pending', started_at=None)
+                )
+            },
+            lambda: work_session_tools.work_session_create(
+                workspace=WS,
+                region=REGION,
+                scopes=['command'],
+                servers=[SID],
+                expires_at='2099-11-05T18:00:00Z',
+                description='List the servers of the kernel patching session.',
+            ),
+        ),
+        Mock(
+            f'{PARTIAL_CASE}/work_session_close.md',
+            {('POST', f'{SESSIONS}{WSID}/complete/'): _NOT_YOURS},
+            lambda: work_session_tools.work_session_close(
+                session_id=WSID, workspace=WS, region=REGION
+            ),
         ),
     ]
 
@@ -403,8 +526,29 @@ MOCKS: list[Mock] = [
             server_id=SID, command='free -m', workspace=WS, region=REGION
         ),
     ),
+    *_partial_scope_mocks(),
     *_rollout_mocks(PATCH_CASE, PATCH_SESSION),
     *_rollout_mocks(SECOND_CASE, SECOND_SESSION),
+    *(
+        m
+        for case, session in PREFLIGHT_CASES.items()
+        for m in _rollout_mocks(case, session)
+    ),
+    *_rollout_mocks(NO_CVE_CASE, NO_CVE_SESSION),
+    Mock(  # accepted whatever the command; the result is read with check_command_status
+        f'{NO_CVE_CASE}/execute_command_multi_server.md',
+        {('POST', COMMANDS): httpx.Response(201, json={'id': CMD_CHECK})},
+        lambda: command_tools.execute_command_multi_server(
+            server_ids=[SID],
+            command=ECHO,
+            workspace=WS,
+            region=REGION,
+            username='ubuntu',
+            work_session_id=WSID,
+            purpose='read pending security updates; read-only',
+        ),
+        echo=ECHO,
+    ),
     Mock(  # every run of the recipe fails, so only the first server may see one
         f'{PATCH_CASE}/execute_file.md',
         {
@@ -453,6 +597,12 @@ HAND_WRITTEN = {
     f'{PATCH_CASE}/execute_command.md',
     f'{SECOND_CASE}/execute_command.md',
     f'{SECOND_CASE}/execute_file.md',  # an agent responder: each server answers differently
+    f'{NO_CVE_CASE}/check_command_status.md',  # answers for whichever command was submitted
+    *(
+        f'{case}/{tool}.md'
+        for case in PREFLIGHT_CASES
+        for tool in ('execute_command', 'execute_file')
+    ),
 }
 
 

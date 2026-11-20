@@ -47,6 +47,24 @@ HTTP_ERROR_ENVELOPE = {
 VALID_SERVER_ID = '550e8400-e29b-41d4-a716-446655440001'
 
 
+def work_session_body(**fields: object) -> dict[str, object]:
+    """A server-targeting Work Session as the Alpacon API renders it for a reader
+    who reaches one server: each list beside its count (#480)."""
+    return {
+        'id': '550e8400-e29b-41d4-a716-446655440020',
+        'status': 'active',
+        'approval_request_id': None,
+        'servers': [{'id': VALID_SERVER_ID, 'name': 'web-1'}],
+        'servers_hidden': 0,
+        'clusters': [],
+        'clusters_hidden': 0,
+        'adjustments': None,
+        'pending_modification_request': None,
+        'account_flag': None,
+        **fields,
+    }
+
+
 STREAMABLE_HTTP_TOKEN = 'test-streamable-http-token'  # noqa: S105
 
 

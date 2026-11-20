@@ -1,10 +1,16 @@
 """Unit tests for audit and logging tools."""
 
+import copy
 import inspect
 
 import pytest
 
-from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture, published_rule
+from tests.conftest import (
+    HTTP_ERROR_ENVELOPE,
+    http_client_fixture,
+    published_rule,
+    tool_descriptions,
+)
 from tools.audit_tools import (
     get_activity_log,
     get_session_analysis_detail,
@@ -265,3 +271,77 @@ async def test_cursor_resume_rule_lives_on_the_parameter(tool_name):
     assert 'pagination.next_cursor' in on_parameter
     assert 'pagination.next_cursor' not in on_tool
     assert 'pagination.complete' in on_tool
+
+
+class TestUnreachedServersAreCounted:
+    """#480: an analysis names only the session's servers its reader reaches."""
+
+    SESSION_ID = '550e8400-e29b-41d4-a716-446655440020'
+
+    def _analysis(self, hidden: object) -> dict[str, object]:
+        return {
+            'id': 'analysis-1',
+            'work_session': self.SESSION_ID,
+            'work_session_detail': {
+                'id': self.SESSION_ID,
+                'servers': [{'id': SERVER_ID, 'name': 'web-01'}],
+                'servers_hidden': hidden,
+            },
+        }
+
+    @pytest.mark.asyncio
+    async def test_detail_keeps_the_body_and_notes_the_count(
+        self, mock_http_client, mock_token_manager
+    ):
+        body = self._analysis(2)
+        mock_http_client.get.return_value = copy.deepcopy(body)
+
+        result = await get_session_analysis_detail(
+            analysis_id='analysis-1', workspace='test-ws', region='ap1'
+        )
+
+        assert result['status'] == 'success'
+        assert result['data'] == body
+        assert '`work_session_detail.servers_hidden`' in result['hidden_targets_note']
+        assert '2 more servers' in result['hidden_targets_note']
+
+    @pytest.mark.asyncio
+    async def test_detail_without_counts_adds_no_note(
+        self, mock_http_client, mock_token_manager
+    ):
+        body = self._analysis(0)
+        mock_http_client.get.return_value = copy.deepcopy(body)
+
+        result = await get_session_analysis_detail(
+            analysis_id='analysis-1', workspace='test-ws', region='ap1'
+        )
+
+        assert result['status'] == 'success'
+        assert result['data'] == body
+        assert 'hidden_targets_note' not in result
+
+    @pytest.mark.asyncio
+    async def test_list_names_each_partial_row(
+        self, mock_http_client, mock_token_manager
+    ):
+        fully_named = self._analysis(0) | {'id': 'analysis-0'}
+        page = {'count': 2, 'next': None, 'results': [fully_named, self._analysis(1)]}
+        mock_http_client.get.return_value = copy.deepcopy(page)
+
+        result = await list_session_analyses(workspace='test-ws', region='ap1')
+
+        assert result['status'] == 'success'
+        assert result['data'] == page
+        assert (
+            f'analysis analysis-1 of session {self.SESSION_ID} (1 more server)'
+            in result['hidden_targets_note']
+        )
+        assert 'analysis-0' not in result['hidden_targets_note']
+
+    @pytest.mark.asyncio
+    async def test_descriptions_name_the_counts(self):
+        descriptions = await tool_descriptions()
+
+        for name in ('get_session_analysis_detail', 'list_session_analyses'):
+            assert 'servers_hidden' in descriptions[name]
+            assert 'hidden_targets_note' in descriptions[name]
