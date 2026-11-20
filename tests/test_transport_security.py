@@ -199,6 +199,8 @@ def test_invalid_hosts_raise_an_error_naming_the_variable_and_entry(monkeypatch,
         'https://xn--e-xbb.example',
         'https://xn--bc-jga.example',
         'https://xn--ab-l13a.example',
+        'https://xn--1ug.example',
+        'https://xn--a-ecp.example',
     ],
 )
 def test_invalid_origins_raise_an_error_naming_the_variable_and_entry(
@@ -230,6 +232,7 @@ def test_well_formed_host_and_origin_entries_are_accepted(monkeypatch):
         'http://[::ffff:7f00:1]:6274',
         'https://xn--bcher-kva.example',
         'https://xn--ls8h.example',
+        'https://xn--11b6iy14e.example',
     ]
     monkeypatch.setenv('ALPACON_MCP_ALLOWED_HOSTS', ','.join(hosts))
     monkeypatch.setenv('ALPACON_MCP_ALLOWED_ORIGINS', ','.join(origins))

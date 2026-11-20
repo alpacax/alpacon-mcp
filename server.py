@@ -11,6 +11,7 @@ from types import FrameType
 from typing import Final, Literal, NoReturn
 from urllib.parse import urlparse
 
+import idna
 from mcp.server import MCPServer
 from mcp.server.apps import Apps
 from mcp.server.transport_security import TransportSecuritySettings
@@ -49,9 +50,6 @@ _AUTHORITY = re.compile(r'(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9._-]+)(?::([0-9]{1,5}|\*
 # WHATWG parses a host whose last label looks like this as IPv4
 _IPV4_LAST_LABEL = re.compile(r'[0-9]+|0x[0-9a-f]*')
 _DEFAULT_PORTS: dict[str, str] = {'http': '80', 'https': '443'}
-_REFUSED_CATEGORIES: frozenset[str] = frozenset(
-    {'Cc', 'Cs', 'Co', 'Cn', 'Zs', 'Zl', 'Zp'}
-)
 
 # 1 MiB above the SDK default so a >3 MiB upload reaches webftp_upload_content's
 # own check instead of failing as a bare HTTP 413 (see #144).
@@ -194,17 +192,24 @@ def _canonical_ip(host: str) -> str | None:
 
 
 def _is_decodable_a_label(label: str) -> bool:
-    """False for an xn-- label a browser refuses: bad Punycode, ASCII only, uppercase
-    or non-NFC text, or a control, unassigned or space code point."""
+    """False for an xn-- label a browser's UTS46 processing refuses."""
     try:
         decoded = label.removeprefix('xn--').encode().decode('punycode')
-    except UnicodeError:
+        valid = (
+            not decoded.isascii()
+            and idna.uts46_remap(decoded, std3_rules=False, transitional=False)
+            == decoded
+            and unicodedata.category(decoded[0])[0] != 'M'
+            and all(
+                idna.valid_contextj(decoded, i)
+                for i, c in enumerate(decoded)
+                if c in '\u200c\u200d'
+            )
+            and idna.check_bidi(decoded)
+        )
+    except (UnicodeError, idna.IDNAError):
         return False
-    return (
-        not decoded.isascii()
-        and decoded == unicodedata.normalize('NFC', decoded).lower()
-        and not any(unicodedata.category(c) in _REFUSED_CATEGORIES for c in decoded)
-    )
+    return valid
 
 
 def _is_browser_origin(origin: str) -> bool:
