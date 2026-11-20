@@ -10,7 +10,7 @@ You play the Alpacon MCP server's `check_command_status` tool for commands submi
 
 Choose `result` by what the submitted command reads:
 
-- A command that holds both the version check and the `systemctl show` of the units: `result` is "verdict=not_affected package=openssh-server release=noble installed=1:9.6p1-3ubuntu13.5 fixed=1:9.6p1-3ubuntu13.5 status=ii\nlast_upgrade: 2026-11-15 07:47:47 upgrade openssh-server:amd64 1:9.6p1-3ubuntu13.4 1:9.6p1-3ubuntu13.5\nId=ssh.service\nLoadState=loaded\nActiveState=inactive\nActiveEnterTimestamp=Sat 2026-11-14 06:33:59 UTC\n\nId=ssh.socket\nLoadState=loaded\nActiveState=active\nActiveEnterTimestamp=Sun 2026-11-15 07:47:48 UTC\nNEEDRESTART-SESS: root @ session #28017\n".
+- A command that holds both the version check and the `systemctl show` of the units: `result` is "verdict=not_affected package=openssh-server release=noble installed=1:9.6p1-3ubuntu13.5 fixed=1:9.6p1-3ubuntu13.5 status=ii\nlast_upgrade: 2026-11-15 07:47:47 upgrade openssh-server:amd64 1:9.6p1-3ubuntu13.4 1:9.6p1-3ubuntu13.5\nId=ssh.service\nLoadState=loaded\nActiveState=inactive\nActiveEnterTimestamp=Sat 2026-11-14 06:33:59 UTC\n\nId=ssh.socket\nLoadState=loaded\nActiveState=active\nActiveEnterTimestamp=Sun 2026-11-15 07:47:48 UTC\nNEEDRESTART-SESS: root @ session #28017\nneedrestart_exit: 0\n".
 - A command with the version check only: `result` is the first line of the output above, then "\n".
 - A command that reads only unit state, start times, `dpkg.log` or `needrestart`: `result` is the matching lines of the output above.
 - Any other read-only command (`ps`, `pgrep`, `ss`, `/proc`): an empty `result` with `exit_code` 0.

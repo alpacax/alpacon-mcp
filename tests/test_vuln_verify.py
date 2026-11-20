@@ -58,14 +58,19 @@ class TestCombinedLine:
         assert [line for line in lines if line.startswith('NEEDRESTART-')] == [
             'NEEDRESTART-SVC: ssh.service'
         ]
+        assert 'needrestart_exit: 0' in lines
 
     @pytest.mark.parametrize(
-        'needrestart',
-        ['echo "NEEDRESTART-VER: 3.6"', 'exit 127'],
-        ids=['empty-list', 'missing'],
+        ('needrestart', 'exit_line'),
+        [
+            ('echo "NEEDRESTART-VER: 3.6"', 'needrestart_exit: 0'),
+            ('exit 127', 'needrestart_exit: 127'),
+            ('echo "NEEDRESTART-VER: 3.6"; exit 1', 'needrestart_exit: 1'),
+        ],
+        ids=['empty-list', 'missing', 'failed'],
     )
-    def test_exits_zero_when_needrestart_lists_nothing(
-        self, tmp_path: Path, needrestart: str
+    def test_tells_an_empty_scan_from_one_that_never_ran(
+        self, tmp_path: Path, needrestart: str, exit_line: str
     ):
         result = _combined_line(tmp_path, needrestart)
 
@@ -74,6 +79,9 @@ class TestCombinedLine:
         assert lines[0].startswith('verdict=not_affected package=openssh-server')
         assert 'ActiveState=active' in lines
         assert not [line for line in lines if line.startswith('NEEDRESTART-')]
+        assert [line for line in lines if line.startswith('needrestart_exit:')] == [
+            exit_line
+        ]
 
     @pytest.mark.parametrize('package', ['openssh-server', 'openssh-server:arm64'])
     def test_finds_the_last_upgrade_with_or_without_an_architecture(
