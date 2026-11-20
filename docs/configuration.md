@@ -265,8 +265,10 @@ export ALPACON_MCP_LEDGER_AUDIENCE="https://alpacon.ai/"  # Matched verbatim; ke
 # Transport binding (streamable-http)
 export ALPACON_MCP_HOST=127.0.0.1
 export ALPACON_MCP_PORT=8237
-export ALPACON_MCP_ALLOWED_HOSTS="mcp.alpacon.io"  # Optional comma-separated Host values; accepts :* ports
-export ALPACON_MCP_ALLOWED_ORIGINS="https://inspector.example"  # Optional comma-separated origins; no paths
+# Behind a proxy only: the host list replaces the loopback defaults, so with it set
+# a local request to 127.0.0.1 gets 421 unless 127.0.0.1:* is listed too
+# export ALPACON_MCP_ALLOWED_HOSTS="mcp.alpacon.io"  # Comma-separated Host values; accepts :* ports
+# export ALPACON_MCP_ALLOWED_ORIGINS="https://inspector.example"  # Comma-separated origins; no paths
 
 # Logging configuration
 export ALPACON_MCP_LOG_LEVEL=DEBUG   # For development
