@@ -550,7 +550,7 @@ These tools need a JWT/OAuth session (hosted server), a browser session, or a lo
 - **get_iam_user**: Get detailed user information
 - **create_iam_user**: Create a new IAM user
 - **update_iam_user**: Update a user's email, name, or active status
-- **delete_iam_user**: Remove users from workspace
+- **delete_iam_user**: Remove a user from the workspace. Supported Alpacon deployments keep the home directory by default and archive it when `archive_home=true`.
 - **invite_workspace_user**: Send an email invitation to join the workspace
 
 **Group and membership management**:

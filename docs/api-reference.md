@@ -911,12 +911,13 @@ Update an existing user profile.
 **Note:** Only provided fields will be updated. Omitted fields remain unchanged. Group membership is changed through `add_iam_member`/`remove_iam_member`, not here.
 
 #### `delete_iam_user`
-Delete IAM user from workspace.
+Delete an IAM user from the workspace. Supported Alpacon deployments keep the home directory by default.
 
 **Parameters:**
 - `user_id` (string): User ID to delete
 - `workspace` (string): Workspace name
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
+- `archive_home` (boolean, optional): Move the home directory under `/home/deleted_users/` when true. Defaults to false. Passing false and omitting the argument send the same request, with no `archive_home` query parameter. On deployments running agents older than the version that keeps home directories by default, both calls may still archive the home directory. Archiving can disrupt apps or services that use files in the home directory.
 
 **⚠️ Warning:** This action is irreversible and will remove all user permissions and group memberships.
 

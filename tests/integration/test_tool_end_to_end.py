@@ -209,16 +209,41 @@ class TestIAMToolsEndToEnd:
         assert captured_method[0] == 'PATCH'
         assert captured_body == {'email': 'updated@example.com'}
 
+    @pytest.mark.parametrize(
+        ('arguments', 'expected_query'),
+        [
+            pytest.param({}, b'', id='default'),
+            pytest.param({'archive_home': False}, b'', id='false'),
+            pytest.param({'archive_home': True}, b'archive_home=true', id='true'),
+        ],
+    )
     async def test_delete_iam_user(
-        self, patched_http_client, mock_token_for_integration, sample_api_responses
+        self,
+        patched_http_client,
+        mock_token_for_integration,
+        arguments,
+        expected_query,
     ):
-        """delete_iam_user sends DELETE and returns success."""
-        captured_method = []
-
         def handler(request: httpx.Request) -> httpx.Response:
-            captured_method.append(request.method)
-            assert f'/api/iam/users/{USER_ID}/' in str(request.url)
-            return httpx.Response(HTTPStatus.NO_CONTENT, text='')
+            assert request.method == 'DELETE'
+            assert request.url.path == f'/api/iam/users/{USER_ID}/'
+            assert request.url.query == expected_query
+            return httpx.Response(HTTPStatus.NO_CONTENT)
+
+        patched_http_client.set_handler(handler)
+
+        result = await delete_iam_user(
+            user_id=USER_ID, workspace='production', region='ap1', **arguments
+        )
+
+        assert result['status'] == 'success'
+
+    @pytest.mark.parametrize('code', ['home_purge_removed', 'system_home_conflict'])
+    async def test_delete_iam_user_passes_through_error_code(
+        self, patched_http_client, mock_token_for_integration, code
+    ):
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(HTTPStatus.BAD_REQUEST, json={'code': code})
 
         patched_http_client.set_handler(handler)
 
@@ -226,8 +251,8 @@ class TestIAMToolsEndToEnd:
             user_id=USER_ID, workspace='production', region='ap1'
         )
 
-        assert result['status'] == 'success'
-        assert captured_method[0] == 'DELETE'
+        assert result['status'] == 'error'
+        assert result['error_code'] == code
 
 
 class TestEventsEndToEnd:

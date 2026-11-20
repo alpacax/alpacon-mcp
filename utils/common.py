@@ -367,6 +367,14 @@ _ERROR_CODE_HINT: dict[str, str] = {
     'auth_verification_unavailable': AUTH_VERIFICATION_UNAVAILABLE_HINT,
     'command_acl_moved': COMMAND_ACL_MOVED_HINT,
     'command_inline_credential': INLINE_CREDENTIAL_HINT,
+    'home_purge_removed': (
+        'Omit the purge option when deleting the user. To archive the home '
+        'directory, set archive_home=true.'
+    ),
+    'system_home_conflict': (
+        'Ask a server administrator to resolve the existing home directory '
+        'ownership conflict before retrying.'
+    ),
     **FILE_EXEC_REFUSAL_HINTS,
     **ALERT_RULE_PREVIEW_REFUSAL_HINTS,
     **AGENT_ROLLOUT_POLICY_REFUSAL_HINTS,
