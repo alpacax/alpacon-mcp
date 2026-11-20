@@ -11,7 +11,7 @@ Run one recipe, unchanged, on each target server. Servers run one at a time, and
 
 - The CVE, the package, and the fixed version for each release, as `vuln-diagnose` used them. Step 6 needs them to judge each run. On `vuln-patch`'s pending security updates path there is no CVE: the inputs, the preview and its timing, the agreement, one recipe per distinct preview instead of one for every server, the recipe path, the `purpose`, the skipped second preview, and the judgment change as its [reference](../vuln-patch/references/pending-security-updates.md#remediate) says.
 - The installed version `vuln-diagnose` read on each server, if at hand. The already-fixed exception below falls back on it.
-- The target servers, normally the `affected` rows from `vuln-diagnose`.
+- The target servers, normally the `affected` rows from `vuln-diagnose`. A row marked held is not a target until the person says the hold is released: the upgrade cannot reach a held package, so do not preview or run it before then.
 - The install method.
 - The recipe: a script the person supplies, or one you draft from [recipes.md](references/recipes.md).
 - An existing Work Session and its account, if supplied, and whether this task opened it. Reuse it only if its approved servers, account, and scopes cover this recipe.
