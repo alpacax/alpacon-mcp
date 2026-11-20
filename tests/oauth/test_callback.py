@@ -6,6 +6,7 @@ from http import HTTPStatus
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
+import httpx
 import pytest
 
 from tests.oauth._support import (
@@ -596,6 +597,100 @@ class TestOAuthCallback:
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
         assert 'location' not in response.headers
+
+
+def _failing_auth0_client(exc):
+    client = _mock_auth0_response()
+    client.post.side_effect = exc
+    return client
+
+
+def _mfa_stage1_callback(app, auth0_client, redirect_uri, **state_extra):
+    composite = _make_composite_state(
+        redirect_uri=redirect_uri,
+        state='orig-state',
+        stage=_STAGE_MFA,
+        original_scope='openid profile email offline_access',
+        **state_extra,
+    )
+    with patch('httpx.AsyncClient', return_value=auth0_client):
+        return app.get(
+            _CALLBACK_PATH,
+            params={'code': 'mfa-auth-code', 'state': composite},
+            follow_redirects=False,
+        )
+
+
+class TestMfaStage1Failure:
+    @pytest.mark.parametrize(
+        'auth0_client',
+        [
+            pytest.param(_mock_auth0_response(HTTPStatus.FORBIDDEN), id='auth0-403'),
+            pytest.param(_mock_auth0_response(HTTPStatus.BAD_REQUEST), id='auth0-400'),
+            pytest.param(_mock_auth0_response(HTTPStatus.FOUND), id='auth0-302'),
+            pytest.param(
+                _failing_auth0_client(httpx.ConnectError('down')), id='connect-error'
+            ),
+            pytest.param(
+                _failing_auth0_client(httpx.ReadTimeout('slow')), id='read-timeout'
+            ),
+        ],
+    )
+    def test_failed_exchange_returns_access_denied_to_the_client(
+        self, oauth_app, auth0_client
+    ):
+        response = _mfa_stage1_callback(
+            oauth_app, auth0_client, 'http://localhost:8080/callback'
+        )
+
+        auth0_client.post.assert_called_once()
+        assert response.status_code == HTTPStatus.FOUND
+        location = urlparse(response.headers['location'])
+        assert f'{location.scheme}://{location.netloc}{location.path}' == (
+            'http://localhost:8080/callback'
+        )
+        query = parse_qs(location.query)
+        assert query['error'] == ['access_denied']
+        assert query['error_description'] == ['MFA verification failed']
+        assert query['state'] == ['orig-state']
+
+    def test_failed_exchange_does_not_enter_the_ledger_stage(self, oauth_app):
+        auth0_client = _mock_auth0_response(HTTPStatus.FORBIDDEN)
+
+        response = _mfa_stage1_callback(
+            oauth_app,
+            auth0_client,
+            'http://localhost:8080/callback',
+            ledger_org='org_test',
+        )
+
+        auth0_client.post.assert_called_once()
+        assert response.status_code == HTTPStatus.FOUND
+        query = parse_qs(urlparse(response.headers['location']).query)
+        assert query['error'] == ['access_denied']
+        assert 'audience' not in query
+
+    def test_failed_exchange_answers_json_without_a_redirect_uri(self, oauth_app):
+        response = _mfa_stage1_callback(
+            oauth_app, _mock_auth0_response(HTTPStatus.FORBIDDEN), ''
+        )
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert response.json() == {
+            'error': 'access_denied',
+            'error_description': 'MFA verification failed',
+        }
+
+    def test_failed_exchange_clears_the_cookie(self, oauth_app):
+        response = _mfa_stage1_callback(
+            oauth_app,
+            _mock_auth0_response(HTTPStatus.FORBIDDEN),
+            'http://localhost:8080/callback',
+        )
+
+        raw = response.headers['set-cookie'].lower()
+        assert raw.startswith(TEST_NONCE_SET_COOKIE)
+        assert 'max-age=0' in raw
 
 
 @pytest.fixture

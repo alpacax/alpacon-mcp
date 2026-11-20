@@ -37,6 +37,7 @@ _GRANT_AUTHORIZATION_CODE = 'authorization_code'
 _GRANT_REFRESH_TOKEN = 'refresh_token'
 _RESPONSE_TYPE_CODE = 'code'
 
+_ERROR_ACCESS_DENIED = 'access_denied'
 _ERROR_INVALID_REQUEST = 'invalid_request'
 _ERROR_TEMPORARILY_UNAVAILABLE = 'temporarily_unavailable'
 _ERROR_INVALID_CLIENT = 'invalid_client'

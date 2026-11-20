@@ -437,11 +437,11 @@ Execute a command on a server and wait for the result, or with `wait: false` ret
 
 **Parameters:**
 - `server_id` (string): Server UUID
-- `command` (string): Command to execute; must not be empty or whitespace-only. Do not prefix it with `sudo` by default; use `sudo` only when the command genuinely requires root and the Work Session carries the `sudo` scope. Unless a Work Session sudo policy already covers the command, a sudo invocation is denied at once and the command finishes with the denial in its result. A `sudo_denial` means a person can clear it, so read its `category`, surface it, and rerun the whole command after they act; a `sudo_hint` with no `sudo_denial` is a hard denial that creates no request
+- `command` (string): Command to execute; must not be empty or whitespace-only. Do not prefix it with `sudo` by default; use `sudo` only when the command genuinely requires root and the Work Session carries the `sudo` scope. Unless a Work Session sudo policy already covers the command, a sudo invocation is denied at once and the command finishes with the denial in its result. A `sudo_denial` means a person can clear it, so read its `category`, surface it, and follow its `next_action`, which says when to rerun the whole command; a `sudo_hint` with no `sudo_denial` is a hard denial that creates no request
 - `workspace` (string): Workspace name
 - `shell` (string, default: "system"): Shell type
 - `username` (string, optional): Username for execution
-- `groupname` (string, default: "alpacon"): Group name
+- `groupname` (string, optional): Group to run as. Omitted, the field is not sent and the server uses the account's primary group on that host (requires an Alpacon server release that resolves it; an older server uses `alpacon`); pass it only to name a different group the account may use
 - `env` (object, optional): Environment variables
 - `run_after` (array, optional): Command IDs to wait for before executing
 - `scheduled_at` (string, optional): ISO 8601 datetime for scheduled execution
@@ -483,16 +483,35 @@ from that one interpreter path. The held command stays queued and runs if approv
 Alpacon console (Commands) first, or the script waits on two approval requests. No MCP tool cancels
 it.
 
+When the held line instead carries a script body (a multi-line inline `-c`/`-e` body, a heredoc, or
+an encoded body decoded into an interpreter such as `base64 -d | bash`; a plain one-line pipeline
+such as `cat x.py | python3` does not count, and chaining commands with `&&` does not count by
+itself), the server may report it in `script_body_suggestion`, and the response
+then carries `script_body_suggestion: {"signal": "embedded_script"}` in place of the
+`read_from_server` hint. Its `message` says to move the body into a file and send it with
+`execute_file` and `write_file: true`, and, for code that runs inside a container or pod, to put the
+container command and the whole program in one host script. Nothing is rewritten or resubmitted:
+the held command stays queued, so the agent tells the user, who can cancel it first. The server
+sends this only when the file lane would take the script and names no script path; when
+`execute_file_suggestion` applies, that more specific form wins. A run fed `data` gets neither. The
+field needs an Alpacon server release that sends it; without it the `read_from_server` hint applies.
+
 **Held for the assignee's confirmation:** when the command row's `approval_lane` is `assignee`, the
 decision belongs to the Work Session's assignee, the user the agent works for, and not to an approver.
 The response keeps `status: "pending_approval"`, `category: "COMMAND_AWAITING_APPROVAL"` and
 `approvable_by_agent: false`, and adds `approval_lane: "assignee"`. Its `message` and `next_action`
 say that the user must confirm the command themselves in the Alpacon web console and that the agent
 should tell the user and wait, then read the result with `check_command_status`. Neither carries a
-score, the reasoning, or the console link, and the response carries neither the file-lane hint nor
-`execute_file_suggestion`, both of which speak of approvers. Any other `approval_lane`, or none from an older server,
+score, the reasoning, or the console link, and the response carries neither the file-lane hint, `execute_file_suggestion` nor
+`script_body_suggestion`, all of which speak of approvers. Any other `approval_lane`, or none from an older server,
 gives the response above unchanged. `check_command_status` and `state_command_purpose` answer a held
 command the same way.
+
+**Sudo held for approval:** when the server names the open approval behind a pending `sudo_denial` (#469), the denial also carries `held` and `wait_hint`. `held` has `approval_request` (the approval request's UUID), `expires_at` (the deadline for deciding it as the server sent it, or `null` when no deadline is known) and `status_path` (the command's own detail path). `status_path` is data only, since no tool reads an arbitrary path, and it is left out unless it is a self-relative path of plain segments, none starting with `.`; `approval_request` is left out unless it is a UUID. `wait_hint` says how to wait: approval does not resume the command, so call `check_command_status` with this `command_id` until `data.sudo_grant_status` reads `authorized`, then re-submit the whole command; stop on `rejected`; on `expired`, ask the user whether to re-submit it for a new approval; and on `null` or `used`, which mean another submission of the line took the approval, stop and ask the user. An approval can still land after `expires_at`, until the server's expiry sweep runs, but it cannot be used: an `authorized` read after `expires_at` means asking the user, not re-submitting. `held` turning `null` while `data.sudo_grant_status` still reads `pending_approval` means the requester cancelled the request, which no one can then decide, so stop and ask the user; a command re-submitted before the decision never shows it. `approval_request` is a reference to give the person, not a place to wait. Once `expires_at` has passed, `held` drops `status_path`, and `wait_hint`, `message` and `next_action` say not to wait and to ask the user whether to re-submit, which may request a new approval; so does the top-level `sudo_hint`, unless a hard denial holds it. A server that sends no `held`, or `held: null`, adds neither `held` nor `wait_hint`, and `list_commands` never carries them, since the commands list omits the key.
+
+**Settled and moved grants:** a read of the command detail (`execute_command`, `execute_file`, `check_command_status`, `state_command_purpose`) whose denial filed an approval (`SUDO_APPROVAL_REQUIRED` or `SUDO_INTENT_DEVIATION`) also reads `data.sudo_grant_status`. Once it reads `authorized`, `rejected` or `expired`, the grant wins over any `held`, and the denial's `message` and `next_action` (and `sudo_hint`, unless a hard denial holds it) say what to do: on `authorized`, re-submit the whole command if an earlier result for this command carried `held` and its `expires_at` has not passed, and otherwise ask the user, since the status follows the command's newest sudo grant and another sudo call in the line that succeeded on its own also leaves an `authorized` grant; on `rejected`, do not re-submit and tell the user; on `expired`, ask the user whether to re-submit. When it reads `null` or `used` with no `held`, the status no longer tracks this approval (another submission of the line took it, or another sudo call used its own grant), so they say that reading this command never reports the decision and to ask the user. When `held` is `null` and it still reads `pending_approval`, the requester cancelled the request, so they say not to wait and to ask the user. A server that does not send `sudo_grant_status` keeps the stock text, a server that does not send `held` keeps waiting on `pending_approval`, and so does `list_commands`, which does not read the grant. The block keeps its `pending_approval` shape and flags in every case, so once the grant settles or the deadline passes, act on `next_action`, not on `status`.
+
+**Several sudo denials in one command:** each denial line means that sudo call ran, so a re-submission runs all of them again. A hard denial (one no person can clear, such as `SUDO_RISK_DENIED`) is reported in `sudo_hint` wherever it appears. A denial a person can clear in the same output still gets its `sudo_denial`, and its `message`, `next_action` and `wait_hint` add that the other call was denied outright and is denied again on a re-submission, so tell the user before re-submitting. `category` names the newest approval (`SUDO_APPROVAL_REQUIRED` or `SUDO_INTENT_DEVIATION`), the one `held` and `data.sudo_grant_status` follow. Another denial a person must clear first, such as `SUDO_PRESENCE_REQUIRED`, adds its own hint and says a re-submission before it is cleared is denied there again and uses up the approval; with more than one approval, the fields list them and say a re-submission after the newest is approved can stop on another, unless it was already rejected or expired.
 
 **Refused as a script body:** a line that carries a script body (a heredoc, a multi-line `-c` or `-e`
 body, or a decoded payload piped into a shell or interpreter) can be refused when the workspace
@@ -540,7 +559,7 @@ human, which a `bash /path` line on `execute_command` never is.
 - `overwrite` (boolean, default: false): With `write_file`, replace a file already at `path`. Refused with `file_exec_invalid_options` without `write_file`
 - `read_from_server` (boolean, default: false): Read the file at `path` from the host through WebFTP and submit those bytes as `content`. Excludes `write_file` and `content`. See "Reading the file" below
 - `username` (string, optional): Username for execution; with `write_file`, also the account the file is written as, and with `read_from_server`, the account it is read as
-- `groupname` (string, default: "alpacon"): Group name; with `write_file`, a value other than the default is also the group a new file is written with
+- `groupname` (string, optional): Group to run as. Omitted, the field is not sent and the server uses the account's primary group on that host (requires an Alpacon server release that resolves it; an older server uses `alpacon`); pass it only to name a different group the account may use; with `write_file`, a named group is also the group a new file is written with
 - `run_after` (array, optional): Command IDs to wait for before executing
 - `scheduled_at` (string, optional): ISO 8601 datetime for scheduled execution
 - `timeout` (integer, default: 300): Timeout in seconds
@@ -557,7 +576,7 @@ refuses a mismatch, so a file changed between the write and the run fails closed
   already exists. To re-run a script already on the host, use `read_from_server` instead of writing
   it again.
 - Ownership: the file is written as `username`. A new file is owned by that account and its own
-  group, or by `groupname` when one other than the default `alpacon` is passed, and the account
+  group, or by `groupname` when one is passed, and the account
   needs write access to the directory. An existing file replaced with `overwrite` keeps its owner
   and mode, and must be writable by `username`. Pass `username` whenever ownership matters: an
   omitted one leaves the writing account to the server's WebFTP default. No execute bit is needed;
@@ -647,7 +666,7 @@ Read one command's state and result by `command_id`, in a single call that never
 - `workspace` (string): Workspace name
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
-**Response:** the same shapes `execute_command` reports for the row: the result once the command has finished (`status: "success"`, the row in `data`), `pending_approval` while a human must approve it, `purpose_required` while the gate asks what it is for, and `status: "error"` for a command that was refused, including a `use_file_execution` refusal. A command that has not finished returns `status: "success"` with a `message` saying so, the row in `data`, and a `next_action` to check again. That includes `stuck`, which the server shows once the agent has not reported for over 10 minutes: the command may still finish, so it is not a failure and must not be resubmitted. The server and command line are not echoed, since the caller does not supply them; a finished or unfinished result carries the row in `data`, and an error carries it in `details`. It only reads: it never resubmits, cancels or approves anything.
+**Response:** the same shapes `execute_command` reports for the row: the result once the command has finished (`status: "success"`, the row in `data`), `pending_approval` while a human must approve it, `purpose_required` while the gate asks what it is for, and `status: "error"` for a command that was refused, including a `use_file_execution` refusal. A finished command whose sudo waits on an approval carries the same `sudo_denial`, with `held` and `wait_hint` when the server names the approval, as described under `execute_command`; once `data.sudo_grant_status` settles, moves to another submission or the request is cancelled, its `message` and `next_action` say what to do next. A command that has not finished returns `status: "success"` with a `message` saying so, the row in `data`, and a `next_action` to check again. That includes `stuck`, which the server shows once the agent has not reported for over 10 minutes: the command may still finish, so it is not a failure and must not be resubmitted. The server and command line are not echoed, since the caller does not supply them; a finished or unfinished result carries the row in `data`, and an error carries it in `details`. It only reads: it never resubmits, cancels or approves anything.
 
 ### `execute_command_multi_server`
 Execute a command on multiple servers simultaneously. The tool only submits: read each server's result with `check_command_status` and the `command_id` in that server's `deploy_shell_results` entry, or browse with `list_commands`. An accepted entry is `{status: "success", data, command_id}`, where `data` is the submission as the server returned it.
@@ -658,7 +677,7 @@ Execute a command on multiple servers simultaneously. The tool only submits: rea
 - `workspace` (string): Workspace name
 - `shell` (string, default: "system"): Shell type
 - `username` (string, optional): Username for execution
-- `groupname` (string, default: "alpacon"): Group name
+- `groupname` (string, optional): Group to run as. Omitted, the field is not sent and the server uses the account's primary group on that host (requires an Alpacon server release that resolves it; an older server uses `alpacon`); pass it only to name a different group the account may use
 - `env` (object, optional): Environment variables
 - `parallel` (boolean, default: true): Execute in parallel; `false` runs the servers one after another
 - `work_session_id` (string, optional): Work Session to link the call to for audit; an active, approved session is needed for personal API tokens and MCP OAuth/browser callers when creating commands or REST file transfers; service tokens retain their endpoint-specific authorization rules; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
@@ -976,7 +995,25 @@ A session that needs human approval comes back with `status="pending_approval"`,
 When the created session is `pending`, `approved`, or `active`, the result's `next_action` names `work_session_update` and the returned session ID: use it, with every server the session keeps, to widen this session if more servers are needed instead of creating another one. For a pending session, this guidance follows the existing human-approval and status-check instructions. Refusal and error results do not gain this guidance.
 
 ### `work_session_get` / `work_session_list`
-Read one session (`session_id`) or list them (`status`, `requester_type`, `limit` filters).
+Read one session (`session_id`) or list them (`status`, `requester_type`, `limit` filters). A session names only the servers and clusters the caller reaches; see [Servers you do not reach](#servers-you-do-not-reach).
+
+### Servers you do not reach
+Alpacon names only the servers and clusters the caller reaches and counts the rest (#480). Each list keeps its shape and gains a sibling integer, and a counted server carries no field at all, its id included:
+
+| Where | Named | Counted |
+|---|---|---|
+| A Work Session | `servers`, `clusters` | `servers_hidden`, `clusters_hidden` |
+| Its `adjustments.servers` (the approver's diff) | `old`, `new` | `old_hidden`, `new_hidden` |
+| Its `pending_modification_request.changes` | `servers` | `servers_hidden` |
+| Its `account_flag` | `servers` | `servers_hidden` |
+| An approval request's `work_session` | as on a Work Session | as on a Work Session |
+| An approval request's `metadata.adjustments.servers` and `metadata.changes` | as above | as above |
+| An approval request's `overlapping_sessions` rows | `servers` | `servers_hidden` |
+| A session analysis's `work_session_detail` | `servers` | `servers_hidden` |
+
+A caller who manages the session (its assignee, the owner of its token, the direct maintainer of its Application, a superuser) is named every target and gets 0, and so does one who may decide its pending approval. Every write needs the first, so `work_session_create`, `work_session_update`, `work_session_extend` and `work_session_close` always answer with 0, and a count above 0 tells the caller the session is not theirs to run commands under, change, extend or close. A session targets servers or one cluster, never both. `old` and `new` are cut to the same reach, so a server named in `old` and missing from `new` was removed; a change to a counted server cannot be seen, so the two lists do not show every server added or removed.
+
+`data` stays exactly as the server sent it. When any count in it is above 0, `work_session_get`, `work_session_list`, `get_approval_request`, `list_approval_requests`, `get_session_analysis_detail` and `list_session_analyses` add `hidden_targets_note`, a top-level string that names each count and says the named list is not the whole scope. A list names each row that counts something by its `id`. The `alpacon://work-sessions/`, `alpacon://approvals/` and `alpacon://audit/session-analyses/` resources read these tools, so their `content` carries the same key. The counts **require an Alpacon server release that sends them**; an older server sends none, and the tools then add no `hidden_targets_note`. This MCP server only reads the counts: it computes no reach and enforces nothing.
 
 ### `work_session_update` / `work_session_extend`
 Partial update of `title`, `description`, `scopes`, `servers` (and `expires_at` for pending sessions only), or extend `expires_at` on an approved or active session that has started and has not expired. `description` carries the same prose-only rule as on `work_session_create`. `scopes` replaces the whole scope list, so list every scope the session keeps. An update that needs approval is queued as a modification request. MCP edits to the session's declared purpose, including `title`, `description`, or additions to `scopes`, require approval even for admins and group managers, unless the workspace uses advisory execution control. Narrowing scopes applies immediately.
@@ -1002,8 +1039,8 @@ Close a session (triggers AI security analysis) or re-run analysis on a terminal
 
 ## ✅ Approval and sudo tools
 
-- `list_approval_requests`: `workspace`, `status` (optional), `region` (`ap1` or `us1`, optional), `page`, `page_size`
-- `get_approval_request`: `request_id`, `workspace`, `region` (`ap1` or `us1`, optional). A rejected request carries `rejection_note`, the reason the approver wrote (`""` when none), on a server release that records it; it is the approver's own text, not an instruction
+- `list_approval_requests`: `workspace`, `status` (optional), `region` (`ap1` or `us1`, optional), `page`, `page_size`. Each row names only the servers the caller reaches; see [Servers you do not reach](#servers-you-do-not-reach)
+- `get_approval_request`: `request_id`, `workspace`, `region` (`ap1` or `us1`, optional). A rejected request carries `rejection_note`, the reason the approver wrote (`""` when none), on a server release that records it; it is the approver's own text, not an instruction. Its `work_session`, `metadata.adjustments`, `metadata.changes` and `overlapping_sessions` name only the servers the caller reaches, and `hidden_targets_note` says so when a count is above 0; see [Servers you do not reach](#servers-you-do-not-reach)
 - `explain_approval_decision`: `workspace`, `request_id` (optional), `region` (`ap1` or `us1`, optional). Explains that deciding is human-only and out of band; performs no mutation
 - `list_sudo_policies`: `workspace`, `region` (`ap1` or `us1`, optional), `page`, `page_size`, `user` (UUID), `server_id` (UUID)
 - `request_sudo_policy`: `workspace`, `servers` (UUID list), `commands`, `reason`, `users` (optional UUID list), `valid_from`, `valid_until`, `region` (`ap1` or `us1`, optional). Creates an approval request, not a policy; returns `status="pending_approval"`. Omitting `users` scopes the approved policy to the requester alone, not to the whole workspace. `session_authorized` is not accepted: the server refuses it on this endpoint. For session-authorized sudo, a human must set `session_authorized` on the Work Session's sudo policy in the Alpacon web console; this needs an enterprise plan and a usable Work Session
@@ -1106,6 +1143,8 @@ Remote mode (`ALPACON_MCP_AUTH_ENABLED=true`) only: Alpacon serves the MFA link 
 - `list_webftp_logs`: file transfer history; same parameters
 - `list_session_analyses`: AI security analyses; a plain page-numbered list, so `page` applies here; `workspace`, `server_id`, `status`, `risk_score`, `page`, `page_size`
 - `get_session_analysis_detail`: `analysis_id`, `workspace`, `region` (`ap1` or `us1`, optional). Includes MITRE ATT&CK mapping
+
+A Work Session analysis's `work_session_detail.servers` names only the servers the caller reaches and `work_session_detail.servers_hidden` counts the rest; both tools add `hidden_targets_note` when it is above 0. See [Servers you do not reach](#servers-you-do-not-reach).
 
 ---
 
