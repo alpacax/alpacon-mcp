@@ -192,15 +192,6 @@ def test_invalid_hosts_raise_an_error_naming_the_variable_and_entry(monkeypatch,
         'http://2130706433:6274',
         'http://a.0x7f:6274',
         'http://[::ffff:127.0.0.1]:6274',
-        'https://xn--.example',
-        'https://xn--abc-.example',
-        'https://xn--99999999999.example',
-        'https://xn--a.example',
-        'https://xn--e-xbb.example',
-        'https://xn--bc-jga.example',
-        'https://xn--ab-l13a.example',
-        'https://xn--1ug.example',
-        'https://xn--a-ecp.example',
     ],
 )
 def test_invalid_origins_raise_an_error_naming_the_variable_and_entry(
@@ -232,7 +223,10 @@ def test_well_formed_host_and_origin_entries_are_accepted(monkeypatch):
         'http://[::ffff:7f00:1]:6274',
         'https://xn--bcher-kva.example',
         'https://xn--ls8h.example',
-        'https://xn--11b6iy14e.example',
+        'https://xn--1ug.example',
+        'https://xn--99999999999.example',
+        'http://client~dev.localhost:6274',
+        "https://a!$&'()+;=_`{}~.example",
     ]
     monkeypatch.setenv('ALPACON_MCP_ALLOWED_HOSTS', ','.join(hosts))
     monkeypatch.setenv('ALPACON_MCP_ALLOWED_ORIGINS', ','.join(origins))

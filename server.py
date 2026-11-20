@@ -4,14 +4,12 @@ import os
 import re
 import signal
 import sys
-import unicodedata
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from types import FrameType
 from typing import Final, Literal, NoReturn
 from urllib.parse import urlparse
 
-import idna
 from mcp.server import MCPServer
 from mcp.server.apps import Apps
 from mcp.server.transport_security import TransportSecuritySettings
@@ -46,7 +44,12 @@ ServedTransport = Literal['stdio']
 DEFAULT_HOST = '127.0.0.1'
 DEFAULT_PORT = 8237  # MCAR - MCP Alpacon Remote
 
-_AUTHORITY = re.compile(r'(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9._-]+)(?::([0-9]{1,5}|\*))?')
+_PORT = r'(?::([0-9]{1,5}|\*))?'
+_AUTHORITY = re.compile(r'(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9._-]+)' + _PORT)
+# ASCII a browser keeps in an Origin host; `*` stays out so it never reads as a wildcard
+_ORIGIN_AUTHORITY = re.compile(
+    r'(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9._~!$&\'()+;=`{}"-]+)' + _PORT
+)
 # WHATWG parses a host whose last label looks like this as IPv4
 _IPV4_LAST_LABEL = re.compile(r'[0-9]+|0x[0-9a-f]*')
 _DEFAULT_PORTS: dict[str, str] = {'http': '80', 'https': '443'}
@@ -158,9 +161,11 @@ def resolve_port() -> int:
     return int(os.getenv('ALPACON_MCP_PORT', str(DEFAULT_PORT)))
 
 
-def _split_authority(authority: str) -> tuple[str, str | None] | None:
+def _split_authority(
+    authority: str, pattern: re.Pattern[str] = _AUTHORITY
+) -> tuple[str, str | None] | None:
     """Split host[:port|:*] into host and port; None when it is not one."""
-    match = _AUTHORITY.fullmatch(authority)
+    match = pattern.fullmatch(authority)
     if not match:
         return None
     host, port = match.groups()
@@ -191,43 +196,17 @@ def _canonical_ip(host: str) -> str | None:
     return host
 
 
-def _is_decodable_a_label(label: str) -> bool:
-    """False for an xn-- label a browser's UTS46 processing refuses."""
-    try:
-        decoded = label.removeprefix('xn--').encode().decode('punycode')
-        valid = (
-            not decoded.isascii()
-            and idna.uts46_remap(decoded, std3_rules=False, transitional=False)
-            == decoded
-            and unicodedata.category(decoded[0])[0] != 'M'
-            and all(
-                idna.valid_contextj(decoded, i)
-                for i, c in enumerate(decoded)
-                if c in '\u200c\u200d'
-            )
-            and idna.check_bidi(decoded)
-        )
-    except (UnicodeError, idna.IDNAError):
-        return False
-    return valid
-
-
 def _is_browser_origin(origin: str) -> bool:
     """True when origin is spelled exactly as a browser serializes it."""
     scheme, separator, authority = origin.partition('://')
     default_port = _DEFAULT_PORTS.get(scheme)
-    parts = _split_authority(authority) if separator else None
+    parts = _split_authority(authority, _ORIGIN_AUTHORITY) if separator else None
     if default_port is None or parts is None:
         return False
     host, port = parts
     return (
         host == host.lower()
         and _canonical_ip(host) == host
-        and all(
-            _is_decodable_a_label(label)
-            for label in host.split('.')
-            if label.startswith('xn--')
-        )
         and port != default_port
         and (port in (None, '*') or port == str(int(port)))
     )
