@@ -1,11 +1,11 @@
 ---
 name: vuln-patch
-description: Patch a vulnerability across Alpacon servers end to end—find the affected servers, upgrade them, and confirm the fix took effect—by chaining the vuln-diagnose, vuln-remediate, and vuln-verify skills. Use when someone wants a CVE or security advisory fixed on their fleet ("patch CVE-2099-0001 on our web servers", "roll out the openssh fix", "we're on the vulnerable PHP, fix it"), not just checked or verified.
+description: Patch a vulnerability across Alpacon servers end to end—find the affected servers, upgrade them, and confirm the fix took effect—by chaining the vuln-diagnose, vuln-remediate, and vuln-verify skills. Use when someone wants a CVE or security advisory fixed on their fleet ("patch CVE-2099-0001 on our web servers", "roll out the openssh fix", "we're on the vulnerable PHP, fix it"), not just checked or verified. Also use when someone asks to find and fix vulnerabilities without naming one ("any vulnerabilities on this server? fix them if so"): that request takes the pending security updates path in its reference.
 ---
 
 # Patch a vulnerability
 
-This skill holds no procedure of its own. It runs three skills in order, hands each one's result to the next, and decides when to stop. Each step's rules live in that step's skill.
+Apart from the path for a request that names no CVE, below, this skill holds no procedure of its own. It runs three skills in order, hands each one's result to the next, and decides when to stop. Each step's rules live in that step's skill.
 
 ## Steps
 
@@ -18,6 +18,10 @@ This skill holds no procedure of its own. It runs three skills in order, hands e
 
 Diagnose and remediate use separate Work Sessions on purpose: diagnose runs across every candidate as an ordinary account, while remediate runs as root on fewer servers. The `command` scope does not make a session read-only; what keeps diagnose read-only is the check the person agreed to, so name that check in the session description.
 
+## No CVE named
+
+A request that names no CVE or advisory takes the path in [pending-security-updates.md](references/pending-security-updates.md) instead of the steps above. Never generalize to "every pending update" with a check of your own.
+
 ## Report
 
-One table, one row per server in scope: name, diagnose verdict with the installed version, remediate outcome, and verify outcome. Below it, list every server that needs a person: `unknown` rows with their reason, remediate rows that are `pending_approval`, `not_run`, or `unknown`, container and vendor-install servers remediate did not touch, and servers that need a service restart or a reboot, with the command a person would run.
+The no-CVE path reports as its reference says. Otherwise, one table, one row per server in scope: name, diagnose verdict with the installed version, remediate outcome, and verify outcome. Below it, list every server that needs a person: `unknown` rows with their reason, remediate rows that are `pending_approval`, `not_run`, or `unknown`, container and vendor-install servers remediate did not touch, and servers that need a service restart or a reboot, with the command a person would run.

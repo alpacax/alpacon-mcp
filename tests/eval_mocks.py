@@ -57,6 +57,14 @@ PREFLIGHT_CASES = {  # each mock dir and the session its rollout runs in
         'remediate-asks-on-an-empty-preview-below-the-fixed-version': PATCH_SESSION,
     }.items()
 }
+NO_CVE_CASE = 'patch-finds-kept-back-security-updates-without-a-cve/mocks/alpacon'
+NO_CVE_SESSION = {
+    'servers': [SID],
+    'scopes': ['command'],
+    'target_account_username': 'ubuntu',
+    'description': 'Read pending security updates on web-01; changes nothing.',
+}
+CMD_CHECK = 'a3b4c5d6-7e8f-4a1b-9c2d-3e4f5a6b7c8d'
 SERVER_NAMES = {SID: 'web-01', SID2: 'web-02', SID3: 'web-03'}
 SERVER = {'id': SID, 'name': 'web-01'}
 ECHO = 'ECHO-INPUT-COMMAND'
@@ -526,6 +534,21 @@ MOCKS: list[Mock] = [
         for case, session in PREFLIGHT_CASES.items()
         for m in _rollout_mocks(case, session)
     ),
+    *_rollout_mocks(NO_CVE_CASE, NO_CVE_SESSION),
+    Mock(  # accepted whatever the command; the result is read with check_command_status
+        f'{NO_CVE_CASE}/execute_command_multi_server.md',
+        {('POST', COMMANDS): httpx.Response(201, json={'id': CMD_CHECK})},
+        lambda: command_tools.execute_command_multi_server(
+            server_ids=[SID],
+            command=ECHO,
+            workspace=WS,
+            region=REGION,
+            username='ubuntu',
+            work_session_id=WSID,
+            purpose='read pending security updates; read-only',
+        ),
+        echo=ECHO,
+    ),
     Mock(  # every run of the recipe fails, so only the first server may see one
         f'{PATCH_CASE}/execute_file.md',
         {
@@ -574,6 +597,7 @@ HAND_WRITTEN = {
     f'{PATCH_CASE}/execute_command.md',
     f'{SECOND_CASE}/execute_command.md',
     f'{SECOND_CASE}/execute_file.md',  # an agent responder: each server answers differently
+    f'{NO_CVE_CASE}/check_command_status.md',  # answers for whichever command was submitted
     *(
         f'{case}/{tool}.md'
         for case in PREFLIGHT_CASES
