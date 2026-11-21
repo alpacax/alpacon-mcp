@@ -214,7 +214,7 @@ async def list_sudo_policies(
         'status="pending_approval". A session-authorized sudo policy, '
         'which lets matching sudo commands run inside an approved Work Session without an MFA '
         'prompt, cannot be requested here at all—the server refuses it on this endpoint, and '
-        'such a policy needs an enterprise plan and a usable Work Session. A human must set '
+        'such a policy needs a usable Work Session. A human must set '
         "session_authorized on that Work Session's sudo policy in the Alpacon web console. "
         'Related: list_sudo_policies (audit existing policies), list_approval_requests (watch the '
         'request), explain_approval_decision (what a human has to do).'
