@@ -251,7 +251,7 @@ _SUDO_DENIAL_HINTS: dict[str, str] = {
         'it is not a session-authorized sudo policy and a command runs '
         'non-interactively, so it can never supply MFA. A human must set '
         'session_authorized on that policy in the Alpacon web console '
-        '(enterprise plan; the policy must be tied to a usable Work Session). '
+        '(the policy must be tied to a usable Work Session). '
         'Re-run once it is set.'
     ),
     'SUDO_INTENT_DEVIATION': (
