@@ -636,6 +636,8 @@ def test_no_opt_out_or_tty_gate():
         'server.py': {
             'ALPACON_MCP_HOST',
             'ALPACON_MCP_PORT',
+            'ALPACON_MCP_ALLOWED_HOSTS',
+            'ALPACON_MCP_ALLOWED_ORIGINS',
             'ALPACON_MCP_RESOURCE_URL',
             'TOOLSETS_ENV_VAR',
         },
@@ -658,7 +660,7 @@ def test_no_opt_out_or_tty_gate():
                     word in name.lower()
                     for word in ('config', 'settings', 'argparse', 'isatty')
                 ):
-                    assert name == 'AuthSettings'
+                    assert name in {'AuthSettings', 'TransportSecuritySettings'}
             if isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Load):
                 assert ast.unparse(node.value) != 'os.environ'
         assert file_env_reads == approved_file_env_reads[path]
