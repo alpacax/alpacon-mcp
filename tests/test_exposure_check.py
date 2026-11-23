@@ -46,11 +46,14 @@ def _run(
     values: dict[str, str],
     *,
     sock: Path | None = None,
+    daemon_json: Path | None = None,
     **env: str,
 ) -> tuple[str, str]:
     """Run one documented block, filled with `values`; returns its stdout and the curl calls."""
     script = _fill(doc_blocks(CHECKS, 'sh')[block], **values)
-    script = script.replace('/etc/docker/daemon.json', str(tmp_path / 'daemon.json'))
+    script = script.replace(
+        '/etc/docker/daemon.json', str(daemon_json or tmp_path / 'daemon.json')
+    )
     script = script.replace('/var/run/docker.sock', str(tmp_path / 'var-docker.sock'))
     script = script.replace('/run/docker.sock', str(sock or tmp_path / 'docker.sock'))
     install_fakes(tmp_path / 'bin', FAKES)
@@ -78,6 +81,7 @@ def _check(
     ports: str = '',
     endpoints: str = '',
     sock: Path | None = None,
+    daemon_json: Path | None = None,
     **env: str,
 ) -> tuple[dict[str, str], list[str], str]:
     """Run the documented check; returns its key=value lines, its other lines, and the curl calls."""
@@ -85,7 +89,13 @@ def _check(
         'the first sh block is no longer the check'
     )
     out, calls = _run(
-        tmp_path, shell, 0, {'ports': ports, 'endpoints': endpoints}, sock=sock, **env
+        tmp_path,
+        shell,
+        0,
+        {'ports': ports, 'endpoints': endpoints},
+        sock=sock,
+        daemon_json=daemon_json,
+        **env,
     )
     lines = out.splitlines()
     keys = dict(line.split('=', 1) for line in lines if ' ' not in line and '=' in line)
@@ -100,7 +110,16 @@ def _login(
         'the second sh block is no longer the login check'
     )
     env = {'EXPOSURE_BODY': MINIO_BODY, 'HEADERS': MINIO_TOKEN} | env
-    return _run(tmp_path, shell, 1, values or {}, sock=None, **env)
+    return _run(tmp_path, shell, 1, values or {}, sock=None, daemon_json=None, **env)
+
+
+@pytest.fixture
+def locked_dir(tmp_path: Path) -> Iterator[Path]:
+    """A directory the test locks; restored afterwards so pytest can remove it."""
+    path = tmp_path / 'locked'
+    path.mkdir()
+    yield path
+    path.chmod(0o700)
 
 
 @pytest.fixture
@@ -351,6 +370,29 @@ class TestExposureCheck:
         assert keys['verdict'] == 'unknown'
         assert keys['unknowns'] == 'docker_host:daemon.json'
 
+    @pytest.mark.skipif(os.geteuid() == 0, reason='root searches a mode-000 directory')
+    def test_a_daemon_json_behind_an_unsearchable_directory_is_unknown(
+        self, locked_dir: Path, tmp_path: Path, shell: str
+    ):
+        (locked_dir / 'daemon.json').write_text('{}')
+        locked_dir.chmod(0)
+
+        keys, rows, _ = _check(tmp_path, shell, daemon_json=locked_dir / 'daemon.json')
+
+        assert keys['verdict'] == 'unknown'
+        assert keys['unknowns'] == 'docker_host:daemon.json'
+        assert 'docker_host source=daemon.json host=unreadable scope=unknown' in rows
+
+    def test_a_missing_docker_directory_is_not_unknown(
+        self, tmp_path: Path, shell: str
+    ):
+        keys, _, _ = _check(
+            tmp_path, shell, daemon_json=tmp_path / 'none' / 'daemon.json'
+        )
+
+        assert keys['verdict'] == 'not_exposed'
+        assert keys['unknowns'] == ''
+
     def test_reports_a_world_writable_docker_socket(
         self, tmp_path: Path, shell: str, docker_sock: Path
     ):
@@ -382,6 +424,31 @@ class TestExposureCheck:
         assert (
             f'docker_sock path={docker_sock} mode=666 owner=root group=docker' in rows
         )
+
+    @pytest.mark.skipif(os.geteuid() == 0, reason='root searches a mode-000 directory')
+    def test_a_configured_socket_behind_an_unsearchable_directory_is_unknown(
+        self, locked_dir: Path, tmp_path: Path, shell: str
+    ):
+        sock = locked_dir / 'run' / 'd.sock'
+        (tmp_path / 'daemon.json').write_text(f'{{"hosts": ["unix://{sock}"]}}')
+        locked_dir.chmod(0)
+
+        keys, rows, _ = _check(tmp_path, shell)
+
+        assert keys['verdict'] == 'unknown'
+        assert keys['unknowns'] == 'docker_sock:unreadable'
+        assert f'docker_sock path={sock} mode=unknown' in rows
+
+    def test_a_configured_socket_that_does_not_exist_is_skipped(
+        self, tmp_path: Path, shell: str
+    ):
+        sock = tmp_path / 'none' / 'd.sock'
+        (tmp_path / 'daemon.json').write_text(f'{{"hosts": ["unix://{sock}"]}}')
+
+        keys, rows, _ = _check(tmp_path, shell)
+
+        assert keys['verdict'] == 'not_exposed'
+        assert not any(row.startswith('docker_sock') for row in rows)
 
     def test_an_unreadable_docker_socket_mode_is_unknown(
         self, tmp_path: Path, shell: str, docker_sock: Path

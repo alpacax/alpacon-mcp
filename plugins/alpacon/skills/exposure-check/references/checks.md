@@ -24,12 +24,13 @@ target() { printf '%s\n' "$listeners" | awk -v p="$1" 'function out(x) {if (!(x 
   END {if (!k && l) print "loopback"}'; }
 scope_of() { h=${1#tcp://}; case $h in (\[*) h=${h#?}; h=${h%%]*} ;; (*) h=${h%:*} ;; esac
   case $h in (127.*|::1|::ffff:127.*|localhost) echo loopback ;; (''|0.0.0.0|::|'*') echo all ;; (*) echo interface ;; esac; }
+hidden() { d=$1; while [ "${d%/*}" != "$d" ]; do d=${d%/*}; [ ! -e "${d:-/}" ] || break; done; [ -d "${d:-/}" ] && [ ! -x "${d:-/}" ]; }
 host_flags() { grep -oE '(^|[[:space:]])(-H(=|[[:space:]]*)|--host(=|[[:space:]]+))[^-[:space:];][^[:space:];]*' | sed -E 's/^[[:space:]]*(-H|--host)[=[:space:]]*//'; }
 docker_hosts() {
   dj=/etc/docker/daemon.json
   if [ -r "$dj" ] && grep -q '\\u' "$dj"; then echo "daemon.json -"
   elif [ -r "$dj" ]; then tr -d '[:space:]' < "$dj" | sed 's#\\/#/#g' | grep -oE '"hosts":\[("[^"]*",?)*\]' | sed 's/^"hosts"://' | grep -oE '"[^"]*"' | tr -d '"' | sed 's/^/daemon.json /'
-  elif [ -e "$dj" ]; then echo "daemon.json -"; fi
+  elif [ -e "$dj" ] || hidden "$dj"; then echo "daemon.json -"; fi
   if command -v systemctl >/dev/null 2>&1; then
     if u=$(systemctl show -p ExecStart docker.service 2>/dev/null); then printf '%s\n' "$u" | host_flags | sed 's/^/unit /'; else echo "unit -"; fi
   fi
@@ -45,8 +46,8 @@ report() {
   done
   { for s in /run/docker.sock /var/run/docker.sock; do if [ -S "$s" ]; then echo "$s"; break; fi; done
     printf '%s\n' "$hosts" | sed -n 's#^[^ ]* unix://##p'; } | awk 'NF && !seen[$0]++' | while read -r s; do
-    [ -S "$s" ] || continue
-    stat -L -c "docker_sock path=$s mode=%a owner=%U group=%G" "$s" 2>/dev/null || echo "docker_sock path=$s mode=unknown"
+    if [ -S "$s" ]; then stat -L -c "docker_sock path=$s mode=%a owner=%U group=%G" "$s" 2>/dev/null || echo "docker_sock path=$s mode=unknown"
+    elif hidden "$s"; then echo "docker_sock path=$s mode=unknown"; fi
   done
   printf '%s\n' "$endpoints" | while read -r m sc port path; do
     [ -n "$path" ] || continue
@@ -84,8 +85,8 @@ It prints these lines, or `verdict=unknown reason=<why>` alone when `ss` is miss
 
 - `processes`: `all` as root, `own-only` otherwise. An ordinary account sees the process name only on its own sockets, so `process=` is empty on the others.
 - `listen`: one line per TCP listener not bound to loopback (`127.0.0.0/8`, `::1`, `::ffff:127.*`). `scope=all` is a wildcard bind (`0.0.0.0`, `::`, `*`), `scope=interface` one address. `watched=yes` when its port is in `ports`, which makes it a finding.
-- `docker_host`: a TCP host the Docker daemon is set to listen on, written with `tcp://` or, as dockerd also accepts, as a bare `host:port`, from `daemon.json`'s `hosts`, the `-H`/`--host` flags of `docker.service`'s effective `ExecStart` with its drop-ins applied (`unit`), or those of the running `dockerd` (`process`), which also catch hosts set in `/etc/default/docker`. A non-loopback host is a finding whether or not it is listening now, because the next daemon restart opens it. A source that could not be read is an unknown: an unreadable `daemon.json` or one holding `\u` escapes, which the check does not decode, a failing `systemctl` or a failing `ps`. A host without `systemctl` has no unit to read and is not an unknown for it.
-- `docker_sock`: the mode, owner and group of the default Docker socket and of every `unix://` socket the daemon is configured with. A world-writable socket (`666`, `777`) is a finding: any local account can then drive the daemon, which is root on the host. A socket whose mode `stat` cannot read is `mode=unknown` and an unknown.
+- `docker_host`: a TCP host the Docker daemon is set to listen on, written with `tcp://` or, as dockerd also accepts, as a bare `host:port`, from `daemon.json`'s `hosts`, the `-H`/`--host` flags of `docker.service`'s effective `ExecStart` with its drop-ins applied (`unit`), or those of the running `dockerd` (`process`), which also catch hosts set in `/etc/default/docker`. A non-loopback host is a finding whether or not it is listening now, because the next daemon restart opens it. A source that could not be read is an unknown: an unreadable `daemon.json`, one behind a directory the account cannot search, which looks the same as no file at all, one holding `\u` escapes, which the check does not decode, a failing `systemctl` or a failing `ps`. A host without `systemctl` has no unit to read and is not an unknown for it.
+- `docker_sock`: the mode, owner and group of the default Docker socket and of every `unix://` socket the daemon is configured with. A world-writable socket (`666`, `777`) is a finding: any local account can then drive the daemon, which is root on the host. A socket whose mode `stat` cannot read, or a configured one behind a directory the account cannot search, is `mode=unknown` and an unknown.
 - `endpoint`: one line per address the endpoint's port listens on, each probed there: `127.0.0.1` for an IPv4 wildcard, `[::1]` for an IPv6 one, and both for a dual-stack socket that `ss` shows as `*`, so a dual-stack listener gets two requests, otherwise the bound interface address, with its zone for a link-local one. A port with no listener is `not_listening` and one bound only to loopback is `loopback_only`; neither gets a request. `result=open` (a 2xx to `GET`, `101` to a `WS` upgrade) is a finding; `auth_required` (401, 403) and `not_found` (404) are not; `no_answer` (nothing answered, a timeout or a failed TLS handshake included) and any other code, a redirect included, which is `unclear`, are unknowns.
 - `verdict`: `exposed` when there is a finding, `unknown` when there is none but something is unknown, `not_exposed` otherwise; `findings` and `unknowns` name them, comma-separated.
 
