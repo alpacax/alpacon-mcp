@@ -197,7 +197,7 @@ def _canonical_ip(host: str) -> str | None:
 
 
 def _is_browser_origin(origin: str) -> bool:
-    """True when origin is spelled exactly as a browser serializes it."""
+    """True for a browser-serialized Origin or a trailing :* port pattern."""
     scheme, separator, authority = origin.partition('://')
     default_port = _DEFAULT_PORTS.get(scheme)
     parts = _split_authority(authority, _ORIGIN_AUTHORITY) if separator else None
