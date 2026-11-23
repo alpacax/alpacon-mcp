@@ -99,6 +99,18 @@ READ_CASES = {
         'scopes': ['command'],
         'description': 'Verify the CVE-2026-31337 openssh-server fix took effect on web-01.',
     },
+    'verify-reports-a-stale-worker-in-a-restarted-service/mocks/alpacon': PATCH_SESSION
+    | {
+        'servers': [SID],
+        'scopes': ['command'],
+        'description': 'Verify the CVE-2026-31337 openssh-server fix took effect on web-01.',
+    },
+    'verify-keeps-a-session-unknown-beside-a-fresh-service/mocks/alpacon': PATCH_SESSION
+    | {
+        'servers': [SID],
+        'scopes': ['command'],
+        'description': 'Verify the CVE-2026-31337 openssh-server fix took effect on web-01.',
+    },
 }
 EXPOSURE_CASE = 'exposure-check-asks-before-a-default-login/mocks/alpacon'
 EXPOSURE_SESSION = {
