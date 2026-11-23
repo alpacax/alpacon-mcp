@@ -182,9 +182,9 @@ class AlpaconHTTPClient:
         """Send with retry, but never resend a POST or PATCH that may have reached the
         server. Raises UpstreamAuthError on a 401 in remote JWT mode unless
         `reauth_on_401` is off, for a JWT that is not the session's own."""
-        # Prepare headers
+        # Prepare headers. No Content-Type here: httpx sets it when json_data is
+        # sent, and a proxy may refuse a bodyless request that declares one.
         request_headers = {
-            'Content-Type': 'application/json',
             'Accept': 'application/json',
             'User-Agent': MCP_USER_AGENT,
             # The agent behind this request, as it reported itself (#317).
