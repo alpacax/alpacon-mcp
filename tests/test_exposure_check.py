@@ -105,7 +105,6 @@ def _check(
 def _login(
     tmp_path: Path, shell: str, values: dict[str, str] | None = None, **env: str
 ) -> tuple[str, str]:
-    """Run the documented default credential login, sent the MinIO credential in its env."""
     assert 'accepted=' in doc_blocks(CHECKS, 'sh')[1], (
         'the second sh block is no longer the login check'
     )
