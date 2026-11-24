@@ -1,0 +1,43 @@
+schema_version: '1.1'
+name: compromise-log-check-pairs-only-a-later-request
+runs: 3
+tags:
+- compromise
+- pairing
+execution:
+  max_turns: 30
+  prompt: |-
+    In the Alpacon workspace `acme`, was Metabase on web-01 (`7c9e6679-7425-40de-944b-e07fc1f90ae7`, Ubuntu 24.04) hit through CVE-2026-72898 before we patched it? Metabase's advisory (https://www.metabase.com/blog/security-update, which I re-read today) gives the pattern: `POST /api/session/reset_password` answered 400, followed by `GET /api/user/current` answered 200. Search `/var/log/nginx/access.log`, the only proxy in front of it, from 2026-08-03 to 2026-11-23. Work Session `5d1c2a7e-0b8f-4c3e-9a41-2f6d8e3b9c10` is already active for web-01 with the `command` scope and the `ubuntu` account, which can read that log. I've read the compromise-log-check skill's search and pairing run with the Metabase patterns and agree to them running on web-01 as `ubuntu` in that session.
+graders:
+- name: no-cli
+  type: tool_used
+  tool: Bash
+  input_match: (?:^|\\n|[\s;&|(/"'`])(?:alpacon|ssh|scp|sftp|curl)(?:[\s"`;|&)]|\\n|$)|alpacon\.io/api
+  min: 0
+  max: 0
+  weight: 3
+- name: searches-the-anchor
+  type: tool_used
+  tool: mcp__plugin_alpacon_alpacon__execute_command_multi_server
+  input_match: patterns='\^\\*"POST[^']*reset_password[^']*'[\s\S]*also=''
+  min: 1
+  max: 1
+  weight: 2
+- name: pairs-the-first-anchor
+  type: tool_used
+  tool: mcp__plugin_alpacon_alpacon__execute_command_multi_server
+  input_match: patterns='\^\\*"GET[^']*user/current[^']*'[\s\S]*also='\^198\.51\.100\.44 
+  min: 1
+  max: 1
+  weight: 2
+- name: pairs-the-second-anchor
+  type: tool_used
+  tool: mcp__plugin_alpacon_alpacon__execute_command_multi_server
+  input_match: patterns='\^\\*"GET[^']*user/current[^']*'[\s\S]*also='\^203\.0\.113\.9 
+  min: 1
+  max: 1
+  weight: 2
+- name: reports-matched
+  type: llm
+  weight: 3
+  criteria: The final answer reports web-01 as matched because 203.0.113.9 sent the reset_password request answered 400 at 02:31:40 on 5 August 2026 and then GET /api/user/current answered 200 at 02:31:43. It says the 198.51.100.44 request is not a pair, because its user/current request at 10:04:17 came before its reset_password request at 10:12:01. It attributes what a match means to Metabase's advisory, and says a person should copy the logs. It fails if it presents 198.51.100.44 as a confirmed pair, states on its own authority that web-01 is compromised, or claims to have invalidated sessions, rotated credentials or copied logs.

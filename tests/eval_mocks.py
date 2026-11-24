@@ -85,6 +85,28 @@ EXPOSURE_RESULT = (
     'findings=port:9000@0.0.0.0,port:9001@0.0.0.0\n'
     'unknowns=\n'
 )
+LOG_CASE = 'compromise-log-check-reports-short-retention-as-unknown/mocks/alpacon'
+PAIR_CASE = 'compromise-log-check-pairs-only-a-later-request/mocks/alpacon'
+LOG_SESSION = {
+    'servers': [SID],
+    'scopes': ['command'],
+    'target_account_username': 'ubuntu',
+    'description': 'Search the nginx logs on web-01 for one request pattern; changes nothing.',
+}
+CMD_LOG = '4b7d9e21-3c5a-4f68-9d0e-8a1b2c3d4e5f'
+LOG_RESULT = (
+    'now=2026-11-23T16:00:00+0900\n'
+    'mtime path=/var/log/nginx/access.log.1 utc=2026-11-22T15:00:00Z\n'
+    'file path=/var/log/nginx/access.log.1 status=ok lines=2 control=2 '
+    'first=[198.51.100.7 - - [10/Nov/2026:00:00:04 +0900] ] '
+    'last=[198.51.100.7 - - [22/Nov/2026:23:59:51 +0900] ]\n'
+    'mtime path=/var/log/nginx/access.log utc=2026-11-23T06:59:58Z\n'
+    'file path=/var/log/nginx/access.log status=ok lines=1 control=1 '
+    'first=[198.51.100.7 - - [23/Nov/2026:15:59:58 +0900] ] '
+    'last=[198.51.100.7 - - [23/Nov/2026:15:59:58 +0900] ]\n'
+    'total pattern=1 count=0 shown=0\n'
+    'search=complete files=2 problems=0\n'
+)
 SERVER_NAMES = {SID: 'web-01', SID2: 'web-02', SID3: 'web-03'}
 SERVER = {'id': SID, 'name': 'web-01'}
 ECHO = 'ECHO-INPUT-COMMAND'
@@ -132,6 +154,11 @@ def exposure_check_line() -> str:
     return re.sub(r"^endpoints='[^']*'$", "endpoints=''", block, flags=re.M).rstrip(
         '\n'
     )
+
+
+def log_search_line() -> str:
+    """The compromise-log-check skill's search with its Metabase anchor, as an agent submits it."""
+    return doc_blocks('compromise-log-check/references/search.md', 'sh')[0].rstrip('\n')
 
 
 def session_row(sid: str, status: str, **extra: object) -> dict[str, object]:
@@ -607,6 +634,33 @@ MOCKS: list[Mock] = [
             command_id=CMD_EXPOSURE, workspace=WS, region=REGION
         ),
     ),
+    *_rollout_mocks(LOG_CASE, LOG_SESSION),
+    *_rollout_mocks(PAIR_CASE, LOG_SESSION),
+    Mock(  # accepted whatever the command; the result is read with check_command_status
+        f'{LOG_CASE}/execute_command_multi_server.md',
+        {('POST', COMMANDS): httpx.Response(201, json={'id': CMD_LOG})},
+        lambda: command_tools.execute_command_multi_server(
+            server_ids=[SID],
+            command=ECHO,
+            workspace=WS,
+            region=REGION,
+            username='ubuntu',
+            work_session_id=WSID,
+            purpose='search the nginx logs for the advisory pattern; read-only',
+        ),
+        echo=ECHO,
+    ),
+    Mock(  # the record carries the search's full text, so it matches what the agent sent
+        f'{LOG_CASE}/check_command_status.md',
+        {
+            ('GET', f'{COMMANDS}{CMD_LOG}/'): httpx.Response(
+                200, json=command_row(CMD_LOG, log_search_line(), result=LOG_RESULT)
+            )
+        },
+        lambda: command_tools.check_command_status(
+            command_id=CMD_LOG, workspace=WS, region=REGION
+        ),
+    ),
     Mock(  # every run of the recipe fails, so only the first server may see one
         f'{PATCH_CASE}/execute_file.md',
         {
@@ -656,6 +710,10 @@ HAND_WRITTEN = {
     f'{SECOND_CASE}/execute_command.md',
     f'{SECOND_CASE}/execute_file.md',  # an agent responder: each server answers differently
     f'{NO_CVE_CASE}/check_command_status.md',  # answers for whichever command was submitted
+    *(
+        f'{PAIR_CASE}/{tool}.md'  # answers differ by the command submitted
+        for tool in ('execute_command_multi_server', 'check_command_status')
+    ),
     *(
         f'{case}/{tool}.md'
         for case in PREFLIGHT_CASES
