@@ -1,5 +1,6 @@
 import bz2
 import gzip
+import json
 import os
 import re
 import subprocess
@@ -8,6 +9,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 import pytest
+import yaml
 
 from tests.eval_mocks import LOG_RESULT
 from tests.skill_scripts import doc_blocks, install_fakes
@@ -194,6 +196,18 @@ def test_directory_that_cannot_be_listed_is_incomplete(
     assert out[-1] == 'search=incomplete files=2 problems=1'
 
 
+def test_base_log_that_is_a_pipe_does_not_hang_the_search(
+    shell: str, tmp_path: Path
+) -> None:
+    log = tmp_path / 'access.log'
+    os.mkfifo(log)
+
+    out = _search(shell, log)
+
+    assert _file_lines(out) == {'access.log': 'not_regular'}
+    assert out[-1] == 'search=incomplete files=1 problems=1'
+
+
 @pytest.mark.parametrize('kind', ['pipe', 'directory', 'broken_link'])
 def test_rotated_copy_that_is_no_file_is_incomplete(
     shell: str, log: Path, kind: str
@@ -327,11 +341,73 @@ def test_expression_some_awk_builds_misread_is_refused(
     assert out == ['search=incomplete reason=unsupported-expression']
 
 
-def test_bad_expression_is_incomplete(shell: str, log: Path) -> None:
-    out = _search(shell, log, patterns='POST (')
+@pytest.mark.parametrize(
+    'values',
+    [
+        {'patterns': 'POST ('},
+        {'patterns': 'POST (', 'also': '^other '},
+        {'control': '"[^"'},
+        {'skip': '['},
+    ],
+)
+def test_bad_expression_is_refused_before_any_file_is_read(
+    shell: str, log: Path, values: dict[str, str]
+) -> None:
+    out = _search(shell, log, **values)
 
-    assert _file_lines(out) == {'access.log': 'search_failed'}
-    assert out[-1] == 'search=incomplete files=1 problems=1'
+    assert out == ['search=incomplete reason=bad-expression']
+
+
+@pytest.mark.parametrize(
+    'value', [r'a\<b', r'a\>b', r'a\`b', r'[^\]]', r'x\\\]', '/{,2}api', 'a{2,}']
+)
+def test_escape_some_awk_builds_misread_is_refused(
+    shell: str, log: Path, value: str
+) -> None:
+    out = _search(shell, log, patterns=value)
+
+    assert out == ['search=incomplete reason=unsupported-expression']
+
+
+def test_record_run_into_the_tail_of_a_broken_line_is_not_read(
+    shell: str, log: Path
+) -> None:
+    log.write_bytes(
+        b'blog.example 198.51.100.8 - - [04/Au' + b'\0' * 8 + RESET.encode() + b'\n'
+    )
+
+    out = _search(shell, log)
+
+    assert 'total pattern=1 count=0 shown=0' in out
+    assert any('status=no_control lines=1 control=0' in line for line in out)
+
+
+@pytest.mark.parametrize('show', ['', '0', '-1', '1.5'])
+def test_show_that_is_not_a_positive_whole_number_is_refused(
+    shell: str, log: Path, show: str
+) -> None:
+    out = _search(shell, log, show=show)
+
+    assert out == ['search=incomplete reason=bad-show']
+
+
+def test_patterns_of_empty_lines_only_are_empty_input(shell: str, log: Path) -> None:
+    out = _search(shell, log, patterns='\n\n')
+
+    assert out == ['search=incomplete reason=empty-input']
+
+
+@pytest.mark.parametrize('tail', ['', '\nlast'])
+def test_end_marker_written_in_the_log_is_counted_as_a_line(
+    shell: str, log: Path, tail: str
+) -> None:
+    log.write_text(f'END-OF-LOG 0\n{RESET}{tail}\n')
+
+    out = _search(shell, log)
+
+    lines = 3 if tail else 2
+    assert any(' line=2 ' in line for line in out if line.startswith('match '))
+    assert any(f'status=partial lines={lines} control=1' in line for line in out)
 
 
 @pytest.mark.parametrize('name', ['patterns', 'control', 'logs'])
@@ -440,7 +516,7 @@ def test_request_in_another_format_beside_a_skipped_line_is_partial(
 def test_skip_does_not_hide_a_request_line(shell: str, log: Path) -> None:
     log.write_text(RESET.replace('agent-x', '[notice] x') + '\n')
 
-    out = _search(shell, log, skip=r'\[notice\]')
+    out = _search(shell, log, skip='[[]notice[]]')
 
     assert 'total pattern=1 count=1 shown=1' in out
 
@@ -519,7 +595,7 @@ def test_log_text_cannot_forge_an_output_line(shell: str, log: Path) -> None:
 
     assert not any(line.startswith('search=complete') for line in out)
     assert '\x1b' not in '\n'.join(out)
-    assert out[-1] == 'search=incomplete files=2 problems=1'
+    assert out[-1] == 'search=incomplete files=2 problems=2'
 
 
 def test_pairing_run_keeps_only_lines_holding_every_fixed_string(
@@ -541,6 +617,7 @@ def test_pairing_run_keeps_only_lines_holding_every_fixed_string(
         (RESET.replace('/api', '/metabase/api'), 1),
         (RESET.replace('HTTP/1.1" 400', 'HTTP/1.1" 200'), 0),
         (RESET.replace('POST', 'GET'), 0),
+        (RESET.replace('POST', 'post'), 1),
         (RESET.replace('token=', r'a=\"'), 1),
         (RESET.replace('?token=s3cret ', '  '), 1),
         (RESET.replace('reset_password?', 'reset_password_x?'), 0),
@@ -564,6 +641,7 @@ def test_metabase_anchor_matches_only_a_refused_reset(
         (CURRENT.replace('/api', '/metabase/api'), 1),
         (CURRENT.replace('" 200', '" 401'), 0),
         (CURRENT.replace('GET', 'POST'), 0),
+        (CURRENT.replace('GET', 'gEt'), 1),
         (CURRENT.replace('current ', r'current?a=\" '), 1),
         (CURRENT.replace('current ', 'current   '), 1),
         (CURRENT.replace('current', 'current_x'), 0),
@@ -608,7 +686,21 @@ def test_listing_that_fails_is_incomplete(
     out = _search(shell, log)
 
     assert f'file path={log} status=list_failed' in out
+    assert not any('not_regular' in line or 'list-failed' in line for line in out)
     assert out[-1].startswith('search=incomplete')
+
+
+@pytest.mark.parametrize('name', ['list-failed', 'unsafe-name'])
+def test_log_named_like_an_error_reads_as_a_log(
+    shell: str, tmp_path: Path, name: str
+) -> None:
+    log = tmp_path / f'{name}.log'
+    log.write_text(HOME + '\n')
+
+    out = _search(shell, log)
+
+    assert _file_lines(out) == {f'{name}.log': 'ok'}
+    assert out[-1] == 'search=complete files=1 problems=0'
 
 
 @pytest.mark.parametrize(
@@ -616,6 +708,7 @@ def test_listing_that_fails_is_incomplete(
     [
         'mv "$LOG.1" "$LOG.2"; mv "$LOG" "$LOG.1"; : > "$LOG"',
         'rm "$LOG.1"',
+        ': > "$LOG"',
         'cp "$LOG" "$LOG.1"; : > "$LOG"',
         (
             'tr a-z A-Z < "$LOG.1" > "$LOG.x"; /bin/cat "$LOG.x" > "$LOG.1"; '
@@ -745,3 +838,44 @@ def test_pairing_eval_answers_are_what_the_search_prints(shell: str, log: Path) 
     for out, answer in zip(runs, answers, strict=True):
         printed = [line.replace(str(log), '/var/log/nginx/access.log') for line in out]
         assert printed[1:] == answer.splitlines()[1:]
+
+
+def _graders() -> list[tuple[str, str]]:
+    evals = Path(__file__).parent.parent / 'plugins/alpacon/evals'
+    return [
+        (grader['name'], grader['input_match'])
+        for case in sorted(evals.glob('compromise-log-check-*/case.yaml'))
+        for grader in yaml.safe_load(case.read_text())['graders']
+        if grader.get('tool', '').endswith('execute_file')
+        and 'patterns=' in grader.get('input_match', '')
+        and grader.get('max') != 0
+    ]
+
+
+@pytest.mark.parametrize(('name', 'input_match'), _graders())
+def test_eval_grader_accepts_only_the_documented_expression(
+    shell: str, name: str, input_match: str
+) -> None:
+    script = doc_blocks(SEARCH, 'sh')[0]
+    if 'user/current' in input_match:
+        script = script.replace(re.search("^patterns='(.*)'$", script, re.M)[1], SECOND)
+    address = re.search(r"also='\\\^([0-9.\\]+) '", input_match)
+    if address:
+        script = script.replace(
+            "also=''", f"also='^{address[1].replace(chr(92), '')} '"
+        )
+
+    def submitted(text: str) -> str:
+        return json.dumps({'content': text})
+
+    assert re.search(input_match, submitted(script)), name
+    for wrong in [
+        ('[Pp][Oo][Ss][Tt]', 'GET'),
+        ('[Gg][Ee][Tt]', 'POST'),
+        ('" 400', '" 200'),
+        ('" 200', '" 401'),
+    ]:
+        if wrong[0] in script:
+            assert not re.search(
+                input_match, submitted(script.replace(wrong[0], wrong[1], 1))
+            ), (name, wrong)
