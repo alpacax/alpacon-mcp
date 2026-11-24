@@ -138,7 +138,8 @@ def security_audit(work_session_id: str = '', server_id: str = '') -> str:
   call, keyed by the `id` of a `websh_session` item on that timeline, following
   `data.next` as `cursor` until it is null.
 - Lens 2—Event forensic, cross-session ("every sudo / every `rm -rf` / every transfer
-  of /etc/*"): `list_server_logs`, `list_webftp_logs`, `search_events`.
+  of /etc/*"): `search_events`, `list_webftp_logs`, and `list_server_logs` for
+  the log lines a server's Alpacon agent reported.
 - Lens 3—Decision audit ("why was access granted, who approved, when revoked?"):
   `list_approval_requests`, `get_approval_request`.
 - Lens 4—Mutation audit ("what changed in workspace state—roles, tokens, policy?"):
