@@ -2,7 +2,7 @@
 
 The advisory names a source package (`openssh`) and a fixed version per release. Check the binary packages the server actually installs (`openssh-server`, `openssh-client`); every binary built from that source carries the same version once upgraded, but a server can hold them at different versions. When the advisory does not say which binary carries the vulnerable code, run the check once per binary, setting `p` in the commands below. A server's verdict is the worst of its checks: `affected` over `unknown` over `not_affected`.
 
-Each check is one shell line and runs as an ordinary account; none of these commands needs root. The checks read `/etc/os-release` with `sed` instead of sourcing it, and use no `$(…)` command substitution or `${…}` parameter expansion. Alpacon's approval gate grades a command by its constructs, and those three raise a read-only check from INFO to MEDIUM or HIGH. Keep that shape when you edit a check, and fill in only its values.
+Each check is one shell line and runs as an ordinary account; none of these commands needs root. The checks read `/etc/os-release` with `sed` instead of sourcing it, and use no `$(…)` command substitution or `${…}` parameter expansion. In one experiment Alpacon's approval gate raised a read-only check with those three from INFO to MEDIUM or HIGH; the checks below have not been graded since. Keep that shape when you edit a check, and fill in only its values.
 
 ## Debian and Ubuntu
 
