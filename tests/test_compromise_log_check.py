@@ -518,6 +518,7 @@ def test_pairing_run_keeps_only_lines_holding_every_fixed_string(
         (RESET.replace('HTTP/1.1" 400', 'HTTP/1.1" 200'), 0),
         (RESET.replace('POST', 'GET'), 0),
         (RESET.replace('token=', r'a=\"'), 1),
+        (RESET.replace('?token=s3cret ', '  '), 1),
         (RESET.replace('reset_password?', 'reset_password_x?'), 0),
         (HOME.replace('GET /', 'POST /x?u=/api/session/reset_password'), 0),
     ],
@@ -540,6 +541,7 @@ def test_metabase_anchor_matches_only_a_refused_reset(
         (CURRENT.replace('" 200', '" 401'), 0),
         (CURRENT.replace('GET', 'POST'), 0),
         (CURRENT.replace('current ', r'current?a=\" '), 1),
+        (CURRENT.replace('current ', 'current   '), 1),
         (CURRENT.replace('current', 'current_x'), 0),
     ],
 )
