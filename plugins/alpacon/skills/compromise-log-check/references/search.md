@@ -95,7 +95,7 @@ When `count` is above `shown`, the later requests were not seen: add a second `a
 
 The anchor run has the same limit: when its `count` is above `shown`, anchors inside the dates may not have been seen, whatever the dates of the shown ones. Run it again with `also` set to the log's own time text for each day from the start date to the end date (`[04/Aug/2026:`), and for each hour of a day that still exceeds `show`. An hour that exceeds it is narrowed to ten minutes.
 
-Two runs cannot be compared by file or `line`, because the logs may rotate between them. When an anchor and a second request carry the same time, run the search once more with both expressions in `patterns`, one per line, and `also` set to the address and that time text. In that one run, for one path in `logs`, the match in the newer file, or with the larger `line` in the same file, came later. If the run is `changed` or not every match was shown, the order is unknown.
+Two runs cannot be compared by file or `line`, because the logs may rotate between them. When an anchor and a second request carry the same time, run the search once more with both expressions in `patterns`, one per line, and `also` set to the address and that time text. In that one run, the match with the larger `line` in the same file came later. When the two are in different files, the order is unknown: the files are listed by when they last changed, which recompressing or restoring an archive also changes. It is unknown too when the run is `changed` or not every match was shown.
 
 ## Metabase (CVE-2026-72898, GHSA-vwf4-m7j8-wcjf)
 
