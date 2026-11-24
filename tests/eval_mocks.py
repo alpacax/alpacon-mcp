@@ -100,12 +100,14 @@ LOG_RESULT = (
     'now=2026-11-23T16:00:00+0900\n'
     'mtime path=/var/log/nginx/access.log.1 utc=2026-11-22T15:00:00Z\n'
     'file path=/var/log/nginx/access.log.1 status=ok lines=2 control=2 '
-    'first=[198.51.100.7 - - [10/Nov/2026:00:00:04 +0900] ] '
-    'last=[198.51.100.7 - - [22/Nov/2026:23:59:51 +0900] ]\n'
+    'first=[[10/Nov/2026:00:00:04 +0900]] '
+    'last=[[22/Nov/2026:23:59:51 +0900]] '
+    'days=[10/Nov/2026,22/Nov/2026]\n'
     'mtime path=/var/log/nginx/access.log utc=2026-11-23T06:59:58Z\n'
     'file path=/var/log/nginx/access.log status=ok lines=1 control=1 '
-    'first=[198.51.100.7 - - [23/Nov/2026:15:59:58 +0900] ] '
-    'last=[198.51.100.7 - - [23/Nov/2026:15:59:58 +0900] ]\n'
+    'first=[[23/Nov/2026:15:59:58 +0900]] '
+    'last=[[23/Nov/2026:15:59:58 +0900]] '
+    'days=[23/Nov/2026]\n'
     'total pattern=1 count=0 shown=0\n'
     'search=complete files=2 problems=0\n'
 )
@@ -669,7 +671,13 @@ MOCKS: list[Mock] = [
             ('POST', COMMANDS): httpx.Response(201, json={'id': CMD_LOG}),
             ('GET', f'{COMMANDS}{CMD_LOG}/'): httpx.Response(
                 200,
-                json=command_row(CMD_LOG, f'/bin/sh {LOG_SCRIPT}', result=LOG_RESULT),
+                json=command_row(
+                    CMD_LOG,
+                    f'/bin/sh {LOG_SCRIPT}',
+                    result=LOG_RESULT,
+                    added_at='2026-11-23T06:59:59Z',  # the run's `now`, so its clock reads right
+                    handled_at='2026-11-23T07:00:02Z',
+                ),
             ),
         },
         _s3_accepts(

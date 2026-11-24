@@ -25,6 +25,8 @@ CURRENT = (
     f'203.0.113.9 - - {TIME} "GET /api/user/current HTTP/1.1" 200 900 "-" "agent-x"'
 )
 SECOND = doc_blocks(SEARCH, 'text')[0].strip()
+LINE = re.search("^line='(.*)'$", doc_blocks(SEARCH, 'sh')[0], re.M)[1]  # type: ignore[index]
+VHOST_LINE = LINE.replace('^', '^[^ "[]+ ', 1)
 NOTICE = '2026/08/04 10:12:01 [notice] 42#42: signal process started'
 NOTICE_MARK = '^[0-9/]+ [0-9:]+ [[]notice[]] '
 
@@ -110,10 +112,10 @@ def test_file_line_shows_only_what_precedes_the_request(shell: str, log: Path) -
 
     out = _search(shell, log)
 
-    prefix = f'198.51.100.7 - - {TIME} '
+    prefix = TIME
     assert (
         f'file path={log} status=ok lines=1 control=1 first=[{prefix}] last=[{prefix}]'
-        in out
+        ' days=[04/Aug/2026]' in out
     )
     assert 'hidden-path' not in '\n'.join(out)
 
@@ -254,7 +256,10 @@ def test_request_written_by_the_client_is_not_counted(
     out = _search(shell, log)
 
     assert 'total pattern=1 count=0 shown=0' in out
-    assert out[-1] == 'search=complete files=1 problems=0'
+    complete = 'search=complete files=1 problems=0'
+    assert (out[-1] == complete) == (
+        field != 'user'
+    )  # a space in the user name breaks `line`
 
 
 def test_fake_request_in_the_user_name_does_not_hide_the_real_one(
@@ -276,7 +281,7 @@ def test_request_after_nul_bytes_is_found_and_readable(
     out = _search(shell, log)
 
     assert any(f'text=203.0.113.9 - - {TIME} "POST' in line for line in out)
-    assert any('lines=2 control=2' in line for line in out)
+    assert any('status=partial lines=2 control=2' in line for line in out)
 
 
 def test_nul_after_the_request_does_not_hide_it(shell: str, log: Path) -> None:
@@ -285,13 +290,14 @@ def test_nul_after_the_request_does_not_hide_it(shell: str, log: Path) -> None:
     out = _search(shell, log)
 
     assert 'total pattern=1 count=1 shown=1' in out
+    assert _file_lines(out) == {'access.log': 'partial'}
 
 
 def test_bytes_that_are_not_utf8_do_not_stop_the_search(
     shell: str, log: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv('LC_ALL', 'en_US.UTF-8')
-    log.write_bytes(RESET.encode().replace(b's3cret', b'\xff\xfe') + b'\n')
+    log.write_bytes(RESET.encode().replace(b'agent-x', b'\xff\xfe') + b'\n')
 
     out = _search(shell, log)
 
@@ -555,6 +561,7 @@ def test_query_in_an_unquoted_format_stays_on_the_host(shell: str, log: Path) ->
         log,
         patterns='^request=POST ',
         control='request=[A-Z]+ [^ ]* HTTP/[0-9.]+ [0-9][0-9][0-9]',
+        line='',
     )
 
     assert 'total pattern=1 count=1 shown=1' in out
@@ -566,12 +573,12 @@ def test_dates_come_only_from_lines_holding_the_filter(shell: str, log: Path) ->
     app = f'metabase.example:443 {HOME}'.replace(TIME, '[05/Aug/2026:09:00:00 +0900]')
     log.write_text(f'{other}\n{app}\n{other}\n')
 
-    out = _search(shell, log, also='^metabase.example:443 ')
+    out = _search(shell, log, also='^metabase.example:443 ', line=VHOST_LINE)
 
-    prefix = 'metabase.example:443 198.51.100.7 - - [05/Aug/2026:09:00:00 +0900] '
+    prefix = '[05/Aug/2026:09:00:00 +0900]'
     assert (
         f'file path={log} status=ok lines=3 control=3 first=[{prefix}] last=[{prefix}]'
-        in out
+        ' days=[05/Aug/2026]' in out
     )
 
 
@@ -582,7 +589,9 @@ def test_file_with_no_line_holding_the_filter_gives_no_dates(
 
     out = _search(shell, log, also='^metabase.example:443 ')
 
-    assert f'file path={log} status=ok lines=1 control=1 first=[] last=[]' in out
+    assert (
+        f'file path={log} status=ok lines=1 control=1 first=[] last=[] days=[]' in out
+    )
 
 
 def test_log_text_cannot_forge_an_output_line(shell: str, log: Path) -> None:
@@ -621,6 +630,19 @@ def test_pairing_run_keeps_only_lines_holding_every_fixed_string(
         (RESET.replace('token=', r'a=\"'), 1),
         (RESET.replace('?token=s3cret ', '  '), 1),
         (RESET.replace('reset_password?', 'reset_password_x?'), 0),
+        (RESET.replace('HTTP/1.1"', 'HTTP/1.1  "'), 1),
+        (RESET.replace('/api/session/', '/api//session/./'), 1),
+        (RESET.replace('/api/session/', '/api/x/../session/'), 1),
+        (RESET.replace('/api/session/', '/api/xsession/'), 0),
+        (RESET.replace('/api/session/', '/api/v2/session/'), 0),
+        (RESET.replace('/api/session/', '/api/a/b/../../session/'), 1),
+        (RESET.replace('/session/', '/session/a/b/../../'), 1),
+        (RESET.replace('POST /', 'POST x /'), 0),
+        (RESET.replace('POST /', 'POST   /'), 1),
+        (RESET.replace('HTTP/1.1', 'http/1.1'), 1),
+        (RESET.replace(' HTTP/1.1', ''), 1),
+        (RESET.replace('reset_password?token=s3cret', 'reset_password#x'), 1),
+        (RESET.replace('reset_password?token=s3cret', 'reset_password;x=1'), 1),
         (HOME.replace('GET /', 'POST /x?u=/api/session/reset_password'), 0),
     ],
 )
@@ -638,13 +660,22 @@ def test_metabase_anchor_matches_only_a_refused_reset(
     ('line', 'count'),
     [
         (CURRENT, 1),
-        (CURRENT.replace('/api', '/metabase/api'), 1),
+        (CURRENT.replace('/api', '/metabase/api'), 0),
+        (CURRENT.replace('/api', '/dashboard/api'), 0),
+        (CURRENT.replace('/api', '//./api'), 1),
+        (CURRENT.replace('/api', '/x/../api'), 1),
         (CURRENT.replace('" 200', '" 401'), 0),
         (CURRENT.replace('GET', 'POST'), 0),
         (CURRENT.replace('GET', 'gEt'), 1),
         (CURRENT.replace('current ', r'current?a=\" '), 1),
         (CURRENT.replace('current ', 'current   '), 1),
         (CURRENT.replace('current', 'current_x'), 0),
+        (CURRENT.replace('HTTP/1.1"', 'HTTP/1.1 "'), 1),
+        (CURRENT.replace('/api/user/', '/api//user/'), 1),
+        (CURRENT.replace('GET /', 'GET x /'), 0),
+        (CURRENT.replace('/api/user/', '/api/v2/user/'), 0),
+        (CURRENT.replace('/api/user/', '/api/a/b/../../user/'), 1),
+        (CURRENT.replace('/user/', '/user/a/b/../../'), 1),
     ],
 )
 def test_metabase_second_request_matches_only_an_answered_read(
@@ -859,7 +890,7 @@ def test_eval_grader_accepts_only_the_documented_expression(
     script = doc_blocks(SEARCH, 'sh')[0]
     anchor = re.search("^patterns='(.*)'$", script, re.M)
     assert anchor
-    if 'user/current' in input_match:
+    if 'Gg' in input_match:
         script = script.replace(anchor[1], SECOND)
     address = re.search(r"also='\\\^([0-9.\\]+) '", input_match)
     if address:
@@ -881,3 +912,260 @@ def test_eval_grader_accepts_only_the_documented_expression(
             assert not re.search(
                 input_match, submitted(script.replace(wrong[0], wrong[1], 1))
             ), (name, wrong)
+
+
+def test_file_line_lists_each_day_its_lines_were_logged_on(
+    shell: str, log: Path
+) -> None:
+    days = ['01/Aug/2026', '02/Aug/2026', '10/Aug/2026']
+    lines = [HOME.replace('04/Aug/2026', day) for day in days]
+    lines.insert(
+        1, HOME.replace('- -', '- [09/Aug/2026:00:00:00').replace('04/Aug', '02/Aug')
+    )
+    log.write_text('\n'.join([*lines, '']))
+
+    out = _search(shell, log)
+
+    assert any(line.endswith(f'days=[{",".join(days)}]') for line in out), out
+
+
+def test_date_outside_the_log_time_adds_no_day(shell: str, log: Path) -> None:
+    log.write_text(f'trace=2026-08-03 {HOME.replace(TIME, "-")}\n')
+
+    out = _search(shell, log, control='"[^"]*" [0-9][0-9][0-9]( |$)')
+
+    assert any(line.endswith(' days=[]') for line in out), out
+
+
+def test_line_holding_two_requests_is_not_read_as_one(shell: str, log: Path) -> None:
+    log.write_text(f'{HOME}\n{HOME}{RESET}\n')
+
+    out = _search(shell, log)
+
+    assert _file_lines(out) == {'access.log': 'partial'}
+
+
+def test_line_cut_before_its_status_is_not_read(shell: str, log: Path) -> None:
+    cut = RESET.split(' 400')[0].removesuffix('"')
+    log.write_text(f'{HOME}\n{cut}{HOME}\n')
+
+    out = _search(shell, log)
+
+    assert _file_lines(out) == {'access.log': 'partial'}
+
+
+def test_another_log_sharing_the_name_is_not_a_rotated_copy(
+    shell: str, log: Path
+) -> None:
+    Path(f'{log}-internal').write_text(RESET + '\n')
+    Path(f'{log}.bak').write_text(RESET + '\n')
+    Path(f'{log}-8080').write_text(RESET + '\n')
+    Path(f'{log}.1-internal').write_text(RESET + '\n')
+    Path(f'{log}.2.gz').write_bytes(gzip.compress((HOME + '\n').encode()))
+    Path(f'{log}-2026-08-01').write_text(HOME + '\n')
+
+    out = _search(shell, log)
+
+    assert set(_file_lines(out)) == {
+        'access.log',
+        'access.log-2026-08-01',
+        'access.log.2.gz',
+    }
+
+
+@pytest.mark.parametrize('mark', [';', '#'])
+def test_match_hides_path_parameters_and_fragments(
+    shell: str, log: Path, mark: str
+) -> None:
+    log.write_text(RESET.replace('?token=', f'{mark}token=') + '\n')
+
+    out = _search(shell, log)
+
+    assert 's3cret' not in '\n'.join(out)
+    assert any('reset_password?..." 400' in line for line in out), out
+
+
+def test_line_with_a_nul_inside_its_request_is_not_read(shell: str, log: Path) -> None:
+    log.write_bytes(
+        f'{HOME}\n'.encode() + RESET.encode().replace(b'pass', b'pa\0s') + b'\n'
+    )
+
+    out = _search(shell, log)
+
+    assert _file_lines(out) == {'access.log': 'partial'}
+
+
+def test_match_hides_a_password_in_an_absolute_uri(shell: str, log: Path) -> None:
+    log.write_text(
+        RESET.replace('POST /', 'POST http://alice;x:hunter2@metabase.example/') + '\n'
+    )
+
+    out = _search(shell, log)
+
+    assert 'total pattern=1 count=1 shown=1' in out
+    assert not re.search('alice|hunter2', '\n'.join(out))
+
+
+def test_file_line_dates_carry_no_address_or_user_name(shell: str, log: Path) -> None:
+    log.write_text(HOME.replace('- -', '- alice') + '\n')
+
+    out = _search(shell, log)
+
+    file_line = next(line for line in out if line.startswith('file '))
+    assert f'first=[{TIME}] last=[{TIME}]' in file_line
+    assert not re.search('alice|198.51.100.7', file_line)
+
+
+def test_line_with_a_raw_byte_in_its_request_is_not_read(shell: str, log: Path) -> None:
+    log.write_bytes(
+        f'{HOME}\n'.encode() + RESET.encode().replace(b'pass', b'pa\xffs') + b'\n'
+    )
+
+    out = _search(shell, log)
+
+    assert _file_lines(out) == {'access.log': 'partial'}
+
+
+def test_match_hides_a_query_that_holds_an_at_sign(shell: str, log: Path) -> None:
+    log.write_text(RESET.replace('?token=s3cret', '//?u=a@s3cret.example') + '\n')
+
+    out = _search(shell, log, patterns='^"[A-Z]+ [^"]*reset')
+
+    assert 's3cret' not in '\n'.join(out)
+
+
+def test_record_overwritten_by_nul_bytes_leaves_the_file_partial(
+    shell: str, log: Path
+) -> None:
+    log.write_bytes(
+        f'{HOME}\n'.encode() + b'\0' * len(RESET) + b'\n' + f'{HOME}\n'.encode()
+    )
+
+    out = _search(shell, log)
+
+    assert _file_lines(out) == {'access.log': 'partial'}
+
+
+def test_line_cut_after_its_time_is_not_read(shell: str, log: Path) -> None:
+    log.write_text(f'{HOME}\n203.0.113.9 - - {TIME} {HOME}\n')
+
+    out = _search(shell, log)
+
+    assert _file_lines(out) == {'access.log': 'partial'}
+
+
+@pytest.mark.parametrize(
+    'joined',
+    [
+        f'203.0.113.9 - - [04/Au{HOME}',
+        f'{HOME}{RESET.split(" 400")[0]}',
+        f'198.51.100.8 - - {RESET}',
+    ],
+)
+def test_record_joined_to_a_cut_one_is_not_read(
+    shell: str, log: Path, joined: str
+) -> None:
+    log.write_text(f'{HOME}\n{joined}\n')
+
+    out = _search(shell, log)
+
+    assert _file_lines(out) == {'access.log': 'partial'}
+
+
+def test_decompressor_warning_marks_the_file_unread(shell: str, log: Path) -> None:
+    whole = bz2.compress((HOME + '\n').encode())
+    Path(f'{log}.1.bz2').write_bytes(whole + b'BZh9' + b'\0' * 32)
+
+    out = _search(shell, log)
+
+    assert _file_lines(out)['access.log.1.bz2'] == 'read_failed'
+
+
+def test_file_line_dates_hold_only_the_bracketed_time(shell: str, log: Path) -> None:
+    log.write_text(HOME.replace(f'{TIME} ', f'{TIME} a@example.com ') + '\n')
+
+    out = _search(shell, log, line='')
+
+    file_line = next(line for line in out if line.startswith('file '))
+    assert f'first=[{TIME}] last=[{TIME}]' in file_line
+
+
+def test_log_emptied_and_refilled_while_read_is_changed(
+    shell: str, log: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log.write_text(f'{HOME}\n{RESET}\n{HOME}\n')
+    install_fakes(
+        tmp_path / 'bin',
+        {'cat': 'head -n 1; for i in 1 2 3 4; do echo "$FILL"; done > "$LOG"'},
+    )
+    monkeypatch.setenv('LOG', str(log))
+    monkeypatch.setenv('FILL', HOME)
+    monkeypatch.setenv('PATH', f'{tmp_path / "bin"}{os.pathsep}{os.environ["PATH"]}')
+
+    out = _search(shell, log)
+
+    assert f'file path={log} status=changed' in out
+
+
+@pytest.mark.parametrize('escaped', ['\\xC3\\xA9', '\\xc3\\xa9'])
+def test_byte_the_log_wrote_escaped_is_found_as_documented(
+    shell: str, log: Path, escaped: str
+) -> None:
+    log.write_text(HOME.replace('GET /', f'GET /caf{escaped}') + '\n')
+
+    out = _search(shell, log, patterns='^"GET /caf[\\\\]x[Cc]3[\\\\]x[Aa]9')
+
+    assert 'total pattern=1 count=1 shown=1' in out
+
+
+def test_match_on_a_line_that_breaks_the_format_is_marked(
+    shell: str, log: Path
+) -> None:
+    log.write_text(f'{HOME}\n198.51.100.8 - - {RESET}\n')
+
+    out = _search(shell, log)
+
+    assert 'total pattern=1 count=1 shown=1' in out
+    assert any(line.startswith('match ') and ' broken text=' in line for line in out)
+
+
+def test_log_refilled_past_its_size_while_read_is_changed(
+    shell: str, log: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log.write_text(f'{HOME}\n{RESET}\n')
+    install_fakes(
+        tmp_path / 'bin',
+        {
+            'cat': 'head -n 1; for i in 1 2 3 4; do echo "$FILL"; done > "$LOG"; echo "$FILL"; echo "$FILL"'
+        },
+    )
+    monkeypatch.setenv('LOG', str(log))
+    monkeypatch.setenv('FILL', CURRENT)
+    monkeypatch.setenv('PATH', f'{tmp_path / "bin"}{os.pathsep}{os.environ["PATH"]}')
+
+    out = _search(shell, log)
+
+    assert f'file path={log} status=changed' in out
+
+
+def test_address_run_into_another_record_is_broken(shell: str, log: Path) -> None:
+    log.write_text(
+        f'{HOME}\n203.0.113.9 {CURRENT.replace("203.0.113.9", "198.51.100.8")}\n'
+    )
+
+    out = _search(shell, log, patterns=SECOND, also='^203.0.113.9 ')
+
+    assert any(line.startswith('match ') and ' broken text=' in line for line in out)
+
+
+def test_copy_named_outside_the_rotation_rules_is_reported(
+    shell: str, log: Path
+) -> None:
+    Path(f'{log}-20260804T193000.gz').write_bytes(
+        gzip.compress((RESET + '\n').encode())
+    )
+
+    out = _search(shell, log)
+
+    assert f'file path={log} status=odd_copy' in out
+    assert out[-1].startswith('search=incomplete')
