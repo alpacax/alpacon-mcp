@@ -68,9 +68,12 @@ NO_CVE_SESSION = {
 }
 CMD_CHECK = 'a3b4c5d6-7e8f-4a1b-9c2d-3e4f5a6b7c8d'
 RHEL_VERIFY_CASE = 'verify-reads-a-restart-just-after-an-rpm-update'
-CASE_OS = {
-    f'{RHEL_VERIFY_CASE}/mocks/alpacon': ('Rocky Linux', '9.6')
-}  # default Ubuntu 24.04
+RHEL_SAME_SECOND_CASE = 'verify-keeps-a-same-second-rpm-start-unknown'
+NGINX_VERIFY_CASE = 'verify-keeps-a-same-second-start-unknown-without-a-scanner'
+CASE_OS = {  # default Ubuntu 24.04
+    f'{RHEL_VERIFY_CASE}/mocks/alpacon': ('Rocky Linux', '9.6'),
+    f'{RHEL_SAME_SECOND_CASE}/mocks/alpacon': ('Rocky Linux', '9.6'),
+}
 READ_CASES = {
     'diagnose-marks-a-held-package/mocks/alpacon': PATCH_SESSION
     | {
@@ -132,6 +135,18 @@ READ_CASES = {
         'servers': [SID],
         'scopes': ['command'],
         'description': 'Verify the CVE-2026-40712 httpd fix took effect on web-01.',
+    },
+    f'{RHEL_SAME_SECOND_CASE}/mocks/alpacon': PATCH_SESSION
+    | {
+        'servers': [SID],
+        'scopes': ['command'],
+        'description': 'Verify the CVE-2026-40712 httpd fix took effect on web-01.',
+    },
+    f'{NGINX_VERIFY_CASE}/mocks/alpacon': PATCH_SESSION
+    | {
+        'servers': [SID],
+        'scopes': ['command'],
+        'description': 'Verify the CVE-2026-40813 nginx fix took effect on web-01.',
     },
 }
 EXPOSURE_CASE = 'exposure-check-asks-before-a-default-login/mocks/alpacon'

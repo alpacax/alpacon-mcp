@@ -178,11 +178,12 @@ def test_mixed_case_keeps_yaml_and_markdown_graders(tmp_path: Path):
     assert [grader['tool'] for grader in graders] == ['yaml_tool', 'markdown_tool']
 
 
-VERIFY_CASES = [  # Debian and Ubuntu cases, which read the documented one-line check
+VERIFY_CASES = [  # the cases that send the documented line for ssh unchanged
     c
     for c in CASES
     if c.name.startswith('verify-')
-    and 'rhel' not in yaml.safe_load((c / 'case.yaml').read_text()).get('tags', [])
+    and not {'rhel', 'other-units'}
+    & set(yaml.safe_load((c / 'case.yaml').read_text()).get('tags', []))
 ]
 
 

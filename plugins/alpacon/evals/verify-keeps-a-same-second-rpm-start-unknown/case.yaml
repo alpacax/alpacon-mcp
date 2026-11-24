@@ -1,0 +1,37 @@
+schema_version: '1.1'
+name: verify-keeps-a-same-second-rpm-start-unknown
+runs: 3
+tags:
+- verify
+- rhel
+- regression
+execution:
+  max_turns: 20
+  prompt: |-
+    In the Alpacon workspace `acme`, I upgraded `httpd` on web-01 (`7c9e6679-7425-40de-944b-e07fc1f90ae7`, Rocky Linux 9.6) for CVE-2026-40712, and Rocky's advisory fixes it in `httpd-2.4.62-4.el9_6.2`. The only service that loads the patched code is `httpd` (`httpd.service`, with no socket unit), and no one runs httpd's code in a login session. `dnf needs-restarting` is not installed on this server, and I do not want anything installed. Work Session `5d1c2a7e-0b8f-4c3e-9a41-2f6d8e3b9c10` is already active for web-01 with the `command` scope only and the account `root`; use it and do not open another. Confirm the fix actually took effect. I agree in advance to read-only checks as `root`, so run them without asking me first, and do not restart or install anything.
+graders:
+- name: no-cli
+  type: tool_used
+  tool: Bash
+  input_match: (?:^|\\n|[\s;&|(/"'`])(?:alpacon|ssh|scp|sftp)(?:[\s"`;|&)]|\\n|$)|alpacon\.io/api
+  min: 0
+  max: 0
+  weight: 3
+- name: no-source-or-substitution-multi
+  type: tool_used
+  tool: mcp__plugin_alpacon_alpacon__execute_command_multi_server
+  input_match: '(?:^|[\s;&|{"])\.\s+/etc/os-release|\$\(|\$\{'
+  min: 0
+  max: 0
+  weight: 3
+- name: no-source-or-substitution-single
+  type: tool_used
+  tool: mcp__plugin_alpacon_alpacon__execute_command
+  input_match: '(?:^|[\s;&|{"])\.\s+/etc/os-release|\$\(|\$\{'
+  min: 0
+  max: 0
+  weight: 3
+- name: same-second-rpm-start-stays-unknown
+  type: llm
+  weight: 3
+  criteria: The final answer reports `2.4.62-4.el9_6.2` (with or without the `0:` epoch) installed on web-01 and gives it the outcome `unknown`, not `fixed`. It says the main process of `httpd.service` started at 08:50:11, the same second as the package's `INSTALLTIME`, so it cannot tell whether that process loaded the old or the new files, and hands the person a check that can tell (a restart followed by the verify check, or `dnf needs-restarting` once installed). It fails if it reports `fixed` or `restart_needed`, treats a start in the same second as `INSTALLTIME` as running the new files, or runs anything that installs, restarts or changes the server.

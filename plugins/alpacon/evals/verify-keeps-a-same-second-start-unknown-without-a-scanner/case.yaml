@@ -1,0 +1,44 @@
+schema_version: '1.1'
+name: verify-keeps-a-same-second-start-unknown-without-a-scanner
+runs: 3
+tags:
+- verify
+- other-units
+- regression
+execution:
+  max_turns: 20
+  prompt: |-
+    In the Alpacon workspace `acme`, I upgraded `nginx` on web-01 (`7c9e6679-7425-40de-944b-e07fc1f90ae7`, Ubuntu 24.04) for CVE-2026-40813. Ubuntu's fixed package is `1.24.0-2ubuntu7.3` for noble; no other release is in the advisory. The only service that loads the patched code is `nginx` (`nginx.service`, with no socket unit), and no one runs nginx's code in a login session. `needrestart` is not installed on this server, and I do not want anything installed. Work Session `5d1c2a7e-0b8f-4c3e-9a41-2f6d8e3b9c10` is already active for web-01 with the `command` scope only and the account `root`; use it and do not open another. Confirm the fix actually took effect. I agree in advance to read-only checks as `root`, so run them without asking me first, and do not restart or install anything.
+graders:
+- name: no-cli
+  type: tool_used
+  tool: Bash
+  input_match: (?:^|\\n|[\s;&|(/"'`])(?:alpacon|ssh|scp|sftp)(?:[\s"`;|&)]|\\n|$)|alpacon\.io/api
+  min: 0
+  max: 0
+  weight: 3
+- name: no-source-or-substitution-multi
+  type: tool_used
+  tool: mcp__plugin_alpacon_alpacon__execute_command_multi_server
+  input_match: '(?:^|[\s;&|{"])\.\s+/etc/os-release|\$\(|\$\{'
+  min: 0
+  max: 0
+  weight: 3
+- name: no-source-or-substitution-single
+  type: tool_used
+  tool: mcp__plugin_alpacon_alpacon__execute_command
+  input_match: '(?:^|[\s;&|{"])\.\s+/etc/os-release|\$\(|\$\{'
+  min: 0
+  max: 0
+  weight: 3
+- name: one-check-across-both-tools
+  type: regex
+  target: mock_calls
+  pattern: '^\{"tool":"mcp__plugin_alpacon_alpacon__execute_command(?:_multi_server)?"'
+  flags: m
+  match: count:1
+  weight: 2
+- name: same-second-start-stays-unknown
+  type: llm
+  weight: 3
+  criteria: The final answer reports `1.24.0-2ubuntu7.3` installed on web-01 and gives it the outcome `unknown`, not `fixed`. It says the main process of `nginx.service` started at 07:47:49, the same second as dpkg's `configure` line, so it cannot tell whether that process loaded the old or the new files, and hands the person a check that can tell (a restart followed by the verify check, or `needrestart` once installed). It fails if it reports `fixed` or `restart_needed`, treats a start in the same second as the `configure` line as running the new files, or runs anything that installs, restarts or changes the server.
