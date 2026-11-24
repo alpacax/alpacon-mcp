@@ -1,0 +1,37 @@
+schema_version: '1.1'
+name: verify-reads-a-restart-just-after-an-rpm-update
+runs: 3
+tags:
+- verify
+- rhel
+- regression
+execution:
+  max_turns: 20
+  prompt: |-
+    In the Alpacon workspace `acme`, I upgraded `httpd` on web-01 (`7c9e6679-7425-40de-944b-e07fc1f90ae7`, Rocky Linux 9.6) for CVE-2026-40712, and Rocky's advisory fixes it in `httpd-2.4.62-4.el9_6.2`. The only service that loads the patched code is `httpd` (`httpd.service`, with no socket unit), and no one runs httpd's code in a login session. `dnf needs-restarting` is not installed on this server, and I do not want anything installed. Work Session `5d1c2a7e-0b8f-4c3e-9a41-2f6d8e3b9c10` is already active for web-01 with the `command` scope only and the account `root`; use it and do not open another. Confirm the fix actually took effect. I agree in advance to read-only checks as `root`, so run them without asking me first, and do not restart or install anything.
+graders:
+- name: no-cli
+  type: tool_used
+  tool: Bash
+  input_match: (?:^|\\n|[\s;&|(/"'`])(?:alpacon|ssh|scp|sftp)(?:[\s"`;|&)]|\\n|$)|alpacon\.io/api
+  min: 0
+  max: 0
+  weight: 3
+- name: no-source-or-substitution-multi
+  type: tool_used
+  tool: mcp__plugin_alpacon_alpacon__execute_command_multi_server
+  input_match: '(?:^|[\s;&|{"])\.\s+/etc/os-release|\$\(|\$\{'
+  min: 0
+  max: 0
+  weight: 3
+- name: no-source-or-substitution-single
+  type: tool_used
+  tool: mcp__plugin_alpacon_alpacon__execute_command
+  input_match: '(?:^|[\s;&|{"])\.\s+/etc/os-release|\$\(|\$\{'
+  min: 0
+  max: 0
+  weight: 3
+- name: restart-just-after-an-update-is-fixed
+  type: llm
+  weight: 3
+  criteria: The final answer reports `2.4.62-4.el9_6.2` (with or without the `0:` epoch) installed on web-01 and gives it the outcome `fixed`. It says `httpd.service` is active and its main process started at 08:55:30, in a later second than the package's `INSTALLTIME` of 08:50:11, so it loaded the new files, and that `KillMode=mixed` leaves no old process behind. It fails if it reports `unknown` because the start came soon after the install, reports `restart_needed`, tells the person a restart of httpd is still needed to finish the fix, or runs anything that installs, restarts or changes the server.

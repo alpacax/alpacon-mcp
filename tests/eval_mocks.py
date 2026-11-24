@@ -67,6 +67,10 @@ NO_CVE_SESSION = {
     'description': 'Read pending security updates on web-01; changes nothing.',
 }
 CMD_CHECK = 'a3b4c5d6-7e8f-4a1b-9c2d-3e4f5a6b7c8d'
+RHEL_VERIFY_CASE = 'verify-reads-a-restart-just-after-an-rpm-update'
+CASE_OS = {
+    f'{RHEL_VERIFY_CASE}/mocks/alpacon': ('Rocky Linux', '9.6')
+}  # default Ubuntu 24.04
 READ_CASES = {
     'diagnose-marks-a-held-package/mocks/alpacon': PATCH_SESSION
     | {
@@ -122,6 +126,12 @@ READ_CASES = {
         'servers': [SID],
         'scopes': ['command'],
         'description': 'Verify the CVE-2026-31337 openssh-server fix took effect on web-01.',
+    },
+    f'{RHEL_VERIFY_CASE}/mocks/alpacon': PATCH_SESSION
+    | {
+        'servers': [SID],
+        'scopes': ['command'],
+        'description': 'Verify the CVE-2026-40712 httpd fix took effect on web-01.',
     },
 }
 EXPOSURE_CASE = 'exposure-check-asks-before-a-default-login/mocks/alpacon'
@@ -255,13 +265,14 @@ def _s3_accepts(call: Call) -> Call:
 
 
 def _rollout_mocks(case: str, session: dict[str, Sequence[str]]) -> list[Mock]:
+    os_name, os_version = CASE_OS.get(case, ('Ubuntu', '24.04'))
     servers = [
         {
             'id': sid,
             'name': name,
             'is_connected': True,
-            'os_name': 'Ubuntu',
-            'os_version': '24.04',
+            'os_name': os_name,
+            'os_version': os_version,
         }
         for sid, name in SERVER_NAMES.items()
         if sid in session['servers']
