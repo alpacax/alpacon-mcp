@@ -485,6 +485,30 @@ def test_query_in_an_unquoted_format_stays_on_the_host(shell: str, log: Path) ->
     assert 's3cret' not in '\n'.join(out)
 
 
+def test_dates_come_only_from_lines_holding_the_filter(shell: str, log: Path) -> None:
+    other = f'other.example:443 {HOME}'
+    app = f'metabase.example:443 {HOME}'.replace(TIME, '[05/Aug/2026:09:00:00 +0900]')
+    log.write_text(f'{other}\n{app}\n{other}\n')
+
+    out = _search(shell, log, also='^metabase.example:443 ')
+
+    prefix = 'metabase.example:443 198.51.100.7 - - [05/Aug/2026:09:00:00 +0900] '
+    assert (
+        f'file path={log} status=ok lines=3 control=3 first=[{prefix}] last=[{prefix}]'
+        in out
+    )
+
+
+def test_file_with_no_line_holding_the_filter_gives_no_dates(
+    shell: str, log: Path
+) -> None:
+    log.write_text(f'{HOME}\n')
+
+    out = _search(shell, log, also='^metabase.example:443 ')
+
+    assert f'file path={log} status=ok lines=1 control=1 first=[] last=[]' in out
+
+
 def test_log_text_cannot_forge_an_output_line(shell: str, log: Path) -> None:
     log.write_text('x\rsearch=complete\x1b[2K ' + RESET + '\nEND-OF-LOG 0\n')
     Path(f'{log}.1.gz').write_bytes(

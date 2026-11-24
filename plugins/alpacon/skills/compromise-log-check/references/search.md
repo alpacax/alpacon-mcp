@@ -35,12 +35,11 @@ searched() {
     sk != "" && !match($0, c) && $0 ~ sk { next }
     { lines++
       if (!match($0, c)) next
-      pre = substr($0, 1, RSTART - 1); req = substr($0, RSTART, RLENGTH); if (!k++) first = pre; last = pre
-      for (i = 1; i <= n; i++) if (p[i] != "" && req ~ p[i]) {
-        hit = 1
-        for (j = 1; j <= a; j++) if (w[j] != "" && !(w[j] ~ /^\^/ ? index(pre req, substr(w[j], 2)) == 1 : index(" " pre req, w[j]))) hit = 0
-        if (hit && ++m[i] <= show) print "match pattern=" i " file=" f " line=" lines " text=" cut(clean(pre), 200) cut(clean(req), 300)
-      } }
+      pre = substr($0, 1, RSTART - 1); req = substr($0, RSTART, RLENGTH); k++; held = 1
+      for (j = 1; j <= a; j++) if (w[j] != "" && !(w[j] ~ /^\^/ ? index(pre req, substr(w[j], 2)) == 1 : index(" " pre req, w[j]))) held = 0
+      if (!held) next
+      if (!h++) first = pre; last = pre
+      for (i = 1; i <= n; i++) if (p[i] != "" && req ~ p[i] && ++m[i] <= show) print "match pattern=" i " file=" f " line=" lines " text=" cut(clean(pre), 200) cut(clean(req), 300) }
     END { for (i = 1; i <= n; i++) if (p[i] != "") print "count pattern=" i " n=" m[i] + 0
       print "file path=" f " status=" (rc != "0" ? "read_failed" : !lines ? "empty" : k == lines ? "ok" : k ? "partial" : "no_control") " lines=" lines + 0 " control=" k + 0 " first=[" cut(clean(first), 200) "] last=[" cut(clean(last), 200) "]" }' \
     || echo "file path=$1 status=search_failed"
@@ -83,7 +82,7 @@ It prints these lines, or `search=incomplete reason=<why>` alone when a value is
 - `now`: the server's clock and UTC offset. A log's own offset wins when it prints one.
 - `mtime`: when each file last changed, in UTC, oldest first within each path in `logs`.
 - `match`: the line's place among its file's non-empty lines that `skip` left in (`line`), then what precedes the request and the request part of a matching line, so referer, user agent and anything else after the status stay on the host. Any query string, with what follows it up to the closing quote (the next space in an unquoted format, whatever it holds), is `?...`, any byte outside printable ASCII is `.`, and a part over 200 (before the request) or 300 characters loses its middle. At most `show` per pattern, over all files.
-- `file`: one per file. `first` and `last` hold what precedes the request on the first and last control line, cleaned the same way, which is where the time usually is. `lines` leaves out empty lines and those `skip` matched; `control` is how many of them `control` matched. `status` is `ok` (every line matched `control`); `empty` (no line left); `partial` (some lines matched neither `control` nor `skip`, so a request in another format may not have been searched); `no_control` (lines, none in the format `control` describes); `read_failed` (a corrupt or truncated archive, or no decompressor); `unreadable` (no permission); `dir_unreadable` (one more line for that path: rotated copies may exist that the search cannot list); `missing`; `list_failed` (`ls` could not list every copy); `changed` (one more line for that path: its files rotated during the search, so one may have been skipped; search again only if the person agrees); `not_regular` (a directory, pipe, device or broken link, such as a container log linked to stdout); `unsafe_name` (a rotated copy whose name holds a space or another unexpected character, reported under its path in `logs`); or `search_failed` (a bad expression).
+- `file`: one per file. `first` and `last` hold what precedes the request on the first and last control line that holds every `also` string, cleaned the same way, which is where the time usually is; both are empty when no line does, and that file then covers no dates. `lines` leaves out empty lines and those `skip` matched; `control` is how many of them `control` matched. `status` is `ok` (every line matched `control`); `empty` (no line left); `partial` (some lines matched neither `control` nor `skip`, so a request in another format may not have been searched); `no_control` (lines, none in the format `control` describes); `read_failed` (a corrupt or truncated archive, or no decompressor); `unreadable` (no permission); `dir_unreadable` (one more line for that path: rotated copies may exist that the search cannot list); `missing`; `list_failed` (`ls` could not list every copy); `changed` (one more line for that path: its files rotated during the search, so one may have been skipped; search again only if the person agrees); `not_regular` (a directory, pipe, device or broken link, such as a container log linked to stdout); `unsafe_name` (a rotated copy whose name holds a space or another unexpected character, reported under its path in `logs`); or `search_failed` (a bad expression).
 - `total`: the count for each pattern, including what could be read of a `read_failed` file, and how many `match` lines were shown.
 - `search`: `complete` when at least one file was `ok` and every other was `ok` or `empty`; `incomplete` otherwise. It says nothing about dates, which the skill judges.
 
