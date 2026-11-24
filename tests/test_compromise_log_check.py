@@ -9,7 +9,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 import pytest
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 from tests.eval_mocks import LOG_RESULT
 from tests.skill_scripts import doc_blocks, install_fakes
@@ -857,8 +857,10 @@ def test_eval_grader_accepts_only_the_documented_expression(
     shell: str, name: str, input_match: str
 ) -> None:
     script = doc_blocks(SEARCH, 'sh')[0]
+    anchor = re.search("^patterns='(.*)'$", script, re.M)
+    assert anchor
     if 'user/current' in input_match:
-        script = script.replace(re.search("^patterns='(.*)'$", script, re.M)[1], SECOND)
+        script = script.replace(anchor[1], SECOND)
     address = re.search(r"also='\\\^([0-9.\\]+) '", input_match)
     if address:
         script = script.replace(
