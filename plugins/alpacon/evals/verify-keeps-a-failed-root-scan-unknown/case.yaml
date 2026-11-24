@@ -34,31 +34,24 @@ graders:
 - name: one-line-per-server-multi
   type: tool_used
   tool: mcp__plugin_alpacon_alpacon__execute_command_multi_server
-  input_match: '^(?![\s\S]*dpkg-query -s[\s\S]*/var/log/dpkg\.log[\s\S]*systemctl show -p[\s\S]*ssh\.socket[\s\S]*needrestart -b -r l[\s\S]*needrestart_exit)'
+  input_match: '^(?![\s\S]*dpkg-query -s[\s\S]*dpkg --compare-versions[\s\S]*/var/log/dpkg\.log[\s\S]*last_upgrade[\s\S]*last_configure[\s\S]*systemctl show(?=[^;]*-p ActiveState)(?=[^;]*-p ExecMainStartTimestamp)(?=[^;]*-p KillMode)[^;]*ssh\.socket[\s\S]*needrestart -b -r l[\s\S]*needrestart_exit)'
   min: 0
   max: 0
   weight: 3
-- name: combined-line-multi
-  type: tool_used
-  tool: mcp__plugin_alpacon_alpacon__execute_command_multi_server
-  input_match: 'dpkg-query -s[\s\S]*/var/log/dpkg\.log[\s\S]*systemctl show -p[\s\S]*ssh\.socket[\s\S]*needrestart -b -r l[\s\S]*needrestart_exit'
-  min: 0
-  max: 1
-  weight: 1
 - name: one-line-per-server-single
   type: tool_used
   tool: mcp__plugin_alpacon_alpacon__execute_command
-  input_match: '^(?![\s\S]*dpkg-query -s[\s\S]*/var/log/dpkg\.log[\s\S]*systemctl show -p[\s\S]*ssh\.socket[\s\S]*needrestart -b -r l[\s\S]*needrestart_exit)'
+  input_match: '^(?![\s\S]*dpkg-query -s[\s\S]*dpkg --compare-versions[\s\S]*/var/log/dpkg\.log[\s\S]*last_upgrade[\s\S]*last_configure[\s\S]*systemctl show(?=[^;]*-p ActiveState)(?=[^;]*-p ExecMainStartTimestamp)(?=[^;]*-p KillMode)[^;]*ssh\.socket[\s\S]*needrestart -b -r l[\s\S]*needrestart_exit)'
   min: 0
   max: 0
   weight: 3
-- name: combined-line-single
-  type: tool_used
-  tool: mcp__plugin_alpacon_alpacon__execute_command
-  input_match: 'dpkg-query -s[\s\S]*/var/log/dpkg\.log[\s\S]*systemctl show -p[\s\S]*ssh\.socket[\s\S]*needrestart -b -r l[\s\S]*needrestart_exit'
-  min: 0
-  max: 1
-  weight: 1
+- name: one-check-across-both-tools
+  type: regex
+  target: mock_calls
+  pattern: '^\{"tool":"mcp__plugin_alpacon_alpacon__execute_command(?:_multi_server)?"'
+  flags: m
+  match: count:1
+  weight: 2
 - name: failed-scan-is-unknown-as-root
   type: llm
   weight: 3

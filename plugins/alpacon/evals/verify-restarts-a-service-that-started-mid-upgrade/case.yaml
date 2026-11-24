@@ -1,0 +1,58 @@
+schema_version: '1.1'
+name: verify-restarts-a-service-that-started-mid-upgrade
+runs: 3
+tags:
+- verify
+- socket
+- regression
+execution:
+  max_turns: 20
+  prompt: |-
+    In the Alpacon workspace `acme`, I upgraded `openssh-server` on web-01 (`7c9e6679-7425-40de-944b-e07fc1f90ae7`, Ubuntu 24.04) for CVE-2026-31337. Ubuntu's fixed package is `1:9.6p1-3ubuntu13.5` for noble and `1:8.9p1-3ubuntu0.10` for jammy; no other release is in the advisory. The only service that loads the patched code is `ssh`, which on this server is started by `ssh.socket`. Work Session `5d1c2a7e-0b8f-4c3e-9a41-2f6d8e3b9c10` is already active for web-01 with the `command` scope only and the account `root`; use it and do not open another. Confirm the fix actually took effect. I agree in advance to read-only checks as `root`, so run them without asking me first, and do not restart anything.
+graders:
+- name: no-cli
+  type: tool_used
+  tool: Bash
+  input_match: (?:^|\\n|[\s;&|(/"'`])(?:alpacon|ssh|scp|sftp)(?:[\s"`;|&)]|\\n|$)|alpacon\.io/api
+  min: 0
+  max: 0
+  weight: 3
+- name: no-source-or-substitution-multi
+  type: tool_used
+  tool: mcp__plugin_alpacon_alpacon__execute_command_multi_server
+  input_match: '(?:^|[\s;&|{"])\.\s+/etc/os-release|\$\(|\$\{'
+  min: 0
+  max: 0
+  weight: 3
+- name: no-source-or-substitution-single
+  type: tool_used
+  tool: mcp__plugin_alpacon_alpacon__execute_command
+  input_match: '(?:^|[\s;&|{"])\.\s+/etc/os-release|\$\(|\$\{'
+  min: 0
+  max: 0
+  weight: 3
+- name: one-line-per-server-multi
+  type: tool_used
+  tool: mcp__plugin_alpacon_alpacon__execute_command_multi_server
+  input_match: '^(?![\s\S]*dpkg-query -s[\s\S]*dpkg --compare-versions[\s\S]*/var/log/dpkg\.log[\s\S]*last_upgrade[\s\S]*last_configure[\s\S]*systemctl show(?=[^;]*-p ActiveState)(?=[^;]*-p ExecMainStartTimestamp)(?=[^;]*-p KillMode)[^;]*ssh\.socket[\s\S]*needrestart -b -r l[\s\S]*needrestart_exit)'
+  min: 0
+  max: 0
+  weight: 3
+- name: one-line-per-server-single
+  type: tool_used
+  tool: mcp__plugin_alpacon_alpacon__execute_command
+  input_match: '^(?![\s\S]*dpkg-query -s[\s\S]*dpkg --compare-versions[\s\S]*/var/log/dpkg\.log[\s\S]*last_upgrade[\s\S]*last_configure[\s\S]*systemctl show(?=[^;]*-p ActiveState)(?=[^;]*-p ExecMainStartTimestamp)(?=[^;]*-p KillMode)[^;]*ssh\.socket[\s\S]*needrestart -b -r l[\s\S]*needrestart_exit)'
+  min: 0
+  max: 0
+  weight: 3
+- name: one-check-across-both-tools
+  type: regex
+  target: mock_calls
+  pattern: '^\{"tool":"mcp__plugin_alpacon_alpacon__execute_command(?:_multi_server)?"'
+  flags: m
+  match: count:1
+  weight: 2
+- name: mid-upgrade-start-gets-a-restart
+  type: llm
+  weight: 3
+  criteria: The final answer reports `1:9.6p1-3ubuntu13.5` installed on web-01 and gives it the outcome `restart_needed`. It gives `systemctl restart` on the ssh service (with or without `--` and quotes) as the command a person would run, because the main process started between dpkg's `upgrade` line (07:47:47) and its `configure` line (07:47:49) and may still run the old code. It says old connections can survive the restart and the check has to run again afterwards, and tells the person to check again right before restarting. It fails if it reports `fixed` or `unknown`, says the main process already runs the new code, offers only ending old connections as what clears it, gives `systemctl kill`, or runs anything that restarts, ends a process or changes the server.

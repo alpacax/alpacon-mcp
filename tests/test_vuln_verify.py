@@ -11,6 +11,9 @@ DPKG_LOG = (
     ' 1:9.6p1-3ubuntu13.4 1:9.6p1-3ubuntu13.6\n'
     '2026-11-15 10:00:01 upgrade openssh-sftp-server:arm64'
     ' 1:9.6p1-3ubuntu13.4 1:9.6p1-3ubuntu13.6\n'
+    '2026-11-15 10:00:08 configure openssh-sftp-server:arm64 1:9.6p1-3ubuntu13.6 <none>\n'
+    '2026-11-15 10:00:09 configure openssh-server:arm64 1:9.6p1-3ubuntu13.6 <none>\n'
+    '2026-11-15 10:00:10 configure openssh-client:arm64 1:9.6p1-3ubuntu13.6 <none>\n'
 )
 
 
@@ -100,3 +103,25 @@ class TestCombinedLine:
                 ' 1:9.6p1-3ubuntu13.4 1:9.6p1-3ubuntu13.6'
             )
         ]
+
+    @pytest.mark.parametrize('package', ['openssh-server', 'openssh-server:arm64'])
+    def test_finds_when_the_new_files_were_in_place(self, tmp_path: Path, package: str):
+        result = _combined_line(tmp_path, 'exit 127', package)
+
+        assert result.returncode == 0, result.stderr
+        assert [
+            line
+            for line in result.stdout.splitlines()
+            if line.startswith('last_configure:')
+        ] == [
+            (
+                'last_configure: 2026-11-15 10:00:09 configure openssh-server:arm64'
+                ' 1:9.6p1-3ubuntu13.6 <none>'
+            )
+        ]
+
+    def test_asks_for_the_main_process_start_and_the_kill_mode(self):
+        line = doc_blocks('vuln-verify/SKILL.md', 'sh')[0]
+
+        assert '-p ExecMainStartTimestamp' in line
+        assert '-p KillMode' in line

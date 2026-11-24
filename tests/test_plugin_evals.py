@@ -1,5 +1,7 @@
 """The plugin's eval mocks stay what the tools return, and every guarded tool is offered."""
 
+import json
+import re
 from collections.abc import Mapping
 from pathlib import Path
 from typing import cast
@@ -18,6 +20,7 @@ from tests.eval_mocks import (
     render,
     render_tools_json,
 )
+from tests.skill_scripts import doc_blocks
 
 PLUGIN_TOOL_PREFIX = 'mcp__plugin_alpacon_alpacon__'
 REGENERATE = 'regenerate with `python -m tests.eval_mocks`'
@@ -173,3 +176,56 @@ def test_mixed_case_keeps_yaml_and_markdown_graders(tmp_path: Path):
     graders = case_graders(tmp_path)
 
     assert [grader['tool'] for grader in graders] == ['yaml_tool', 'markdown_tool']
+
+
+VERIFY_CASES = [c for c in CASES if c.name.startswith('verify-')]
+
+
+def _one_line_graders(case: Path) -> list[re.Pattern[str]]:
+    return [
+        re.compile(str(g['input_match']))
+        for g in case_graders(case)
+        if str(g.get('name', '')).startswith('one-line-per-server')
+    ]
+
+
+@pytest.mark.parametrize('case', VERIFY_CASES, ids=[c.name for c in VERIFY_CASES])
+def test_the_documented_verify_line_passes_the_one_line_graders(case: Path):
+    line = doc_blocks('vuln-verify/SKILL.md', 'sh')[0].strip()
+
+    caught = [
+        p.pattern
+        for p in _one_line_graders(case)
+        if p.search(json.dumps({'command': line}))
+    ]
+
+    assert _one_line_graders(case)
+    assert caught == []
+
+
+@pytest.mark.parametrize('case', VERIFY_CASES, ids=[c.name for c in VERIFY_CASES])
+@pytest.mark.parametrize(
+    ('dropped', 'replacement'),
+    [
+        (r'dpkg --compare-versions "\$v" lt "\$f"', 'true'),
+        (r' -p ExecMainStartTimestamp', ''),
+        (r' -p KillMode', ''),
+        (r' -p ActiveState', ''),
+        (r"\| sed 's/\^/last_upgrade: /'", ''),
+    ],
+    ids=['comparison', 'main-start', 'kill-mode', 'active-state', 'last-upgrade'],
+)
+def test_a_verify_line_missing_a_part_is_caught(
+    case: Path, dropped: str, replacement: str
+):
+    line = doc_blocks('vuln-verify/SKILL.md', 'sh')[0].strip()
+    stripped = re.sub(dropped, replacement, line)
+
+    caught = [
+        p
+        for p in _one_line_graders(case)
+        if p.search(json.dumps({'command': stripped}))
+    ]
+
+    assert stripped != line
+    assert len(caught) == len(_one_line_graders(case))
