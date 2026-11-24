@@ -5,9 +5,10 @@ The script the `compromise-log-check` skill runs with `execute_file`, as an ordi
 - `logs`: one absolute log path per line. Each is searched with its rotated copies (`<path>.*` and `<path>-*`), gzip, xz, bzip2 and zstd included. A rotation that names files another way (`access-20260803.log`) needs each file listed.
 - `patterns`: one extended regular expression per line, numbered from 1, tried only inside the part of a line that `control` matches.
 - `control`: an expression that matches the request part of every ordinary line in this log format, from where it starts through its status. The value below also matches a malformed or empty request, so a line it misses is in another format. It shows that the search can read the format, not that a pattern is right, and keeps a request written into a user agent or referer from counting. Start it at something a client cannot write, as the `"` of the nginx and Apache formats, which both escape in client text.
+- `skip`: an expression for the lines in this log that are known not to be requests, such as an error record, tried only on a line `control` misses; empty when there are none. A line it matches is left out of `lines` and not searched, so start it at text a client cannot write, as the start of the line, and never let it match a request in any format. Every other line that `control` misses makes its file `partial`.
 - `also`: fixed strings, one per line, that a line must all hold up to the end of its request part; one that starts with `^` must be at the start of the line, as `^10.0.0.1 ` (with its last space) for an address that comes first, so neither `110.0.0.1` nor a user name counts. Elsewhere in the line, write the address with a space on both sides. Empty on the first run; the pairing run fills it.
 
-In `patterns` and `control`, use no `'`, no `\` before a letter or digit, no `(?`, no `[:class:]` and no `{n}`: some `awk` builds read them as something else and find nothing. The search refuses all but `'`, which ends the quoted value, so check for that before filling it.
+In `patterns`, `control` and `skip`, use no `'`, no `\` before a letter or digit, no `(?`, no `[:class:]` and no `{n}`: some `awk` builds read them as something else and find nothing. The search refuses all but `'`, which ends the quoted value, so check for that before filling it.
 
 ## The search
 
@@ -16,20 +17,22 @@ export LC_ALL=C
 logs='/var/log/nginx/access.log'
 patterns='^"POST [^"?]*/api/session/reset_password(\?([^"\\]|\\.)*)? HTTP/[0-9.]+" 400( |$)'
 control='"([^"\\]|\\.)*" [0-9][0-9][0-9]( |$)'
+skip=''
 also=''
 show=10
-export patterns control also show
+export patterns control skip also show
 [ -n "$logs" ] && [ -n "$patterns" ] && [ -n "$control" ] || { echo "search=incomplete reason=empty-input"; exit 0; }
-case $patterns$control in (*\\[A-Za-z0-9]*|*'(?'*|*'[:'*|*{[0-9]*) echo "search=incomplete reason=unsupported-expression"; exit 0 ;; esac
+case $patterns$control$skip in (*\\[A-Za-z0-9]*|*'(?'*|*'[:'*|*{[0-9]*) echo "search=incomplete reason=unsupported-expression"; exit 0 ;; esac
 searched() {
   { case $1 in (*.gz) gzip -dc < "$1" ;; (*.xz) xz -dc < "$1" ;; (*.bz2) bzip2 -dc < "$1" ;; (*.zst) zstd -dc < "$1" ;; (*) cat < "$1" ;; esac 2>/dev/null
     printf '\nEND-OF-LOG %s\n' "$?"; } | tr '\000' '\001' | f=$1 awk '
     function clean(s) { gsub(s ~ /^"/ ? "[?]([^\"\\\\]|\\\\.)*" : "[?][^ ]*", "?...", s); gsub(/[^ -~]/, ".", s); return s }
     function cut(s, n) { return length(s) > n ? substr(s, 1, n - 43) "..." substr(s, length(s) - 39) : s }
-    BEGIN { f = ENVIRON["f"]; c = ENVIRON["control"]; show = ENVIRON["show"] + 0; n = split(ENVIRON["patterns"], p, "\n"); a = split(ENVIRON["also"], w, "\n") }
+    BEGIN { f = ENVIRON["f"]; c = ENVIRON["control"]; sk = ENVIRON["skip"]; show = ENVIRON["show"] + 0; n = split(ENVIRON["patterns"], p, "\n"); a = split(ENVIRON["also"], w, "\n") }
     /^END-OF-LOG [0-9]+$/ { rc = $2; next }
     { if (/^\001/) sub(/^\001+/, "") }
     /^$/ { next }
+    sk != "" && !match($0, c) && $0 ~ sk { next }
     { lines++
       if (!match($0, c)) next
       pre = substr($0, 1, RSTART - 1); req = substr($0, RSTART, RLENGTH); if (!k++) first = pre; last = pre
@@ -39,7 +42,7 @@ searched() {
         if (hit && ++m[i] <= show) print "match pattern=" i " file=" f " line=" lines " text=" cut(clean(pre), 200) cut(clean(req), 300)
       } }
     END { for (i = 1; i <= n; i++) if (p[i] != "") print "count pattern=" i " n=" m[i] + 0
-      print "file path=" f " status=" (rc != "0" ? "read_failed" : k ? "ok" : lines ? "no_control" : "empty") " lines=" lines + 0 " control=" k + 0 " first=[" cut(clean(first), 200) "] last=[" cut(clean(last), 200) "]" }' \
+      print "file path=" f " status=" (rc != "0" ? "read_failed" : !lines ? "empty" : k == lines ? "ok" : k ? "partial" : "no_control") " lines=" lines + 0 " control=" k + 0 " first=[" cut(clean(first), 200) "] last=[" cut(clean(last), 200) "]" }' \
     || echo "file path=$1 status=search_failed"
 }
 copies() {
@@ -79,8 +82,8 @@ It prints these lines, or `search=incomplete reason=<why>` alone when a value is
 
 - `now`: the server's clock and UTC offset. A log's own offset wins when it prints one.
 - `mtime`: when each file last changed, in UTC, oldest first within each path in `logs`.
-- `match`: the line's place among its file's non-empty lines (`line`), then what precedes the request and the request part of a matching line, so referer, user agent and anything else after the status stay on the host. Any query string, with what follows it up to the closing quote (the next space in an unquoted format, whatever it holds), is `?...`, any byte outside printable ASCII is `.`, and a part over 200 (before the request) or 300 characters loses its middle. At most `show` per pattern, over all files.
-- `file`: one per file. `first` and `last` hold what precedes the request on the first and last control line, cleaned the same way, which is where the time usually is. `status` is `ok`; `empty`; `no_control` (lines, none in the format `control` describes); `read_failed` (a corrupt or truncated archive, or no decompressor); `unreadable` (no permission); `dir_unreadable` (one more line for that path: rotated copies may exist that the search cannot list); `missing`; `list_failed` (`ls` could not list every copy); `changed` (one more line for that path: its files rotated during the search, so one may have been skipped; search again only if the person agrees); `not_regular` (a directory, pipe, device or broken link, such as a container log linked to stdout); `unsafe_name` (a rotated copy whose name holds a space or another unexpected character, reported under its path in `logs`); or `search_failed` (a bad expression).
+- `match`: the line's place among its file's non-empty lines that `skip` left in (`line`), then what precedes the request and the request part of a matching line, so referer, user agent and anything else after the status stay on the host. Any query string, with what follows it up to the closing quote (the next space in an unquoted format, whatever it holds), is `?...`, any byte outside printable ASCII is `.`, and a part over 200 (before the request) or 300 characters loses its middle. At most `show` per pattern, over all files.
+- `file`: one per file. `first` and `last` hold what precedes the request on the first and last control line, cleaned the same way, which is where the time usually is. `lines` leaves out empty lines and those `skip` matched; `control` is how many of them `control` matched. `status` is `ok` (every line matched `control`); `empty` (no line left); `partial` (some lines matched neither `control` nor `skip`, so a request in another format may not have been searched); `no_control` (lines, none in the format `control` describes); `read_failed` (a corrupt or truncated archive, or no decompressor); `unreadable` (no permission); `dir_unreadable` (one more line for that path: rotated copies may exist that the search cannot list); `missing`; `list_failed` (`ls` could not list every copy); `changed` (one more line for that path: its files rotated during the search, so one may have been skipped; search again only if the person agrees); `not_regular` (a directory, pipe, device or broken link, such as a container log linked to stdout); `unsafe_name` (a rotated copy whose name holds a space or another unexpected character, reported under its path in `logs`); or `search_failed` (a bad expression).
 - `total`: the count for each pattern, including what could be read of a `read_failed` file, and how many `match` lines were shown.
 - `search`: `complete` when at least one file was `ok` and every other was `ok` or `empty`; `incomplete` otherwise. It says nothing about dates, which the skill judges.
 

@@ -23,6 +23,8 @@ CURRENT = (
     f'203.0.113.9 - - {TIME} "GET /api/user/current HTTP/1.1" 200 900 "-" "agent-x"'
 )
 SECOND = doc_blocks(SEARCH, 'text')[0].strip()
+NOTICE = '2026/08/04 10:12:01 [notice] 42#42: signal process started'
+NOTICE_MARK = '^[0-9/]+ [0-9:]+ [[]notice[]] '
 
 pytestmark = pytest.mark.parametrize('shell', ['sh', 'bash'])
 
@@ -313,7 +315,7 @@ def test_each_pattern_gets_its_own_total(shell: str, log: Path) -> None:
     assert 'total pattern=2 count=2 shown=2' in out
 
 
-@pytest.mark.parametrize('name', ['patterns', 'control'])
+@pytest.mark.parametrize('name', ['patterns', 'control', 'skip'])
 @pytest.mark.parametrize(
     'value', [r'POST \S+', r'HTTP/\d', '(?i)post', '[[:digit:]]', 'a{3}']
 )
@@ -402,12 +404,54 @@ def test_malformed_request_is_counted_as_read(
     assert any('status=ok lines=1 control=1' in line for line in out)
 
 
-def test_line_in_another_format_lowers_the_control_count(shell: str, log: Path) -> None:
+def test_line_in_another_format_makes_the_file_partial(shell: str, log: Path) -> None:
     log.write_text(HOME + '\n{"method":"POST","path":"/x","status":400}\n')
 
     out = _search(shell, log)
 
-    assert any('lines=2 control=1' in line for line in out)
+    assert any('status=partial lines=2 control=1' in line for line in out)
+    assert out[-1] == 'search=incomplete files=1 problems=1'
+
+
+def test_known_non_request_line_is_left_out(shell: str, log: Path) -> None:
+    log.write_text(f'{HOME}\n{NOTICE}\n{RESET}\n')
+
+    out = _search(shell, log, skip=NOTICE_MARK)
+
+    assert any('status=ok lines=2 control=2' in line for line in out)
+    assert any(
+        line.startswith('match pattern=1 ') and ' line=2 ' in line for line in out
+    )
+    assert out[-1] == 'search=complete files=1 problems=0'
+
+
+def test_request_in_another_format_beside_a_skipped_line_is_partial(
+    shell: str, log: Path
+) -> None:
+    unparsed = '{"method":"POST","path":"/api/session/reset_password","status":400}'
+    log.write_text(f'{HOME}\n{NOTICE}\n{unparsed}\n')
+
+    out = _search(shell, log, skip=NOTICE_MARK)
+
+    assert any('status=partial lines=2 control=1' in line for line in out)
+    assert out[-1] == 'search=incomplete files=1 problems=1'
+
+
+def test_skip_does_not_hide_a_request_line(shell: str, log: Path) -> None:
+    log.write_text(RESET.replace('agent-x', '[notice] x') + '\n')
+
+    out = _search(shell, log, skip=r'\[notice\]')
+
+    assert 'total pattern=1 count=1 shown=1' in out
+
+
+def test_file_of_skipped_lines_only_is_empty(shell: str, log: Path) -> None:
+    log.write_text(NOTICE + '\n')
+
+    out = _search(shell, log, skip=NOTICE_MARK)
+
+    assert _file_lines(out) == {'access.log': 'empty'}
+    assert out[-1] == 'search=incomplete files=1 problems=0'
 
 
 def test_escaped_quote_in_a_path_cannot_start_a_request(shell: str, log: Path) -> None:
