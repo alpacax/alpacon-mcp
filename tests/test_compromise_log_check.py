@@ -675,3 +675,73 @@ def test_eval_mock_output_is_what_the_search_prints(shell: str, log: Path) -> No
 
     printed = [line.replace(str(log), '/var/log/nginx/access.log') for line in out]
     assert printed[1:] == LOG_RESULT.splitlines()[1:]
+
+
+PAIR_MOCK = (
+    Path(__file__).parent.parent
+    / 'plugins/alpacon/evals/compromise-log-check-pairs-only-a-later-request'
+    / 'mocks/alpacon/execute_file.md'
+)
+
+
+def _pair_case_logs(log: Path) -> None:
+    """The nginx logs the pairing eval's answers describe, at their line numbers."""
+
+    def row(address: str, time: str, request: str = 'GET / HTTP/1.1" 200 1') -> str:
+        return f'{address} - - [{time} +0900] "{request}'
+
+    filler = row('192.0.2.5', '01/Aug/2026:00:00:04')
+    old = [filler] * 81200
+    old[-1] = row('192.0.2.5', '22/Nov/2026:23:59:51')
+    for place, address, time, request in [
+        (
+            20077,
+            '198.51.100.44',
+            '04/Aug/2026:10:04:17',
+            'GET /api/user/current HTTP/1.1" 200 900',
+        ),
+        (
+            20113,
+            '198.51.100.44',
+            '04/Aug/2026:10:12:01',
+            'POST /api/session/reset_password HTTP/1.1" 400 64',
+        ),
+        (
+            27450,
+            '203.0.113.9',
+            '05/Aug/2026:02:31:40',
+            'POST /api/session/reset_password HTTP/1.1" 400 64',
+        ),
+        (
+            27452,
+            '203.0.113.9',
+            '05/Aug/2026:02:31:43',
+            'GET /api/user/current HTTP/1.1" 200 900',
+        ),
+    ]:
+        old[place - 1] = row(address, time, request)
+    new = [row('192.0.2.5', '23/Nov/2026:00:00:02')] * 409 + [
+        row('192.0.2.5', '23/Nov/2026:15:59:58')
+    ]
+    rotated = Path(f'{log}.1')
+    rotated.write_text('\n'.join(old) + '\n')
+    log.write_text('\n'.join(new) + '\n')
+    os.utime(rotated, (1_795_359_600, 1_795_359_600))
+    os.utime(log, (1_795_417_198, 1_795_417_198))
+
+
+def test_pairing_eval_answers_are_what_the_search_prints(shell: str, log: Path) -> None:
+    _pair_case_logs(log)
+    anchor = re.search("^patterns='(.*)'$", doc_blocks(SEARCH, 'sh')[0], re.M)
+    assert anchor
+    answers = re.findall(r'```text\n(.*?)```', PAIR_MOCK.read_text(), re.S)
+
+    runs = [
+        _search(shell, log),
+        _search(shell, log, patterns=SECOND, also='^198.51.100.44 '),
+        _search(shell, log, patterns=SECOND, also='^203.0.113.9 '),
+    ]
+
+    for out, answer in zip(runs, answers, strict=True):
+        printed = [line.replace(str(log), '/var/log/nginx/access.log') for line in out]
+        assert printed[1:] == answer.splitlines()[1:]

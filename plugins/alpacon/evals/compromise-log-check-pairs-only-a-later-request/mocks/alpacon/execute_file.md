@@ -32,9 +32,9 @@ search=complete files=2 problems=0
 now=2026-11-23T16:00:00+0900
 mtime path=/var/log/nginx/access.log.1 utc=2026-11-22T15:00:00Z
 match pattern=1 file=/var/log/nginx/access.log.1 line=20077 text=198.51.100.44 - - [04/Aug/2026:10:04:17 +0900] "GET /api/user/current HTTP/1.1" 200 
-file path=/var/log/nginx/access.log.1 status=ok lines=81200 control=81200 first=[192.0.2.5 - - [01/Aug/2026:00:00:04 +0900] ] last=[192.0.2.5 - - [22/Nov/2026:23:59:51 +0900] ]
+file path=/var/log/nginx/access.log.1 status=ok lines=81200 control=81200 first=[198.51.100.44 - - [04/Aug/2026:10:04:17 +0900] ] last=[198.51.100.44 - - [04/Aug/2026:10:12:01 +0900] ]
 mtime path=/var/log/nginx/access.log utc=2026-11-23T06:59:58Z
-file path=/var/log/nginx/access.log status=ok lines=410 control=410 first=[192.0.2.5 - - [23/Nov/2026:00:00:02 +0900] ] last=[192.0.2.5 - - [23/Nov/2026:15:59:58 +0900] ]
+file path=/var/log/nginx/access.log status=ok lines=410 control=410 first=[] last=[]
 total pattern=1 count=1 shown=1
 search=complete files=2 problems=0
 ```
@@ -45,9 +45,9 @@ search=complete files=2 problems=0
 now=2026-11-23T16:00:00+0900
 mtime path=/var/log/nginx/access.log.1 utc=2026-11-22T15:00:00Z
 match pattern=1 file=/var/log/nginx/access.log.1 line=27452 text=203.0.113.9 - - [05/Aug/2026:02:31:43 +0900] "GET /api/user/current HTTP/1.1" 200 
-file path=/var/log/nginx/access.log.1 status=ok lines=81200 control=81200 first=[192.0.2.5 - - [01/Aug/2026:00:00:04 +0900] ] last=[192.0.2.5 - - [22/Nov/2026:23:59:51 +0900] ]
+file path=/var/log/nginx/access.log.1 status=ok lines=81200 control=81200 first=[203.0.113.9 - - [05/Aug/2026:02:31:40 +0900] ] last=[203.0.113.9 - - [05/Aug/2026:02:31:43 +0900] ]
 mtime path=/var/log/nginx/access.log utc=2026-11-23T06:59:58Z
-file path=/var/log/nginx/access.log status=ok lines=410 control=410 first=[192.0.2.5 - - [23/Nov/2026:00:00:02 +0900] ] last=[192.0.2.5 - - [23/Nov/2026:15:59:58 +0900] ]
+file path=/var/log/nginx/access.log status=ok lines=410 control=410 first=[] last=[]
 total pattern=1 count=1 shown=1
 search=complete files=2 problems=0
 ```
