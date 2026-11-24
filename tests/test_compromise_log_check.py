@@ -5,6 +5,7 @@ import re
 import subprocess
 from collections.abc import Iterator
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 import pytest
 
@@ -33,9 +34,12 @@ def _search(shell: str, *logs: Path, **values: str) -> list[str]:
         found = re.search(rf"^{name}='[^']*'$", script, re.M)
         assert found, f'{name} is not a fillable value'
         script = script.replace(found[0], f"{name}='{value}'", 1)
-    result = subprocess.run(  # noqa: S603  # repository snippet on temporary files
-        [shell, '-c', script], text=True, capture_output=True, check=False, timeout=10
-    )
+    with NamedTemporaryFile('w', suffix='.sh') as file:
+        file.write(script)
+        file.flush()
+        result = subprocess.run(  # noqa: S603  # repository snippet on temporary files
+            [shell, file.name], text=True, capture_output=True, check=False, timeout=10
+        )
     assert result.returncode == 0, result.stderr
     return result.stdout.splitlines()
 
@@ -362,9 +366,18 @@ def test_match_gives_its_place_so_same_second_requests_keep_their_order(
 ) -> None:
     log.write_text(f'{HOME}\n\n{CURRENT}\n{RESET}\n')
 
-    out = _search(shell, log, patterns=SECOND, also='^203.0.113.9 ')
+    anchor = re.search("^patterns='(.*)'$", doc_blocks(SEARCH, 'sh')[0], re.M)
+    assert anchor
 
-    assert any(line.startswith(f'match pattern=1 file={log} line=2 ') for line in out)
+    out = _search(
+        shell, log, patterns=f'{anchor[1]}\n{SECOND}', also=f'^203.0.113.9 \n{TIME}'
+    )
+
+    places = [line.split()[1:4] for line in out if line.startswith('match ')]
+    assert places == [
+        ['pattern=2', f'file={log}', 'line=2'],
+        ['pattern=1', f'file={log}', 'line=3'],
+    ]
 
 
 def test_method_outside_the_common_list_is_still_read(shell: str, log: Path) -> None:
@@ -374,6 +387,58 @@ def test_method_outside_the_common_list_is_still_read(shell: str, log: Path) -> 
 
     assert 'total pattern=1 count=1 shown=1' in out
     assert out[-1] == 'search=complete files=1 problems=0'
+
+
+@pytest.mark.parametrize(
+    'request_text', ['', '-', r'\x16\x03\x01', r'GET /a\"b HTTP/1.1']
+)
+def test_malformed_request_is_counted_as_read(
+    shell: str, log: Path, request_text: str
+) -> None:
+    log.write_text(HOME.replace('GET / HTTP/1.1', request_text) + '\n')
+
+    out = _search(shell, log)
+
+    assert any('status=ok lines=1 control=1' in line for line in out)
+
+
+def test_line_in_another_format_lowers_the_control_count(shell: str, log: Path) -> None:
+    log.write_text(HOME + '\n{"method":"POST","path":"/x","status":400}\n')
+
+    out = _search(shell, log)
+
+    assert any('lines=2 control=1' in line for line in out)
+
+
+def test_escaped_quote_in_a_path_cannot_start_a_request(shell: str, log: Path) -> None:
+    log.write_text(RESET.replace('POST', r'GET /a\"POST') + '\n')
+
+    out = _search(shell, log)
+
+    assert 'total pattern=1 count=0 shown=0' in out
+
+
+def test_query_with_an_escaped_quote_stays_on_the_host(shell: str, log: Path) -> None:
+    log.write_text(RESET.replace('token=', r'a=\"') + '\n')
+
+    out = _search(shell, log, patterns='reset_password')
+
+    assert 'total pattern=1 count=1 shown=1' in out
+    assert 's3cret' not in '\n'.join(out)
+
+
+def test_query_in_an_unquoted_format_stays_on_the_host(shell: str, log: Path) -> None:
+    log.write_text(r'1.2.3.4 request=POST /p?a=\"&token=s3cret HTTP/1.1 400' + '\n')
+
+    out = _search(
+        shell,
+        log,
+        patterns='^request=POST ',
+        control='request=[A-Z]+ [^ ]* HTTP/[0-9.]+ [0-9][0-9][0-9]',
+    )
+
+    assert 'total pattern=1 count=1 shown=1' in out
+    assert 's3cret' not in '\n'.join(out)
 
 
 def test_log_text_cannot_forge_an_output_line(shell: str, log: Path) -> None:
@@ -408,6 +473,7 @@ def test_pairing_run_keeps_only_lines_holding_every_fixed_string(
         (RESET.replace('/api', '/metabase/api'), 1),
         (RESET.replace('HTTP/1.1" 400', 'HTTP/1.1" 200'), 0),
         (RESET.replace('POST', 'GET'), 0),
+        (RESET.replace('token=', r'a=\"'), 1),
         (RESET.replace('reset_password?', 'reset_password_x?'), 0),
         (HOME.replace('GET /', 'POST /x?u=/api/session/reset_password'), 0),
     ],
@@ -429,6 +495,7 @@ def test_metabase_anchor_matches_only_a_refused_reset(
         (CURRENT.replace('/api', '/metabase/api'), 1),
         (CURRENT.replace('" 200', '" 401'), 0),
         (CURRENT.replace('GET', 'POST'), 0),
+        (CURRENT.replace('current ', r'current?a=\" '), 1),
         (CURRENT.replace('current', 'current_x'), 0),
     ],
 )
@@ -480,6 +547,10 @@ def test_listing_that_fails_is_incomplete(
         'mv "$LOG.1" "$LOG.2"; mv "$LOG" "$LOG.1"; : > "$LOG"',
         'rm "$LOG.1"',
         'cp "$LOG" "$LOG.1"; : > "$LOG"',
+        (
+            'tr a-z A-Z < "$LOG.1" > "$LOG.x"; /bin/cat "$LOG.x" > "$LOG.1"; '
+            'rm "$LOG.x"; TZ=UTC touch -t 202311142213.20 "$LOG.1"'
+        ),
     ],
 )
 def test_rotation_during_the_search_is_incomplete(

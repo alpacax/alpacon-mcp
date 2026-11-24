@@ -87,11 +87,13 @@ EXPOSURE_RESULT = (
 )
 LOG_CASE = 'compromise-log-check-reports-short-retention-as-unknown/mocks/alpacon'
 PAIR_CASE = 'compromise-log-check-pairs-only-a-later-request/mocks/alpacon'
+LOG_SCRIPT = '/home/ubuntu/alpacon-log-search-CVE-2026-72898.sh'
 LOG_SESSION = {
     'servers': [SID],
-    'scopes': ['command'],
+    'scopes': ['command', 'webftp'],
     'target_account_username': 'ubuntu',
-    'description': 'Search the nginx logs on web-01 for one request pattern; changes nothing.',
+    'description': 'Search the nginx logs on web-01 for one request pattern; '
+    'writes one search script and changes nothing else.',
 }
 CMD_LOG = '4b7d9e21-3c5a-4f68-9d0e-8a1b2c3d4e5f'
 LOG_RESULT = (
@@ -156,9 +158,9 @@ def exposure_check_line() -> str:
     )
 
 
-def log_search_line() -> str:
+def log_search_script() -> str:
     """The compromise-log-check skill's search with its Metabase anchor, as an agent submits it."""
-    return doc_blocks('compromise-log-check/references/search.md', 'sh')[0].rstrip('\n')
+    return doc_blocks('compromise-log-check/references/search.md', 'sh')[0]
 
 
 def session_row(sid: str, status: str, **extra: object) -> dict[str, object]:
@@ -196,6 +198,16 @@ def page(results: list[dict[str, object]]) -> httpx.Response:
 COMMANDS = '/api/events/commands/'
 SESSIONS = '/api/work-sessions/sessions/'
 UPLOADS = '/api/webftp/uploads/'
+UPLOAD_ROUTES: Routes = {
+    ('POST', UPLOADS): httpx.Response(
+        201,
+        json={'id': UPLOAD_ID, 'upload_url': 'https://s3.example.test/put'},
+    ),
+    ('GET', f'{UPLOADS}{UPLOAD_ID}/upload/'): httpx.Response(200, json={}),
+    ('GET', f'{UPLOADS}{UPLOAD_ID}/status/'): httpx.Response(
+        200, json={'success': True}
+    ),
+}
 CSRS = '/api/cert/sign-requests/'
 CSR_ROW = {
     'id': CSR_ID,
@@ -636,7 +648,7 @@ MOCKS: list[Mock] = [
     ),
     *_rollout_mocks(LOG_CASE, LOG_SESSION),
     *_rollout_mocks(PAIR_CASE, LOG_SESSION),
-    Mock(  # accepted whatever the command; the result is read with check_command_status
+    Mock(  # offered so that falling back to a command line is seen
         f'{LOG_CASE}/execute_command_multi_server.md',
         {('POST', COMMANDS): httpx.Response(201, json={'id': CMD_LOG})},
         lambda: command_tools.execute_command_multi_server(
@@ -650,28 +662,36 @@ MOCKS: list[Mock] = [
         ),
         echo=ECHO,
     ),
-    Mock(  # the record carries the search's full text, so it matches what the agent sent
-        f'{LOG_CASE}/check_command_status.md',
-        {
+    Mock(
+        f'{LOG_CASE}/execute_file.md',
+        UPLOAD_ROUTES
+        | {
+            ('POST', COMMANDS): httpx.Response(201, json={'id': CMD_LOG}),
             ('GET', f'{COMMANDS}{CMD_LOG}/'): httpx.Response(
-                200, json=command_row(CMD_LOG, log_search_line(), result=LOG_RESULT)
-            )
+                200,
+                json=command_row(CMD_LOG, f'/bin/sh {LOG_SCRIPT}', result=LOG_RESULT),
+            ),
         },
-        lambda: command_tools.check_command_status(
-            command_id=CMD_LOG, workspace=WS, region=REGION
+        _s3_accepts(
+            lambda: command_tools.execute_file(
+                server_id=SID,
+                path=LOG_SCRIPT,
+                content=log_search_script(),
+                write_file=True,
+                interpreter='/bin/sh',
+                workspace=WS,
+                region=REGION,
+                username='ubuntu',
+                work_session_id=WSID,
+                purpose='search the nginx logs for the advisory pattern',
+                timeout=1,
+            )
         ),
     ),
     Mock(  # every run of the recipe fails, so only the first server may see one
         f'{PATCH_CASE}/execute_file.md',
-        {
-            ('POST', UPLOADS): httpx.Response(
-                201,
-                json={'id': UPLOAD_ID, 'upload_url': 'https://s3.example.test/put'},
-            ),
-            ('GET', f'{UPLOADS}{UPLOAD_ID}/upload/'): httpx.Response(200, json={}),
-            ('GET', f'{UPLOADS}{UPLOAD_ID}/status/'): httpx.Response(
-                200, json={'success': True}
-            ),
+        UPLOAD_ROUTES
+        | {
             ('POST', COMMANDS): httpx.Response(201, json={'id': CMD_PATCH}),
             ('GET', f'{COMMANDS}{CMD_PATCH}/'): httpx.Response(
                 200,
@@ -710,10 +730,7 @@ HAND_WRITTEN = {
     f'{SECOND_CASE}/execute_command.md',
     f'{SECOND_CASE}/execute_file.md',  # an agent responder: each server answers differently
     f'{NO_CVE_CASE}/check_command_status.md',  # answers for whichever command was submitted
-    *(
-        f'{PAIR_CASE}/{tool}.md'  # answers differ by the command submitted
-        for tool in ('execute_command_multi_server', 'check_command_status')
-    ),
+    f'{PAIR_CASE}/execute_file.md',  # answers differ by the script submitted
     *(
         f'{case}/{tool}.md'
         for case in PREFLIGHT_CASES
