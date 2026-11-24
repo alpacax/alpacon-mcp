@@ -91,6 +91,8 @@ It prints these lines, or `search=incomplete reason=<why>` alone when a value is
 
 For a pattern of two requests, the first run searches only the rarer one, the anchor. The second run takes the other request as `patterns` and one client address, copied from the anchor's `match` line, as `also`, with `^` and a last space when the line starts with it; run it once per address. A value holding a `'` is not used.
 
+The address ties the two requests to one client, not to one application. When the log serves more than one application, such as an ingress or a proxy with several virtual hosts, add one more `also` line with the text the log writes for this application's host or upstream before or in the request part. When the format writes none there, no pair can be shown from that log.
+
 When `count` is above `shown`, the later requests were not seen: add a second `also` line with the log's own time text for the anchor's hour (`[04/Aug/2026:10:`), then for each following hour, worked out from the anchor, for the first 24 hours, then each following day, until a pair is found or the end date is reached. If one hour still exceeds `show`, narrow it to ten minutes.
 
 The anchor run has the same limit: when its `count` is above `shown`, anchors inside the dates may not have been seen, whatever the dates of the shown ones. Run it again with `also` set to the log's own time text for each day from the start date to the end date (`[04/Aug/2026:`), and for each hour of a day that still exceeds `show`. An hour that exceeds it is narrowed to ten minutes.
