@@ -342,7 +342,8 @@ Token management needs JWT/OAuth, a browser session, or a login-source token. Ca
 | Question | Tool |
 |---|---|
 | Who changed what in this workspace? | `list_activity_logs`, then `get_activity_log` for one entry |
-| What commands ran on this server? | `list_server_logs(workspace, server_id=...)` |
+| What commands ran on this server? | `list_commands(workspace, server_id=...)` |
+| What did this server's agent log? | `list_server_logs(workspace, server_id=...)` |
 | What files moved? | `list_webftp_logs(workspace, server_id=...)` |
 | What did the platform observe? | `list_events`, `search_events` |
 | What did the AI analysis find? | `list_session_analyses`, `get_session_analysis_detail` |

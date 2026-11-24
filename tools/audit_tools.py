@@ -32,8 +32,8 @@ from utils.unreached_targets import (
         'List activity logs for auditing user and system actions. When to use: '
         'auditing who did what in the workspace. '
         f'{CURSOR_WALK_DESCRIPTION} '
-        'Related: get_activity_log (full details), list_server_logs (command '
-        'history), list_webftp_logs (file transfer history).'
+        'Related: get_activity_log (full details), list_server_logs (agent log '
+        'lines), list_webftp_logs (file transfer history).'
     ),
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'audit activity logs user actions'},
@@ -112,14 +112,16 @@ async def get_activity_log(
 
 @mcp_tool_handler(
     description=(
-        'List server command execution logs from history. When to use: reviewing '
-        'command execution audit trail. '
+        "List the system log lines servers' Alpacon agents reported: program, "
+        'level, source location and message. Not command history; use '
+        'list_commands for that. A personal API token needs '
+        'the syslog:read scope. A service token reads no system log. '
         f'{CURSOR_WALK_DESCRIPTION} '
-        'Related: list_commands (recent commands with output), list_activity_logs '
+        'Related: list_commands (commands with output), list_activity_logs '
         '(broader audit).'
     ),
     annotations=READ_ONLY,
-    meta={'anthropic/searchHint': 'server command execution logs history'},
+    meta={'anthropic/searchHint': 'server system logs agent log lines syslog'},
 )
 async def list_server_logs(
     workspace: str,
@@ -129,7 +131,7 @@ async def list_server_logs(
     page_size: int | None = None,
     **kwargs: str,
 ) -> ToolResponse:
-    """List server command execution logs, following the server's cursor.
+    """List the system log lines servers' agents reported, following the cursor.
 
     Args:
         workspace: Workspace name. Required parameter

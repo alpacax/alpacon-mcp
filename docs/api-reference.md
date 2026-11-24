@@ -1139,7 +1139,7 @@ Remote mode (`ALPACON_MCP_AUTH_ENABLED=true`) only: Alpacon serves the MFA link 
 
 - `list_activity_logs`: `workspace`, `region` (`ap1` or `us1`, optional), `cursor`, `page_size`
 - `get_activity_log`: `log_id`, `workspace`, `region` (`ap1` or `us1`, optional)
-- `list_server_logs`: command execution history; `workspace`, `server_id` (optional), `cursor`, `page_size`
+- `list_server_logs`: the system log lines servers' Alpacon agents reported, not command history; `workspace`, `server_id` (optional), `cursor`, `page_size`. A personal API token needs `syslog:read`, on an Alpacon server release that asks for it; a service token reads no system log
 - `list_webftp_logs`: file transfer history; same parameters
 - `list_session_analyses`: AI security analyses; a plain page-numbered list, so `page` applies here; `workspace`, `server_id`, `status`, `risk_score`, `page`, `page_size`
 - `get_session_analysis_detail`: `analysis_id`, `workspace`, `region` (`ap1` or `us1`, optional). Includes MITRE ATT&CK mapping
