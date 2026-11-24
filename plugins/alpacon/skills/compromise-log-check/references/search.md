@@ -15,7 +15,7 @@ In `patterns` and `control`, use no `'`, no `\` before a letter or digit, no `(?
 export LC_ALL=C
 logs='/var/log/nginx/access.log'
 patterns='^"POST [^"?]*/api/session/reset_password(\?[^"]*)? HTTP/[0-9.]+" 400( |$)'
-control='"(GET|POST|HEAD|PUT|DELETE|PATCH|OPTIONS) [^"]+ HTTP/[0-9.]+" [0-9][0-9][0-9]( |$)'
+control='"[A-Z]+ [^"]+ HTTP/[0-9.]+" [0-9][0-9][0-9]( |$)'
 also=''
 show=10
 export patterns control also show
@@ -36,7 +36,7 @@ searched() {
       for (i = 1; i <= n; i++) if (p[i] != "" && req ~ p[i]) {
         hit = 1
         for (j = 1; j <= a; j++) if (w[j] != "" && !(w[j] ~ /^\^/ ? index(pre req, substr(w[j], 2)) == 1 : index(" " pre req, w[j]))) hit = 0
-        if (hit && ++m[i] <= show) print "match pattern=" i " file=" f " text=" cut(clean(pre), 200) cut(clean(req), 300)
+        if (hit && ++m[i] <= show) print "match pattern=" i " file=" f " line=" lines " text=" cut(clean(pre), 200) cut(clean(req), 300)
       } }
     END { for (i = 1; i <= n; i++) if (p[i] != "") print "count pattern=" i " n=" m[i] + 0
       print "file path=" f " status=" (rc != "0" ? "read_failed" : k ? "ok" : lines ? "no_control" : "empty") " lines=" lines + 0 " control=" k + 0 " first=[" cut(clean(first), 200) "] last=[" cut(clean(last), 200) "]" }' \
@@ -79,7 +79,7 @@ It prints these lines, or `search=incomplete reason=<why>` alone when a value is
 
 - `now`: the server's clock and UTC offset. A log's own offset wins when it prints one.
 - `mtime`: when each file last changed, in UTC, oldest first within each path in `logs`.
-- `match`: what precedes the request and the request part of a matching line, so referer, user agent and anything else after the status stay on the host. Any query string, with what follows it up to the closing quote (the next space in an unquoted format), is `?...`, any byte outside printable ASCII is `.`, and a part over 200 (before the request) or 300 characters loses its middle. At most `show` per pattern, over all files.
+- `match`: the line's place among its file's non-empty lines (`line`), then what precedes the request and the request part of a matching line, so referer, user agent and anything else after the status stay on the host. Any query string, with what follows it up to the closing quote (the next space in an unquoted format), is `?...`, any byte outside printable ASCII is `.`, and a part over 200 (before the request) or 300 characters loses its middle. At most `show` per pattern, over all files.
 - `file`: one per file. `first` and `last` hold what precedes the request on the first and last control line, cleaned the same way, which is where the time usually is. `status` is `ok`; `empty`; `no_control` (lines, none in the format `control` describes); `read_failed` (a corrupt or truncated archive, or no decompressor); `unreadable` (no permission); `dir_unreadable` (one more line for that path: rotated copies may exist that the search cannot list); `missing`; `list_failed` (`ls` could not list every copy); `changed` (one more line for that path: its files rotated during the search, so one may have been skipped; search again only if the person agrees); `not_regular` (a directory, pipe, device or broken link, such as a container log linked to stdout); `unsafe_name` (a rotated copy whose name holds a space or another unexpected character, reported under its path in `logs`); or `search_failed` (a bad expression).
 - `total`: the count for each pattern, including what could be read of a `read_failed` file, and how many `match` lines were shown.
 - `search`: `complete` when at least one file was `ok` and every other was `ok` or `empty`; `incomplete` otherwise. It says nothing about dates, which the skill judges.
@@ -89,6 +89,8 @@ It prints these lines, or `search=incomplete reason=<why>` alone when a value is
 For a pattern of two requests, the first run searches only the rarer one, the anchor. The second run takes the other request as `patterns` and one client address, copied from the anchor's `match` line, as `also`, with `^` and a last space when the line starts with it; run it once per address. A value holding a `'` is not used.
 
 When `count` is above `shown`, the later requests were not seen: add a second `also` line with the log's own time text for the anchor's hour (`[04/Aug/2026:10:`), then for each following hour, worked out from the anchor, for the first 24 hours, then each following day, until a pair is found or the end date is reached. If one hour still exceeds `show`, narrow it to ten minutes.
+
+The anchor run has the same limit: when its `count` is above `shown` and every shown match is before the start date, the anchors inside the dates were not seen. Run it again with the log's own time text for each day from the start date as `also` (`/Aug/2026:` for a month, then `[04/Aug/2026:` for a day), until every match is shown.
 
 ## Metabase (CVE-2026-72898, GHSA-vwf4-m7j8-wcjf)
 

@@ -91,7 +91,7 @@ def test_match_leaves_query_referer_and_agent_on_the_host(
     out = _search(shell, log)
 
     assert (
-        f'match pattern=1 file={log} text=203.0.113.9 - - {TIME} '
+        f'match pattern=1 file={log} line=1 text=203.0.113.9 - - {TIME} '
         '"POST /api/session/reset_password?..." 400 '
     ) in out
     assert not re.search('s3cret|ref.example|agent-x', '\n'.join(out))
@@ -355,6 +355,25 @@ def test_matches_come_oldest_file_first(shell: str, log: Path) -> None:
     files = [line.split()[2] for line in out if line.startswith('match ')]
     assert files == [f'file={old}', f'file={log}']
     assert f'mtime path={old} utc=2023-11-14T22:13:20Z' in out
+
+
+def test_match_gives_its_place_so_same_second_requests_keep_their_order(
+    shell: str, log: Path
+) -> None:
+    log.write_text(f'{HOME}\n\n{CURRENT}\n{RESET}\n')
+
+    out = _search(shell, log, patterns=SECOND, also='^203.0.113.9 ')
+
+    assert any(line.startswith(f'match pattern=1 file={log} line=2 ') for line in out)
+
+
+def test_method_outside_the_common_list_is_still_read(shell: str, log: Path) -> None:
+    log.write_text(HOME.replace('GET /', 'PROPFIND /dav') + '\n')
+
+    out = _search(shell, log, patterns='^"PROPFIND /dav ')
+
+    assert 'total pattern=1 count=1 shown=1' in out
+    assert out[-1] == 'search=complete files=1 problems=0'
 
 
 def test_log_text_cannot_forge_an_output_line(shell: str, log: Path) -> None:
