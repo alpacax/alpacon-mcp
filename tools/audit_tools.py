@@ -165,7 +165,8 @@ async def list_server_logs(
 @mcp_tool_handler(
     description=(
         'List WebFTP file transfer logs from history. When to use: reviewing file '
-        'transfer audit trail. '
+        'transfer audit trail. A personal API token needs the ftp_session:read '
+        'scope. A service token reads no transfer log. '
         f'{CURSOR_WALK_DESCRIPTION} '
         'Related: webftp_uploads_list (upload status), webftp_downloads_list '
         '(download status).'

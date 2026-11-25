@@ -541,7 +541,7 @@ These tools need a JWT/OAuth session (hosted server), a browser session, or a lo
 - **list_activity_logs**: Audit user and system actions
 - **get_activity_log**: Get activity log details
 - **list_server_logs**: System log lines reported by servers' Alpacon agents (`syslog:read` on a personal API token)
-- **list_webftp_logs**: WebFTP file transfer logs
+- **list_webftp_logs**: WebFTP file transfer logs (`ftp_session:read` on a personal API token)
 - **list_session_analyses** / **get_session_analysis_detail**: AI security analysis with MITRE ATT&CK mapping
 
 ### 🔐 Identity and access management (IAM)
