@@ -37,7 +37,8 @@ pytestmark = pytest.mark.parametrize('shell', ['sh', 'bash'])
 def _search(shell: str, *logs: Path, **values: str) -> list[str]:
     """Run the documented search, filled with `values`; returns its output lines."""
     script = doc_blocks(SEARCH, 'sh')[0]
-    for name, value in {'logs': '\n'.join(map(str, logs)), **values}.items():
+    listed = '\n'.join(map(str, logs))
+    for name, value in {'logs': listed, 'active': listed, **values}.items():
         found = re.search(rf"^{name}='[^']*'$", script, re.M)
         assert found, f'{name} is not a fillable value'
         script = script.replace(found[0], f"{name}='{value}'", 1)
@@ -1178,14 +1179,14 @@ def test_copy_named_outside_the_rotation_rules_is_read_once_when_listed(
     copy = Path(f'{log}-20260804T193000.gz')
     copy.write_bytes(gzip.compress((RESET + '\n').encode()))
 
-    out = _search(shell, log, copy)
+    out = _search(shell, log, copy, active=str(log))
 
     assert 'odd_copy' not in _file_lines(out).values()
     assert 'total pattern=1 count=1 shown=1' in out
     assert out[-1] == 'search=complete files=2 problems=0'
 
 
-def test_listed_uncompressed_copy_rewritten_after_read_is_changed(
+def test_copy_left_out_of_active_rewritten_after_read_is_changed(
     shell: str, log: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     copy = Path(f'{log}.1-old')
@@ -1202,13 +1203,13 @@ def test_listed_uncompressed_copy_rewritten_after_read_is_changed(
     monkeypatch.setenv('NEW', (HOME + '\n') * 19 + HOME.replace('.7 ', '.8 ') + '\n')
     monkeypatch.setenv('PATH', f'{tmp_path / "bin"}{os.pathsep}{os.environ["PATH"]}')
 
-    out = _search(shell, log, copy)
+    out = _search(shell, log, copy, active=str(log))
 
     assert f'file path={copy} status=changed' in out
     assert out[-1].startswith('search=incomplete')
 
 
-def test_listed_log_that_grows_while_read_stays_complete(
+def test_active_log_that_grows_while_read_stays_complete(
     shell: str, log: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     other = tmp_path / 'other.log'
@@ -1226,7 +1227,113 @@ def test_listed_log_that_grows_while_read_stays_complete(
     assert out[-1] == 'search=complete files=2 problems=0'
 
 
-def test_listed_archive_appended_to_while_read_is_changed(
+def test_log_left_out_of_active_that_grows_while_read_is_changed(
+    shell: str, log: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    other = tmp_path / 'access-20260803.log'
+    other.write_text(HOME + '\n')
+    install_fakes(
+        tmp_path / 'bin',
+        {'cat': '/bin/cat; printf "%s\\n" "$FILL" >> "$OTHER"'},
+    )
+    monkeypatch.setenv('OTHER', str(other))
+    monkeypatch.setenv('FILL', HOME)
+    monkeypatch.setenv('PATH', f'{tmp_path / "bin"}{os.pathsep}{os.environ["PATH"]}')
+
+    out = _search(shell, log, other, active=str(log))
+
+    assert f'file path={other} status=changed' in out
+    assert out[-1].startswith('search=incomplete')
+
+
+def test_linked_log_swapped_while_read_is_changed_even_when_not_active(
+    shell: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target, aside, link = (
+        tmp_path / 'target',
+        tmp_path / 'aside',
+        tmp_path / 'access.log',
+    )
+    target.write_text(f'{HOME}\n{RESET}\n')
+    link.symlink_to(target)
+    short = tmp_path / 'short'
+    short.write_text(HOME + '\n')
+    install_fakes(
+        tmp_path / 'bin',
+        {
+            'ls': f'[ "$1" != -1dtr ] || [ ! -e "{short}" ] || '
+            f'{{ mv "{target}" "{aside}"; mv "{short}" "{target}"; }}; /bin/ls "$@"',
+            'cat': f'/bin/cat; [ ! -e "{aside}" ] || mv "{aside}" "{target}"',
+        },
+    )
+    monkeypatch.setenv('PATH', f'{tmp_path / "bin"}{os.pathsep}{os.environ["PATH"]}')
+
+    out = _search(shell, link, active='')
+
+    assert f'file path={link} status=changed' in out
+    assert out[-1].startswith('search=incomplete')
+
+
+def test_link_target_rewritten_at_the_same_size_is_changed_when_not_active(
+    shell: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target, link = tmp_path / 'target', tmp_path / 'access.log'
+    target.write_text((HOME + '\n') * 20)
+    link.symlink_to(target)
+    install_fakes(
+        tmp_path / 'bin',
+        {'cat': '/bin/cat; printf "%s" "$NEW" > "$TARGET"'},
+    )
+    monkeypatch.setenv('TARGET', str(target))
+    monkeypatch.setenv('NEW', (HOME + '\n') * 19 + HOME.replace('.7 ', '.8 ') + '\n')
+    monkeypatch.setenv('PATH', f'{tmp_path / "bin"}{os.pathsep}{os.environ["PATH"]}')
+
+    out = _search(shell, link, active='')
+
+    assert f'file path={link} status=changed' in out
+    assert out[-1].startswith('search=incomplete')
+
+
+def test_log_path_with_a_trailing_space_is_not_read_as_another(
+    shell: str, log: Path
+) -> None:
+    Path(f'{log} ').write_text(RESET + '\n')
+
+    out = _search(shell, log, Path(f'{log} '))
+
+    assert f'file path={log}  status=unsafe_name' in out
+    assert out[-1].startswith('search=incomplete')
+
+
+def test_active_log_gone_with_its_copies_left_is_missing(shell: str, log: Path) -> None:
+    Path(f'{log}.1').write_text(HOME + '\n')
+    log.unlink()
+
+    out = _search(shell, log)
+
+    assert f'file path={log} status=missing' in out
+    assert out[-1].startswith('search=incomplete')
+
+
+@pytest.mark.parametrize('suffix', ['.1', '.1-old', '-20260804.gz'])
+def test_active_path_named_like_a_copy_of_another_listed_path_is_refused(
+    shell: str, log: Path, suffix: str
+) -> None:
+    copy = Path(f'{log}{suffix}')
+    copy.write_text(HOME + '\n')
+
+    out = _search(shell, log, copy, active=f'{log}\n{copy}')
+
+    assert out == ['search=incomplete reason=active-is-a-copy']
+
+
+def test_active_path_not_in_logs_is_refused(shell: str, log: Path) -> None:
+    out = _search(shell, log, active=f'{log}.typo')
+
+    assert out == ['search=incomplete reason=active-not-in-logs']
+
+
+def test_archive_appended_to_while_read_is_changed_even_when_active(
     shell: str, log: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     copy = Path(f'{log}-20260804T193000.gz')

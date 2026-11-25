@@ -37,7 +37,7 @@ graders:
 - name: searches-once
   type: tool_used
   tool: mcp__plugin_alpacon_alpacon__execute_file
-  input_match: logs='/var/log/nginx/access\.log'[\s\S]*patterns='\^\\*"\[Pp\]\[Oo\]\[Ss\]\[Tt\] [^']*/api/[^']*session/[^']*reset_password[^']*\\*" 400\( \|\$\)'[\s\S]*control='\\*"\(\[\^\\*"\\*\]\|\\*\.\)\*\\*" \[0-9\]\[0-9\]\[0-9\]\( \|\$\)'[\s\S]*also=''[\s\S]*END-OF-LOG[\s\S]*problems=
+  input_match: logs='/var/log/nginx/access\.log'[\s\S]*active='/var/log/nginx/access\.log'[\s\S]*patterns='\^\\*"\[Pp\]\[Oo\]\[Ss\]\[Tt\] [^']*/api/[^']*session/[^']*reset_password[^']*\\*" 400\( \|\$\)'[\s\S]*control='\\*"\(\[\^\\*"\\*\]\|\\*\.\)\*\\*" \[0-9\]\[0-9\]\[0-9\]\( \|\$\)'[\s\S]*also=''[\s\S]*END-OF-LOG[\s\S]*problems=
   min: 1
   max: 1
   weight: 3

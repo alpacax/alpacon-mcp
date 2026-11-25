@@ -25,21 +25,21 @@ graders:
 - name: searches-the-anchor
   type: tool_used
   tool: mcp__plugin_alpacon_alpacon__execute_file
-  input_match: logs='/var/log/nginx/access\.log'[\s\S]*patterns='\^\\*"\[Pp\]\[Oo\]\[Ss\]\[Tt\] [^']*/api/[^']*session/[^']*reset_password[^']*\\*" 400\( \|\$\)'[\s\S]*control='\\*"\(\[\^\\*"\\*\]\|\\*\.\)\*\\*" \[0-9\]\[0-9\]\[0-9\]\( \|\$\)'[\s\S]*also=''[\s\S]*END-OF-LOG[\s\S]*problems=
+  input_match: logs='/var/log/nginx/access\.log'[\s\S]*active='/var/log/nginx/access\.log'[\s\S]*patterns='\^\\*"\[Pp\]\[Oo\]\[Ss\]\[Tt\] [^']*/api/[^']*session/[^']*reset_password[^']*\\*" 400\( \|\$\)'[\s\S]*control='\\*"\(\[\^\\*"\\*\]\|\\*\.\)\*\\*" \[0-9\]\[0-9\]\[0-9\]\( \|\$\)'[\s\S]*also=''[\s\S]*END-OF-LOG[\s\S]*problems=
   min: 1
   max: 1
   weight: 2
 - name: pairs-the-first-anchor
   type: tool_used
   tool: mcp__plugin_alpacon_alpacon__execute_file
-  input_match: logs='/var/log/nginx/access\.log'[\s\S]*patterns='\^\\*"\[Gg\]\[Ee\]\[Tt\] [^']*/api/[^']*user/[^']*current[^']*\\*" 200\( \|\$\)'[\s\S]*control='\\*"\(\[\^\\*"\\*\]\|\\*\.\)\*\\*" \[0-9\]\[0-9\]\[0-9\]\( \|\$\)'[\s\S]*also='\^198\.51\.100\.44 '[\s\S]*END-OF-LOG[\s\S]*problems=
+  input_match: logs='/var/log/nginx/access\.log'[\s\S]*active='/var/log/nginx/access\.log'[\s\S]*patterns='\^\\*"\[Gg\]\[Ee\]\[Tt\] [^']*/api/[^']*user/[^']*current[^']*\\*" 200\( \|\$\)'[\s\S]*control='\\*"\(\[\^\\*"\\*\]\|\\*\.\)\*\\*" \[0-9\]\[0-9\]\[0-9\]\( \|\$\)'[\s\S]*also='\^198\.51\.100\.44 '[\s\S]*END-OF-LOG[\s\S]*problems=
   min: 1
   max: 1
   weight: 2
 - name: pairs-the-second-anchor
   type: tool_used
   tool: mcp__plugin_alpacon_alpacon__execute_file
-  input_match: logs='/var/log/nginx/access\.log'[\s\S]*patterns='\^\\*"\[Gg\]\[Ee\]\[Tt\] [^']*/api/[^']*user/[^']*current[^']*\\*" 200\( \|\$\)'[\s\S]*control='\\*"\(\[\^\\*"\\*\]\|\\*\.\)\*\\*" \[0-9\]\[0-9\]\[0-9\]\( \|\$\)'[\s\S]*also='\^203\.0\.113\.9 '[\s\S]*END-OF-LOG[\s\S]*problems=
+  input_match: logs='/var/log/nginx/access\.log'[\s\S]*active='/var/log/nginx/access\.log'[\s\S]*patterns='\^\\*"\[Gg\]\[Ee\]\[Tt\] [^']*/api/[^']*user/[^']*current[^']*\\*" 200\( \|\$\)'[\s\S]*control='\\*"\(\[\^\\*"\\*\]\|\\*\.\)\*\\*" \[0-9\]\[0-9\]\[0-9\]\( \|\$\)'[\s\S]*also='\^203\.0\.113\.9 '[\s\S]*END-OF-LOG[\s\S]*problems=
   min: 1
   max: 1
   weight: 2
