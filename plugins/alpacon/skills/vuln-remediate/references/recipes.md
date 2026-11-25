@@ -16,11 +16,11 @@ A package's own maintainer scripts may still restart services, and the recipe ca
 - npm: `npm install --dry-run <pkg>@<fixed>` in the application directory.
 - Source build: no preview exists; show the build steps instead, and say what they replace.
 
-Previews do not lock out other package managers: arrange an exclusive maintenance window with the person before upgrading, and stop if another upgrade is active. A package the preview would remove, or a kernel the person did not expect, is a reason to stop before the recipe runs. The recipe refreshes the package lists itself, which can change the transaction after the preview. Before the final recipe review, copy the approved preview's complete `Inst` and `Remv` lines into `approved_changes` below, in their original order; the placeholder deliberately fails closed. After `apt-get update`, the Debian recipe requires a successful simulation with exactly those changes and no removals. Any difference needs a new preview and recipe review before retrying.
+Previews do not lock out other package managers: arrange an exclusive maintenance window with the person before upgrading, and stop if another upgrade is active. A package the preview would remove, or a kernel the person did not expect, is a reason to stop before the recipe runs. The recipe refreshes the package lists itself, which can change the transaction after the preview. Before the final recipe review, copy the approved preview's complete `Inst` and `Remv` lines into `approved_changes` below, in their original order; the placeholder deliberately fails closed. A line holding a `'`, such as a third-party repository label, cannot go inside those quotes: stop and show it. After `apt-get update`, the Debian recipe requires a successful simulation with exactly those changes and no removals. Any difference needs a new preview and recipe review before retrying.
 
 ## Preflight
 
-For a Debian or RHEL-family package, read each server's state in the same `execute_command` call as its preview: send the block for the distribution below, unchanged except for `pkg` or `cve` (and `sudo` before `dnf` on the `sudo` route), as the preview's account. It prints one `key=value` line per fact, then the preview's own output, and exits with the preview's status. Every value is read-only.
+For a Debian or RHEL-family package, read each server's state in the same `execute_command` call as its preview: send the block for the distribution below, unchanged except for `pkg` or `cve` (and `sudo` before `dnf` on the `sudo` route), as the preview's account. On Debian, `pkg` may name several packages inside its single quotes, separated by spaces, as the [several packages](#several-packages) path does; the block's `set -f` keeps a name from expanding as a pattern. It prints one `key=value` line per fact, then the preview's own output, and exits with the preview's status. Every value is read-only.
 
 - `transaction`: `changes` (on Debian, any `Inst`, `Conf` or `Remv` line, so a package left unconfigured counts), `empty` when the preview would change nothing, or `unreadable` when the preview failed.
 - `disk_free_<fs>` and `disk_need_<fs>`: KiB free on each filesystem holding `/`, `/usr`, `/var` and the package cache (`Dir::Cache::archives` for apt, the `cachedir` in `/etc/dnf/dnf.conf` or the installed dnf's default for dnf, or its nearest existing parent), and `/boot` when a kernel is in the transaction, named by the mount point of the first path on it (`root`, `usr`, `var`, `boot`); paths on one filesystem share one set of keys: those whose `df` source is the same `/dev` device (Btrfs subvolumes of one pool included), or, for a source outside `/dev` such as `tmpfs`, the same device number (bind mounts included), and the KiB the transaction adds there. The download lands on the one holding the package cache and the installed-size growth on the one holding `/usr`; when they are one filesystem, the two add up. The growth includes what a kernel puts on `/boot`, so on a server with a separate `/boot` the need shown for `/usr` is an upper bound, and a shortfall there can be a false alarm the person clears. `unknown` marks a size the package manager never reports, such as the growth under dnf 4 (RHEL 8 to 10), which prints only the download size, and nothing is judged on it. dnf 4 prints only `Total size`, with no download line, when every package is already cached, and the download is then 0.
@@ -35,9 +35,10 @@ No anomaly needs a floor or a percentage; each is a fact about this server and t
 Debian and Ubuntu, as an ordinary account or root:
 
 ```sh
-pkg=openssh-server
-sim=$(LC_ALL=C apt-get -s -q install --only-upgrade "$pkg"); rc=$?
-uris=$(LC_ALL=C apt-get -q --print-uris -y install --only-upgrade "$pkg") || uris=failed
+set -f
+pkg='openssh-server'
+sim=$(LC_ALL=C apt-get -s -q install --only-upgrade $pkg); rc=$?
+uris=$(LC_ALL=C apt-get -q --print-uris -y install --only-upgrade $pkg) || uris=failed
 inst=$(printf '%s\n' "$sim" | awk '/^(Inst|Conf|Remv) / {print $2}' | sort -u)
 eval "$(apt-config shell cache Dir::Cache::archives/d 2>/dev/null)"; cache=${cache%/}; [ -n "$cache" ] || cache=/var/cache/apt/archives
 transaction=empty anomaly= unreadable= paths="/ /usr /var $cache"
@@ -184,6 +185,54 @@ dpkg --compare-versions "$after" ge "$fixed"
 - `DPkg::Lock::Timeout` waits for an unattended upgrade that holds the lock instead of failing at once.
 
 Running as an ordinary account with `sudo`, put the environment on the `sudo` line, because `sudo` resets it: `sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l apt-get install ...`, and `sudo apt-get update -q`.
+
+## Several packages
+
+The pending security updates path in `vuln-patch` ([pending-security-updates.md](../../vuln-patch/references/pending-security-updates.md)) upgrades a set of packages with no CVE to name. This template keeps what the single-package one has: the approved `Inst` and `Remv` lines, a refusal when the simulated transaction differs or removes anything, `--no-remove`, and no restart of its own. `targets` holds one `<package> <version>` line per agreed package, with the candidate version that server's preview showed, and the recipe refuses a target whose `Inst` line in `approved_changes` installs another version; both placeholders fail closed.
+
+```bash
+#!/bin/bash
+set -eu
+targets='COPY ONE "<package> <previewed version>" LINE PER AGREED PACKAGE HERE'
+approved_changes='COPY THE APPROVED Inst AND Remv LINES HERE'
+pkgs=()
+while read -r p v; do
+  [[ $p =~ ^[a-z0-9][a-z0-9.+-]+(:[a-z0-9]+)?$ && $v =~ ^[A-Za-z0-9.+:~-]+$ ]] || { echo "not a package and a version: $p $v" >&2; exit 1; }
+  printf '%s\n' "$approved_changes" | awk -v p="$p" -v v="$v" '$1 == "Inst" && $2 == p && index($0, "(" v " ") {f = 1} END {exit !f}' || { echo "not in the approved preview: $p $v" >&2; exit 1; }
+  pkgs+=("$p")
+done <<<"$targets"
+at_target() {
+  local p v now short=0
+  while read -r p v; do
+    now=$(dpkg-query -W -f='${Version}' "$p") || { echo "$p is not installed" >&2; exit 1; }
+    echo "$p $1=$now"
+    dpkg --compare-versions "$now" ge "$v" || short=1
+  done <<<"$targets"
+  return "$short"
+}
+if at_target before; then
+  at_target after
+  exit 0
+fi
+export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l
+apt-get update -q
+simulation=$(LC_ALL=C apt-get -s -q install --only-upgrade "${pkgs[@]}") || exit 1
+changes=$(printf '%s\n' "$simulation" | awk '/^(Inst|Remv) /')
+if [ "$changes" != "$approved_changes" ]; then
+  printf 'the transaction changed; not installing\n%s\n' "$simulation" >&2
+  exit 1
+fi
+if printf '%s\n' "$changes" | grep -q '^Remv '; then
+  echo "the upgrade would remove packages; not installing" >&2
+  exit 1
+fi
+apt-get install -y -q --no-remove --only-upgrade -o Dpkg::Options::=--force-confold -o DPkg::Lock::Timeout=120 "${pkgs[@]}"
+at_target after
+```
+
+- A package left out of `targets` is upgraded only as a dependency the preview showed; a new package such as the `linux-image-<abi>` a kernel meta package pulls in is installed only when its `Inst` line is in `approved_changes`.
+- A rerun after a partial upgrade sees a smaller transaction than the approved one and refuses: it needs a new preview and review, like any other difference.
+- The `sudo` route puts the environment on the `sudo` line, as for the single-package template.
 
 ## RHEL, Rocky, AlmaLinux, Fedora
 

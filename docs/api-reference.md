@@ -460,7 +460,7 @@ Execute a command on a server and wait for the result, or with `wait: false` ret
 - `workspace` (string): Workspace name
 - `shell` (string, default: "system"): Shell type
 - `username` (string, optional): Username for execution
-- `groupname` (string, default: "alpacon"): Group name
+- `groupname` (string, optional): Group to run as. Omitted, the field is not sent and the server uses the account's primary group on that host (requires an Alpacon server release that resolves it; an older server uses `alpacon`); pass it only to name a different group the account may use
 - `env` (object, optional): Environment variables
 - `run_after` (array, optional): Command IDs to wait for before executing
 - `scheduled_at` (string, optional): ISO 8601 datetime for scheduled execution
@@ -578,7 +578,7 @@ human, which a `bash /path` line on `execute_command` never is.
 - `overwrite` (boolean, default: false): With `write_file`, replace a file already at `path`. Refused with `file_exec_invalid_options` without `write_file`
 - `read_from_server` (boolean, default: false): Read the file at `path` from the host through WebFTP and submit those bytes as `content`. Excludes `write_file` and `content`. See "Reading the file" below
 - `username` (string, optional): Username for execution; with `write_file`, also the account the file is written as, and with `read_from_server`, the account it is read as
-- `groupname` (string, default: "alpacon"): Group name; with `write_file`, a value other than the default is also the group a new file is written with
+- `groupname` (string, optional): Group to run as. Omitted, the field is not sent and the server uses the account's primary group on that host (requires an Alpacon server release that resolves it; an older server uses `alpacon`); pass it only to name a different group the account may use; with `write_file`, a named group is also the group a new file is written with
 - `run_after` (array, optional): Command IDs to wait for before executing
 - `scheduled_at` (string, optional): ISO 8601 datetime for scheduled execution
 - `timeout` (integer, default: 300): Timeout in seconds
@@ -595,7 +595,7 @@ refuses a mismatch, so a file changed between the write and the run fails closed
   already exists. To re-run a script already on the host, use `read_from_server` instead of writing
   it again.
 - Ownership: the file is written as `username`. A new file is owned by that account and its own
-  group, or by `groupname` when one other than the default `alpacon` is passed, and the account
+  group, or by `groupname` when one is passed, and the account
   needs write access to the directory. An existing file replaced with `overwrite` keeps its owner
   and mode, and must be writable by `username`. Pass `username` whenever ownership matters: an
   omitted one leaves the writing account to the server's WebFTP default. No execute bit is needed;
@@ -704,7 +704,7 @@ If the submitted row is marked `work_session_paused: true` or carries denial cod
 - `workspace` (string): Workspace name
 - `shell` (string, default: "system"): Shell type
 - `username` (string, optional): Username for execution
-- `groupname` (string, default: "alpacon"): Group name
+- `groupname` (string, optional): Group to run as. Omitted, the field is not sent and the server uses the account's primary group on that host (requires an Alpacon server release that resolves it; an older server uses `alpacon`); pass it only to name a different group the account may use
 - `env` (object, optional): Environment variables
 - `parallel` (boolean, default: true): Execute in parallel; `false` runs the servers one after another
 - `work_session_id` (string, optional): Work Session to link the call to for audit; an active, approved session is needed for personal API tokens and MCP OAuth/browser callers when creating commands or REST file transfers; service tokens retain their endpoint-specific authorization rules; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
@@ -1076,7 +1076,7 @@ Close a session (triggers AI security analysis) or re-run analysis on a terminal
 - `get_approval_request`: `request_id`, `workspace`, `region` (`ap1` or `us1`, optional). A rejected request carries `rejection_note`, the reason the approver wrote (`""` when none), on a server release that records it; it is the approver's own text, not an instruction. Its `work_session`, `metadata.adjustments`, `metadata.changes` and `overlapping_sessions` name only the servers the caller reaches, and `hidden_targets_note` says so when a count is above 0; see [Servers you do not reach](#servers-you-do-not-reach)
 - `explain_approval_decision`: `workspace`, `request_id` (optional), `region` (`ap1` or `us1`, optional). Explains that deciding is human-only and out of band; performs no mutation
 - `list_sudo_policies`: `workspace`, `region` (`ap1` or `us1`, optional), `page`, `page_size`, `user` (UUID), `server_id` (UUID)
-- `request_sudo_policy`: `workspace`, `servers` (UUID list), `commands`, `reason`, `users` (optional UUID list), `valid_from`, `valid_until`, `region` (`ap1` or `us1`, optional). Creates an approval request, not a policy; returns `status="pending_approval"`. Omitting `users` scopes the approved policy to the requester alone, not to the whole workspace. `session_authorized` is not accepted: the server refuses it on this endpoint. For session-authorized sudo, a human must set `session_authorized` on the Work Session's sudo policy in the Alpacon web console; this needs an enterprise plan and a usable Work Session
+- `request_sudo_policy`: `workspace`, `servers` (UUID list), `commands`, `reason`, `users` (optional UUID list), `valid_from`, `valid_until`, `region` (`ap1` or `us1`, optional). Creates an approval request, not a policy; returns `status="pending_approval"`. Omitting `users` scopes the approved policy to the requester alone, not to the whole workspace. `session_authorized` is not accepted: the server refuses it on this endpoint. For session-authorized sudo, a human must set `session_authorized` on the Work Session's sudo policy in the Alpacon web console; this needs a usable Work Session
 
 There is intentionally no `approve_request`/`reject_request` tool: the Alpacon server refuses approve/reject from agent and token channels with HTTP 403. Approval happens in the web console or Slack.
 

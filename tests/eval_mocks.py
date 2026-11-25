@@ -5,6 +5,7 @@
 
 import asyncio
 import json
+import re
 import sys
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
@@ -14,6 +15,7 @@ from unittest.mock import AsyncMock, patch
 import httpx
 
 from server import mcp
+from tests.skill_scripts import doc_blocks
 from tools import cert_tools, command_tools, server_tools, work_session_tools
 from utils.http_client import http_client
 from utils.types import ToolResponse
@@ -57,6 +59,32 @@ PREFLIGHT_CASES = {  # each mock dir and the session its rollout runs in
         'remediate-asks-on-an-empty-preview-below-the-fixed-version': PATCH_SESSION,
     }.items()
 }
+NO_CVE_CASE = 'patch-finds-kept-back-security-updates-without-a-cve/mocks/alpacon'
+NO_CVE_SESSION = {
+    'servers': [SID],
+    'scopes': ['command'],
+    'target_account_username': 'ubuntu',
+    'description': 'Read pending security updates on web-01; changes nothing.',
+}
+CMD_CHECK = 'a3b4c5d6-7e8f-4a1b-9c2d-3e4f5a6b7c8d'
+EXPOSURE_CASE = 'exposure-check-asks-before-a-default-login/mocks/alpacon'
+EXPOSURE_SESSION = {
+    'servers': [SID],
+    'scopes': ['command'],
+    'target_account_username': 'ubuntu',
+    'description': 'Read listening sockets and Docker settings on web-01; changes nothing.',
+}
+CMD_EXPOSURE = '6e1f2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b'
+EXPOSURE_RESULT = (
+    'processes=own-only\n'
+    'listen addr=0.0.0.0 port=22 scope=all watched=no process=\n'
+    'listen addr=0.0.0.0 port=9000 scope=all watched=yes process=\n'
+    'listen addr=0.0.0.0 port=9001 scope=all watched=yes process=\n'
+    'listen addr=:: port=22 scope=all watched=no process=\n'
+    'verdict=exposed\n'
+    'findings=port:9000@0.0.0.0,port:9001@0.0.0.0\n'
+    'unknowns=\n'
+)
 SERVER_NAMES = {SID: 'web-01', SID2: 'web-02', SID3: 'web-03'}
 SERVER = {'id': SID, 'name': 'web-01'}
 ECHO = 'ECHO-INPUT-COMMAND'
@@ -95,6 +123,15 @@ def command_row(cid: str, line: str, **extra: object) -> dict[str, object]:
         'requested_by': {'username': 'agent'},
     }
     return row | extra
+
+
+def exposure_check_line() -> str:
+    """The exposure-check skill's check filled with the MinIO preset, as an agent submits it."""
+    block = doc_blocks('exposure-check/references/checks.md', 'sh')[0]
+    block = re.sub(r"^ports='[^']*'$", "ports='9000 9001'", block, flags=re.M)
+    return re.sub(r"^endpoints='[^']*'$", "endpoints=''", block, flags=re.M).rstrip(
+        '\n'
+    )
 
 
 def session_row(sid: str, status: str, **extra: object) -> dict[str, object]:
@@ -526,6 +563,50 @@ MOCKS: list[Mock] = [
         for case, session in PREFLIGHT_CASES.items()
         for m in _rollout_mocks(case, session)
     ),
+    *_rollout_mocks(NO_CVE_CASE, NO_CVE_SESSION),
+    Mock(  # accepted whatever the command; the result is read with check_command_status
+        f'{NO_CVE_CASE}/execute_command_multi_server.md',
+        {('POST', COMMANDS): httpx.Response(201, json={'id': CMD_CHECK})},
+        lambda: command_tools.execute_command_multi_server(
+            server_ids=[SID],
+            command=ECHO,
+            workspace=WS,
+            region=REGION,
+            username='ubuntu',
+            work_session_id=WSID,
+            purpose='read pending security updates; read-only',
+        ),
+        echo=ECHO,
+    ),
+    *_rollout_mocks(EXPOSURE_CASE, EXPOSURE_SESSION),
+    Mock(  # accepted whatever the command; the result is read with check_command_status
+        f'{EXPOSURE_CASE}/execute_command_multi_server.md',
+        {('POST', COMMANDS): httpx.Response(201, json={'id': CMD_EXPOSURE})},
+        lambda: command_tools.execute_command_multi_server(
+            server_ids=[SID],
+            command=ECHO,
+            workspace=WS,
+            region=REGION,
+            username='ubuntu',
+            work_session_id=WSID,
+            purpose='read listening sockets and Docker settings; read-only',
+        ),
+        echo=ECHO,
+    ),
+    Mock(  # the record carries the check's full text, so it matches what the agent sent
+        f'{EXPOSURE_CASE}/check_command_status.md',
+        {
+            ('GET', f'{COMMANDS}{CMD_EXPOSURE}/'): httpx.Response(
+                200,
+                json=command_row(
+                    CMD_EXPOSURE, exposure_check_line(), result=EXPOSURE_RESULT
+                ),
+            )
+        },
+        lambda: command_tools.check_command_status(
+            command_id=CMD_EXPOSURE, workspace=WS, region=REGION
+        ),
+    ),
     Mock(  # every run of the recipe fails, so only the first server may see one
         f'{PATCH_CASE}/execute_file.md',
         {
@@ -574,6 +655,7 @@ HAND_WRITTEN = {
     f'{PATCH_CASE}/execute_command.md',
     f'{SECOND_CASE}/execute_command.md',
     f'{SECOND_CASE}/execute_file.md',  # an agent responder: each server answers differently
+    f'{NO_CVE_CASE}/check_command_status.md',  # answers for whichever command was submitted
     *(
         f'{case}/{tool}.md'
         for case in PREFLIGHT_CASES

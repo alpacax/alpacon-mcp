@@ -109,8 +109,8 @@ _NEXT_ACTION_BY_CATEGORY: dict[str, str] = {
         'policy, and a command runs non-interactively so it can never supply MFA. '
         'A human must set session_authorized on the covering Work Session sudo '
         'policy in the Alpacon web console '
-        '(enterprise plan, and the policy must be tied to a usable Work '
-        'Session), then retry. You cannot grant it yourself.'
+        '(the policy must be tied to a usable Work Session), then retry. '
+        'You cannot grant it yourself.'
     ),
     'SUDO_INTENT_DEVIATION': (
         'This command was judged off-purpose for the Work Session and an '
