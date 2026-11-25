@@ -5,7 +5,6 @@ import os
 import re
 import shutil
 import subprocess
-from collections.abc import Iterator
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -62,15 +61,6 @@ def log(tmp_path: Path) -> Path:
     path = tmp_path / 'access.log'
     path.write_text(HOME + '\n')
     return path
-
-
-@pytest.fixture
-def locked_dir(tmp_path: Path) -> Iterator[Path]:
-    """A directory the test locks; restored afterwards so pytest can remove it."""
-    path = tmp_path / 'locked'
-    path.mkdir()
-    yield path
-    path.chmod(0o700)
 
 
 def test_search_counts_matches_in_rotated_and_compressed_copies(
@@ -388,7 +378,7 @@ def test_record_run_into_the_tail_of_a_broken_line_is_searched_as_broken(
 
     assert 'total pattern=1 count=1 shown=1' in out
     assert any(line.startswith('match ') and ' broken text=' in line for line in out)
-    assert any('status=no_control lines=1 control=0' in line for line in out)
+    assert any('status=partial lines=1 control=1' in line for line in out)
 
 
 def test_user_agent_that_looks_like_a_second_request_cannot_hide_the_match(
@@ -400,6 +390,16 @@ def test_user_agent_that_looks_like_a_second_request_cannot_hide_the_match(
 
     assert 'total pattern=1 count=1 shown=1' in out
     assert out[-1].startswith('search=incomplete')
+
+
+def test_lines_that_match_control_but_not_line_are_partial_not_no_control(
+    shell: str, log: Path
+) -> None:
+    log.write_bytes((HOME + '\r\n').encode())
+
+    out = _search(shell, log)
+
+    assert any('status=partial lines=1 control=1' in line for line in out)
 
 
 @pytest.mark.parametrize('show', ['', '0', '-1', '1.5'])

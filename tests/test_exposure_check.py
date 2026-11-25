@@ -113,15 +113,6 @@ def _login(
 
 
 @pytest.fixture
-def locked_dir(tmp_path: Path) -> Iterator[Path]:
-    """A directory the test locks; restored afterwards so pytest can remove it."""
-    path = tmp_path / 'locked'
-    path.mkdir()
-    yield path
-    path.chmod(0o700)
-
-
-@pytest.fixture
 def docker_sock() -> Iterator[Path]:
     """A real Unix socket on a path short enough for macOS's 104-byte limit."""
     with (

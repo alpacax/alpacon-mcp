@@ -2,9 +2,10 @@
 Autouse fixtures keep tests off the real TokenManager and its token.json.
 """
 
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Mapping
 from contextlib import asynccontextmanager
 from http import HTTPStatus
+from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -272,3 +273,12 @@ async def in_tool_call_round[T](
     ctx = request_context('tools/call', capabilities, {}, protocol_version)
     await bind_tool_call_round(ctx, call_next)
     return seen[0]
+
+
+@pytest.fixture
+def locked_dir(tmp_path: Path) -> Iterator[Path]:
+    """A directory the test locks; restored afterwards so pytest can remove it."""
+    path = tmp_path / 'locked'
+    path.mkdir()
+    yield path
+    path.chmod(0o700)
