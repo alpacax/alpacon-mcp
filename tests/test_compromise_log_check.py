@@ -377,7 +377,7 @@ def test_escape_some_awk_builds_misread_is_refused(
     assert out == ['search=incomplete reason=unsupported-expression']
 
 
-def test_record_run_into_the_tail_of_a_broken_line_is_not_read(
+def test_record_run_into_the_tail_of_a_broken_line_is_searched_as_broken(
     shell: str, log: Path
 ) -> None:
     log.write_bytes(
@@ -386,8 +386,20 @@ def test_record_run_into_the_tail_of_a_broken_line_is_not_read(
 
     out = _search(shell, log)
 
-    assert 'total pattern=1 count=0 shown=0' in out
+    assert 'total pattern=1 count=1 shown=1' in out
+    assert any(line.startswith('match ') and ' broken text=' in line for line in out)
     assert any('status=no_control lines=1 control=0' in line for line in out)
+
+
+def test_user_agent_that_looks_like_a_second_request_cannot_hide_the_match(
+    shell: str, log: Path
+) -> None:
+    log.write_text(HOME + '\n' + RESET.rsplit(' "', 1)[0] + ' "" 200 x"\n')
+
+    out = _search(shell, log)
+
+    assert 'total pattern=1 count=1 shown=1' in out
+    assert out[-1].startswith('search=incomplete')
 
 
 @pytest.mark.parametrize('show', ['', '0', '-1', '1.5'])
@@ -1305,9 +1317,58 @@ def test_log_path_with_a_trailing_space_is_not_read_as_another(
     assert out[-1].startswith('search=incomplete')
 
 
-def test_active_log_gone_with_its_copies_left_is_missing(shell: str, log: Path) -> None:
-    Path(f'{log}.1').write_text(HOME + '\n')
+def test_active_log_gone_is_missing_and_its_copies_are_still_searched(
+    shell: str, log: Path
+) -> None:
+    Path(f'{log}.1').write_text(f'{HOME}\n{RESET}\n')
     log.unlink()
+
+    out = _search(shell, log)
+
+    assert f'file path={log} status=missing' in out
+    assert 'total pattern=1 count=1 shown=1' in out
+    assert out[-1].startswith('search=incomplete')
+
+
+def test_active_path_named_like_a_copy_of_another_listed_path_is_refused(
+    shell: str, log: Path
+) -> None:
+    copy = Path(f'{log}.1-old')
+    copy.write_text(HOME + '\n')
+
+    out = _search(shell, log, copy, active=f'{log}\n{copy}')
+
+    assert out == ['search=incomplete reason=active-is-a-copy']
+
+
+def test_active_log_whose_name_only_starts_like_a_dated_copy_is_searched(
+    shell: str, log: Path
+) -> None:
+    other = Path(f'{log}-18080')
+    other.write_text(HOME + '\n')
+
+    out = _search(shell, log, other)
+
+    assert out[-1] == 'search=complete files=2 problems=0'
+
+
+@pytest.mark.parametrize('suffix', ['', '.1', '-20260804.gz'])
+def test_log_listed_twice_or_with_its_own_rotated_copy_is_refused(
+    shell: str, log: Path, suffix: str
+) -> None:
+    other = Path(f'{log}{suffix}')
+    other.write_text(HOME + '\n')
+
+    out = _search(shell, log, other, active=str(log))
+
+    assert out == ['search=incomplete reason=listed-twice']
+
+
+def test_compressed_active_log_gone_with_its_copies_left_is_missing(
+    shell: str, tmp_path: Path
+) -> None:
+    log = tmp_path / 'access.log.gz'
+    Path(f'{log}.1.gz').write_bytes(gzip.compress((HOME + '\n').encode()))
 
     out = _search(shell, log)
 
@@ -1315,16 +1376,50 @@ def test_active_log_gone_with_its_copies_left_is_missing(shell: str, log: Path) 
     assert out[-1].startswith('search=incomplete')
 
 
-@pytest.mark.parametrize('suffix', ['.1', '.1-old', '-20260804.gz'])
-def test_active_path_named_like_a_copy_of_another_listed_path_is_refused(
-    shell: str, log: Path, suffix: str
+def test_log_changed_after_its_own_pass_is_changed(
+    shell: str, log: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    copy = Path(f'{log}{suffix}')
-    copy.write_text(HOME + '\n')
+    other = tmp_path / 'other.log'
+    other.write_text(HOME + '\n')
+    calls = tmp_path / 'calls'
+    install_fakes(
+        tmp_path / 'bin',
+        {
+            'cat': f'/bin/cat; echo >> "{calls}"; '
+            f'[ "$(wc -l < "{calls}")" -ne 2 ] || printf "%s\\n" "$FILL" >> "$LOG"'
+        },
+    )
+    monkeypatch.setenv('LOG', str(log))
+    monkeypatch.setenv('FILL', RESET)
+    monkeypatch.setenv('PATH', f'{tmp_path / "bin"}{os.pathsep}{os.environ["PATH"]}')
 
-    out = _search(shell, log, copy, active=f'{log}\n{copy}')
+    out = _search(shell, log, other, active='')
 
-    assert out == ['search=incomplete reason=active-is-a-copy']
+    assert f'file path={log} status=changed' in out
+    assert out[-1].startswith('search=incomplete')
+
+
+def test_active_link_pointed_at_another_file_before_the_read_is_changed(
+    shell: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target, other, link = tmp_path / 'a', tmp_path / 'b', tmp_path / 'access.log'
+    target.write_text(f'{RESET}\n{HOME}\n')
+    other.write_text((HOME + '\n') * 5)
+    link.symlink_to(target)
+    done = tmp_path / 'swapped'
+    install_fakes(
+        tmp_path / 'bin',
+        {
+            'head': f'[ -e "{done}" ] || {{ : > "{done}"; mv "{other}" "{target}"; }}; '
+            '/usr/bin/head "$@"'
+        },
+    )
+    monkeypatch.setenv('PATH', f'{tmp_path / "bin"}{os.pathsep}{os.environ["PATH"]}')
+
+    out = _search(shell, link)
+
+    assert f'file path={link} status=changed' in out
+    assert out[-1].startswith('search=incomplete')
 
 
 def test_active_path_not_in_logs_is_refused(shell: str, log: Path) -> None:
