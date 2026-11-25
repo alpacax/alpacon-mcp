@@ -1185,6 +1185,47 @@ def test_copy_named_outside_the_rotation_rules_is_read_once_when_listed(
     assert out[-1] == 'search=complete files=2 problems=0'
 
 
+def test_listed_uncompressed_copy_rewritten_after_read_is_changed(
+    shell: str, log: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    copy = Path(f'{log}.1-old')
+    copy.write_text((HOME + '\n') * 20)
+    calls = tmp_path / 'calls'
+    install_fakes(
+        tmp_path / 'bin',
+        {
+            'cat': f'/bin/cat; echo >> "{calls}"; '
+            f'[ "$(wc -l < "{calls}")" -ne 2 ] || printf "%s" "$NEW" > "$COPY"'
+        },
+    )
+    monkeypatch.setenv('COPY', str(copy))
+    monkeypatch.setenv('NEW', (HOME + '\n') * 19 + HOME.replace('.7 ', '.8 ') + '\n')
+    monkeypatch.setenv('PATH', f'{tmp_path / "bin"}{os.pathsep}{os.environ["PATH"]}')
+
+    out = _search(shell, log, copy)
+
+    assert f'file path={copy} status=changed' in out
+    assert out[-1].startswith('search=incomplete')
+
+
+def test_listed_log_that_grows_while_read_stays_complete(
+    shell: str, log: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    other = tmp_path / 'other.log'
+    other.write_text(HOME + '\n')
+    install_fakes(
+        tmp_path / 'bin',
+        {'cat': '/bin/cat; printf "%s\\n" "$FILL" >> "$OTHER"'},
+    )
+    monkeypatch.setenv('OTHER', str(other))
+    monkeypatch.setenv('FILL', HOME)
+    monkeypatch.setenv('PATH', f'{tmp_path / "bin"}{os.pathsep}{os.environ["PATH"]}')
+
+    out = _search(shell, log, other)
+
+    assert out[-1] == 'search=complete files=2 problems=0'
+
+
 def test_listed_archive_appended_to_while_read_is_changed(
     shell: str, log: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
