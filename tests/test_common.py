@@ -1216,8 +1216,8 @@ def test_environment_refusal_with_server_message_adds_no_second_hint():
 
 
 @pytest.mark.parametrize('code', ['command_dangerous_env', 'command_invalid_env'])
-def test_environment_refusal_from_a_current_server_keeps_local_guidance(code):
-    # The body today's server sends: the code with DRF's default message.
+def test_environment_refusal_without_names_keeps_local_guidance(code):
+    # Older servers omit the names and send DRF's default message.
     result = _unwrap_error(
         {
             'error': 'HTTP Error',
@@ -1236,5 +1236,42 @@ def test_environment_refusal_from_a_current_server_keeps_local_guidance(code):
         default_message='Command execution failed',
     )
     assert result['error_code'] == code
+    assert 'refused_keys' not in result
     assert 'Invalid input.' not in result['message']
     assert 'inside the command' in result['message']
+
+
+@pytest.mark.parametrize('code', ['command_invalid_env', 'command_dangerous_env'])
+@pytest.mark.parametrize('names', [[], ['TEST_ONE', '_TEST2']])
+def test_environment_refusal_returns_server_names(code, names):
+    result = _unwrap_error(
+        {
+            'error': 'HTTP Error',
+            'status_code': 400,
+            'response': json.dumps({'code': code, 'refused_keys': names}),
+        },
+        default_message='Command execution failed',
+    )
+    assert result['refused_keys'] == names
+    assert result['error_code'] == code
+
+
+@pytest.mark.parametrize(
+    ('status', 'code', 'names'),
+    [
+        (403, 'command_invalid_env', ['TEST']),
+        (400, 'another_code', ['TEST']),
+        (400, 'command_invalid_env', 'TEST'),
+        (400, 'command_invalid_env', ['TEST=value']),
+    ],
+)
+def test_unrelated_or_malformed_refusal_omits_names(status, code, names):
+    result = _unwrap_error(
+        {
+            'error': 'HTTP Error',
+            'status_code': status,
+            'response': json.dumps({'code': code, 'refused_keys': names}),
+        },
+        default_message='Command execution failed',
+    )
+    assert 'refused_keys' not in result

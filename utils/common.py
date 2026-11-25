@@ -899,6 +899,16 @@ def unwrap_http_result(
     message = result.get('message', default_message)
     server_reason = False
     if code in COMMAND_ENV_REFUSAL_HINTS and body is not None:
+        names = body.get('refused_keys')
+        if (
+            status_code == HTTPStatus.BAD_REQUEST
+            and isinstance(names, list)
+            and all(
+                isinstance(name, str) and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', name)
+                for name in names
+            )
+        ):
+            error_kwargs['refused_keys'] = names
         # These policy messages name keys and reasons, never submitted values.
         fields = body.get('field_errors')
         entries = fields.get('non_field_errors') if isinstance(fields, dict) else None
