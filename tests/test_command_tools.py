@@ -6426,10 +6426,75 @@ class TestWorkSessionPause:
     """A command row that paused its Work Session, or that the pause refused."""
 
     _PAUSED = 'The Work Session is paused. Stop: do not retry'
+    session: dict[str, JsonValue]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('status', ['active', 'paused', 'completed'])
+    async def test_history_uses_visible_nested_session_without_another_request(
+        self, status, mock_http_client, mock_token_manager
+    ):
+        session = {
+            'id': '8e063801-18ab-4c8a-a23e-b06d81bc6df8',
+            'title': 'Maintenance',
+            'description': 'Check service status',
+            'status': status,
+            'assignee': None,
+        }
+        mock_http_client.get.return_value = {
+            'count': 1,
+            'results': [
+                {
+                    'id': 'cmd-history',
+                    'status': 'rejected',
+                    'denial_code': 'superseded_by_pause',
+                    'work_session': session,
+                }
+            ],
+        }
+
+        result = await list_commands(workspace='testworkspace', region='ap1')
+
+        entry = result['data']['results'][0]
+        assert entry['work_session'] == session
+        assert entry['work_session_id'] == session['id']
+        assert entry['work_session_status'] == status
+        assert entry['denial_code'] == 'superseded_by_pause'
+        assert 'work_session_paused' not in entry
+        if status == 'paused':
+            assert entry['requires_human_approval'] is True
+            assert entry['next_action'].startswith(self._PAUSED)
+        elif status == 'active':
+            assert 'requires_human_approval' not in entry
+            assert 'next_action' not in entry
+        else:
+            assert 'stop polling' in entry['next_action'].lower()
+        mock_http_client.get.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_trigger_uses_nested_current_state_before_a_forbidden_lookup(
+        self, mock_http_client, mock_token_manager
+    ):
+        self.session = {'error': 'Forbidden', 'status_code': 403}
+        session = {
+            'id': 'ws-1',
+            'title': 'Maintenance',
+            'description': 'Check service status',
+            'status': 'paused',
+            'assignee': None,
+        }
+
+        result = await self._check(
+            status='awaiting_approval', work_session_paused=True, work_session=session
+        )
+
+        assert result['work_session_status'] == 'paused'
+        assert result['requires_human_approval'] is True
+        assert self._PAUSED in result['next_action']
+        mock_http_client.get.assert_not_awaited()
 
     @pytest.fixture(autouse=True)
     def current_session(self, mock_http_client):
-        self.session: dict[str, JsonValue] = {
+        self.session = {
             'status': 'paused',
             'paused_at': '2026-11-20T07:00:00Z',
         }

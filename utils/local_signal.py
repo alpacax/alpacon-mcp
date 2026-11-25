@@ -38,6 +38,8 @@ logger = get_logger('local_signal')
 type SignalKind = Literal['denied', 'approval_pending', 'paused']
 type SignalTarget = Literal['command', 'file_transfer', 'work_session', 'sudo_policy']
 type PendingKey = tuple[SignalKind, SignalTarget, str, str, str]
+type PauseKey = tuple[str, str, str, str]
+type WindowKey = tuple[str, SignalKind, str, str]
 
 _stdio: ContextVar[bool] = ContextVar('local_signal_stdio', default=False)
 _tasks: set[asyncio.Task[None]] = set()
@@ -98,6 +100,7 @@ _SESSION_ID = re.compile(r'[A-Za-z0-9_-]{1,64}')
 _WORD_SPACE = ' \t\n\r'
 _MAX_BODY = 256
 _PENDING_TTL = 10 * 60
+_PAUSE_COMMAND_PREFIX = 'command:'
 # Cloud console links use the built-in domain, never an inferred API parent.
 _CLOUD_BASE_DOMAIN = 'alpacon.io'
 
@@ -258,6 +261,8 @@ class Signal:
     # `assignee` when the session's assignee confirms the held command (ADR 0114).
     lane: str = ''
     pause_id: str = ''
+    pause_command_id: str = ''
+    pause_state: str = ''
 
     def __post_init__(self) -> None:
         if not _ACCOUNT.fullmatch(self.account):
@@ -280,8 +285,13 @@ class Signal:
             title = 'Alpacon: session paused'
             subject = f'Work Session {self.session}' if self.session else 'Work Session'
             body = (
-                f'{subject} is paused after a critical denial. '
-                'Open the web console for the available recovery actions.'
+                f'{subject} was paused. Its current status could not be verified. '
+                'Check the web console for its current status.'
+                if self.pause_state == 'event'
+                else (
+                    f'{subject} is paused after a critical denial. '
+                    'Open the web console for the available recovery actions.'
+                )
             )
         elif self.kind == 'approval_pending' and self.target in (
             'work_session',
@@ -342,11 +352,72 @@ class Signal:
 
 class RateLimiter:
     def __init__(self) -> None:
-        self._windows: OrderedDict[
-            tuple[str, SignalKind, str, str], tuple[float, int, set[PendingKey]]
-        ] = OrderedDict()
+        self._windows: OrderedDict[WindowKey, tuple[float, int, set[PendingKey]]] = (
+            OrderedDict()
+        )
         self._pending: OrderedDict[PendingKey, float] = OrderedDict()
-        self._pauses: OrderedDict[tuple[str, str, str, str], None] = OrderedDict()
+        self._pauses: OrderedDict[PauseKey, None] = OrderedDict()
+        self._pause_commands: OrderedDict[PauseKey, tuple[str | None, bool]] = (
+            OrderedDict()
+        )
+
+    def _remember_pause(
+        self,
+        pause_key: PauseKey | None,
+        command_key: PauseKey | None,
+        *,
+        announced: bool = True,
+    ) -> None:
+        if announced and pause_key is not None:
+            self._pauses[pause_key] = None
+            if len(self._pauses) > 256:
+                self._pauses.popitem(last=False)
+        known_episode = (
+            pause_key[1]
+            if pause_key and not pause_key[1].startswith(_PAUSE_COMMAND_PREFIX)
+            else None
+        )
+        if command_key is not None:
+            previous_episode, was_announced = self._pause_commands.get(
+                command_key, (None, False)
+            )
+            if known_episode is not None and previous_episode not in (
+                None,
+                known_episode,
+            ):
+                was_announced = False
+            self._pause_commands[command_key] = (
+                known_episode or previous_episode,
+                announced or was_announced,
+            )
+            if len(self._pause_commands) > 256:
+                self._pause_commands.popitem(last=False)
+
+    def _merge_pause_alias(
+        self,
+        key: WindowKey,
+        episode: PendingKey | None,
+        trigger: PendingKey | None,
+        *,
+        announced: bool,
+    ) -> None:
+        if episode is None or key not in self._windows:
+            return
+        started, folded, identities = self._windows[key]
+        if announced:
+            aliases = {episode}
+            if trigger is not None:
+                aliases.add(trigger)
+            duplicates = identities & aliases
+            identities.difference_update(duplicates)
+            folded -= len(duplicates)
+        elif trigger is not None and trigger != episode and trigger in identities:
+            identities.remove(trigger)
+            if episode in identities:
+                folded -= 1
+            else:
+                identities.add(episode)
+        self._windows[key] = (started, folded, identities)
 
     def take(
         self,
@@ -358,21 +429,68 @@ class RateLimiter:
         target: SignalTarget = 'command',
         pending_id: str = '',
         pause_id: str = '',
+        pause_command_id: str = '',
     ) -> int | None:
         now = monotonic()
-        pause_key = (session_id[:128], pause_id[:128], workspace, region)
-        if kind == 'paused' and pause_id and pause_key in self._pauses:
+        key = (session_id[:128], kind, workspace, region)
+        command_key = (
+            (session_id[:128], pause_command_id[:128], workspace, region)
+            if kind == 'paused' and pause_command_id
+            else None
+        )
+        known_episode, command_announced = (
+            self._pause_commands.get(command_key, (None, False))
+            if command_key
+            else (None, False)
+        )
+        if known_episode is not None and (
+            not pause_id or pause_id.startswith(_PAUSE_COMMAND_PREFIX)
+        ):
+            pause_id = known_episode
+        pause_key = (
+            (session_id[:128], pause_id[:128], workspace, region)
+            if kind == 'paused' and pause_id
+            else None
+        )
+        identity = pause_id or (
+            f'{_PAUSE_COMMAND_PREFIX}{pause_command_id}' if pause_command_id else ''
+        )
+        episode: PendingKey | None = (
+            ('paused', target, f'{session_id[:128]}:{identity}', workspace, region)
+            if kind == 'paused' and identity
+            else None
+        )
+        trigger: PendingKey | None = (
+            (
+                'paused',
+                target,
+                f'{session_id[:128]}:{_PAUSE_COMMAND_PREFIX}{pause_command_id}',
+                workspace,
+                region,
+            )
+            if kind == 'paused' and pause_command_id
+            else None
+        )
+        if (pause_key is not None and pause_key in self._pauses) or (
+            command_key is not None
+            and command_announced
+            and (
+                pause_key is None
+                or known_episode is None
+                or known_episode == pause_key[1]
+            )
+        ):
+            self._merge_pause_alias(key, episode, trigger, announced=True)
+            self._remember_pause(pause_key, command_key)
             return None
         while (
             self._pending and now - next(iter(self._pending.values())) >= _PENDING_TTL
         ):
             self._pending.popitem(last=False)
-        pending_key = None
-        if (kind in ('approval_pending', 'denied') and pending_id) or (
-            kind == 'paused' and pause_id
-        ):
-            if kind == 'paused':
-                pending_id = f'{session_id[:128]}:{pause_id[:128]}'
+        pending_key: PendingKey | None = None
+        if kind == 'paused' and (pause_id or pause_command_id):
+            pending_key = episode
+        elif kind in ('approval_pending', 'denied') and pending_id:
             pending_key = (kind, target, pending_id, workspace, region)
             if pending_key in self._pending:
                 return None
@@ -380,11 +498,13 @@ class RateLimiter:
             self._windows and now - next(iter(self._windows.values()))[0] > 24 * 60 * 60
         ):
             self._windows.popitem(last=False)
-        key = (session_id[:128], kind, workspace, region)
+        if kind == 'paused' and pause_id:
+            self._merge_pause_alias(key, episode, trigger, announced=False)
         previous = self._windows.get(key)
         if previous is not None:
             started, folded, folded_pending = previous
             if now - started < 60:
+                self._remember_pause(pause_key, command_key, announced=False)
                 if pending_key is not None:
                     if pending_key in folded_pending:
                         return None
@@ -397,14 +517,11 @@ class RateLimiter:
             folded = 0
         self._windows[key] = (now, 0, set())
         self._windows.move_to_end(key)
-        if pending_key is not None:
+        if pending_key is not None and kind != 'paused':
             self._pending[pending_key] = now
             if len(self._pending) > 256:
                 self._pending.popitem(last=False)
-        if kind == 'paused' and pause_id:
-            self._pauses[pause_key] = None
-            if len(self._pauses) > 256:
-                self._pauses.popitem(last=False)
+        self._remember_pause(pause_key, command_key)
         return folded
 
 
@@ -575,11 +692,13 @@ def _from_result(
         and isinstance(sudo_denial, dict)
         and sudo_denial.get('status') == 'pending_approval'
     )
-    pause_marked = any(
-        source.get('work_session_paused') is True
-        or _string(source, 'denial_code') in PAUSE_DENIAL_CODES
-        for source in (result, row)
+    pause_triggered = any(
+        source.get('work_session_paused') is True for source in (result, row)
     )
+    pause_marked = pause_triggered or any(
+        _string(source, 'denial_code') in PAUSE_DENIAL_CODES for source in (result, row)
+    )
+    pause_event = False
     if pause_marked and (
         'work_session_status' in result or 'work_session_status' in row
     ):
@@ -587,7 +706,9 @@ def _from_result(
             'work_session_status', row.get('work_session_status')
         )
         if current_status != 'paused':
-            if current_status == 'active' and approval_pending:
+            if current_status is None and pause_triggered:
+                pause_event = True
+            elif current_status == 'active' and approval_pending:
                 pause_marked = False
             else:
                 return None
@@ -677,10 +798,13 @@ def _from_result(
         workspace_url=workspace_url,
         lane=_string(result, 'approval_lane'),
         pause_id=(
-            _raw_string(result, 'work_session_paused_at') or pending_id
+            _raw_string(result, 'work_session_paused_at')
+            or (f'{_PAUSE_COMMAND_PREFIX}{pending_id}' if pending_id else '')
             if kind == 'paused' and result.get('work_session_status') == 'paused'
             else ''
         ),
+        pause_command_id=pending_id if kind == 'paused' and pause_triggered else '',
+        pause_state='event' if pause_event else '',
     )
 
 
@@ -718,6 +842,7 @@ def signal_result(
                 target=signal.target,
                 pending_id=signal.pending_id,
                 pause_id=signal.pause_id,
+                pause_command_id=signal.pause_command_id,
             )
             if folded is not None:
                 task = asyncio.create_task(_deliver(*signal.text(folded), signal))

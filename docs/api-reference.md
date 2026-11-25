@@ -434,10 +434,16 @@ Search events by criteria.
 
 **Historical pauses:** a command's `work_session_paused: true` marker and pause denial codes
 are retained after Resume. Command results and history entries preserve that evidence and
-add `work_session_status` from a current session read. Only a currently paused session adds
+add `work_session_status` from the visible nested `work_session` when available,
+without another request. History rows can omit the flat `work_session_id` and
+`work_session_paused` fields; the nested session supplies its id and current status.
+Only when current state is absent does the tool read the session separately.
+Only a currently paused session adds
 pause stop guidance and `requires_human_approval: true`; an unavailable status is `null` and
 asks the agent to verify with `work_session_get`, without claiming the session is paused.
 A paused result also carries `work_session_paused_at` when the server supplies `paused_at`.
+If a true trigger's current status cannot be verified, its desktop alert says the session
+was paused and asks the person to check its current status, without claiming it is still paused.
 Session reads are reused only within one batch or history call, never across calls.
 For a held command, approval can be recorded while paused, but delivery needs both approval
 and Resume; Resume does not approve or replay a command. Stop polling if the session ends
@@ -1384,6 +1390,8 @@ Notifications contain only the event kind, command's first word with its path st
 Console links must share the workspace API origin, or, for a workspace on a subdomain of the built-in cloud domain `alpacon.io`, use `alpacon.io` or one of its subdomains with the same scheme and its default port. All links must be ASCII, at most 2048 characters, and free of whitespace, fragments, and userinfo, and are re-serialized before display. Validation applies on every platform. A validated link can appear in the body; only the Windows toast renders it as a clickable launch target, while `osascript` and `notify-send` receive no separate link.
 
 An approval-pending item is announced once per command id, Work Session id for a Work Session wait (including waits returned by command or file-transfer tools), or sudo policy request id when available, scoped to workspace and region. A denial is likewise announced once per command id or file-transfer id when available. The remembered identity includes the event kind, so a pending item that is later denied announces both states. An announced item can notify again on its next read after 10 minutes; repeated reads within those 10 minutes neither notify nor count as folded events. An item with an id folded into a 60-second window counts once in that window and is announced on a later read after the window closes, without counting itself in `+N more`. The process remembers up to 256 announced identities, evicting the oldest first; restarting the server clears them. For a normalized paused command, the process also remembers its last 256 pause episodes by session id, workspace, region and `work_session_paused_at` (falling back to command id when no pause timestamp is available), so another read of the same episode does not notify after the rate-limit window; a later pause can notify again. Results without a pause or item identity use the rate limit normally. The rate-limit key is `(session_id, kind, workspace, region)`; a missing session id falls back to `ALPACON_WORK_SESSION`, then to an empty id. Each key allows one notification per 60 seconds, and a later notification appends `+N more` for distinct events folded during the previous window. Folded events surface only when a later event arrives; no timer sends a summary.
+
+An unverified `work_session_paused: true` trigger is announced once by command id as a past pause event, with a request to check its current state. The process remembers up to 256 triggering commands as well as 256 pause episodes; learning a remembered trigger's pause timestamp later does not alert again. A historical pause denial code alone does not produce an alert while current state is unknown.
 
 The streamable-http server never raises desktop notifications. The hosted server, including access through `mcp-remote` or the `alpacon` plugin, never raises a notification: the notifier runs on the host the MCP server runs on. A stdio server in a container or launched over SSH attempts delivery on that host, not on the user's desktop.
 

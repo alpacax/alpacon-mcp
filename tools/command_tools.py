@@ -1937,38 +1937,16 @@ async def _current_work_session(
     return session
 
 
-async def _attach_work_session_pause(
-    response: MutableMapping[str, JsonValue],
-    result: _CommandRecord,
-    *,
-    region: str,
-    workspace: str,
-    token: str | None,
-    sessions: dict[str, JsonValue] | None = None,
-) -> None:
-    """Keep the command's pause history; only a fresh session read sets stop guidance."""
-    marked = result.get('work_session_paused') is True
-    code = result.get('denial_code')
-    pause_code = code if isinstance(code, str) and code in PAUSE_DENIAL_CODES else None
-    if not (marked or pause_code):
-        return
-    if marked:
-        response['work_session_paused'] = True
-    if pause_code:
-        response['denial_code'] = pause_code
-    if isinstance(session_id := result.get('work_session_id'), str) and session_id:
-        response['work_session_id'] = session_id
-    session = await _current_work_session(
-        session_id, region=region, workspace=workspace, token=token, sessions=sessions
-    )
+def _work_session_status(session: JsonValue) -> str | None:
     status = (
         session.get('status')
         if isinstance(session, dict) and 'error' not in session
         else None
     )
-    status = (
+    return (
         status
-        if status
+        if isinstance(status, str)
+        and status
         in (
             'paused',
             'active',
@@ -1982,6 +1960,42 @@ async def _attach_work_session_pause(
         )
         else None
     )
+
+
+async def _attach_work_session_pause(
+    response: MutableMapping[str, JsonValue],
+    result: _CommandRecord,
+    *,
+    region: str,
+    workspace: str,
+    token: str | None,
+    sessions: dict[str, JsonValue] | None = None,
+) -> None:
+    """Keep pause history separate from the visible current Work Session state."""
+    marked = result.get('work_session_paused') is True
+    code = result.get('denial_code')
+    pause_code = code if isinstance(code, str) and code in PAUSE_DENIAL_CODES else None
+    if not (marked or pause_code):
+        return
+    if marked:
+        response['work_session_paused'] = True
+    if pause_code:
+        response['denial_code'] = pause_code
+    session = result.get('work_session')
+    session_id = result.get('work_session_id')
+    if isinstance(session, dict):
+        session_id = session.get('id') or session_id
+    if _work_session_status(session) is None:
+        session = await _current_work_session(
+            session_id,
+            region=region,
+            workspace=workspace,
+            token=token,
+            sessions=sessions,
+        )
+    if isinstance(session_id, str) and session_id:
+        response['work_session_id'] = session_id
+    status = _work_session_status(session)
     response['work_session_status'] = status
     if status != 'paused':
         if status in ('completed', 'revoked', 'expired', 'rejected', 'cancelled'):
