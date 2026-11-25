@@ -16,6 +16,8 @@ from utils.common import (
     FILE_EXEC_INLINE_CREDENTIAL_HINT,
     FILE_EXEC_REFUSAL_HINTS,
     INLINE_CREDENTIAL_HINT,
+    PAUSE_DENIAL_CODES,
+    WORK_SESSION_PAUSED_NEXT_ACTION,
     WORK_SESSION_PURPOSE_APPROVAL_HINT,
     UnexpectedResponseShapeError,
     build_list_params,
@@ -28,7 +30,7 @@ from utils.common import (
     unwrap_http_result,
     validate_response,
 )
-from utils.decorators import mcp_tool_handler
+from utils.decorators import mcp_tool_handler, validate_path_identifier
 from utils.error_handler import MfaStepUpRequired, validate_file_path
 from utils.host_transfer import (
     CommandHidden,
@@ -977,12 +979,21 @@ async def list_commands(
     # execute_command_multi_server only submits, so a fleet command's sudo
     # denial is observable nowhere else.
     entries = result.get('results') if isinstance(result, dict) else None
+    sessions: dict[str, JsonValue] = {}
     for entry in entries if isinstance(entries, list) else ():
         if isinstance(entry, dict):
             _attach_sudo_denial(entry)
             _attach_file_phase_hint(entry)
             _attach_use_file_execution(entry)
             attach_rejection(entry)
+            await _attach_work_session_pause(
+                entry,
+                entry,
+                region=region,
+                workspace=workspace,
+                token=token,
+                sessions=sessions,
+            )
 
     return success_response(
         data=result,
@@ -1109,7 +1120,7 @@ def _submission_error(
     return response
 
 
-def _submitted_response(
+async def _submitted_response(
     submitted: JsonValue,
     *,
     command_id: str,
@@ -1119,25 +1130,27 @@ def _submitted_response(
     workspace: str,
     region: str,
     stdin_fed: bool,
+    token: str | None,
 ) -> ToolResponse:
     """A refusal stamped at creation (an ACL denial), else the handle to read it with."""
     echo = _echo(server_id, command, shell)
     if (
         isinstance(submitted, dict)
         and (
-            settled := _settled_response(
+            settled := await _settled_response(
                 submitted,
                 command_id=command_id,
                 region=region,
                 workspace=workspace,
                 echo=echo,
                 stdin_fed=stdin_fed,
+                token=token,
             )
         )
         is not None
     ):
         return settled
-    return success_response(
+    response = success_response(
         message=(
             'Submitted without waiting. Call check_command_status with command_id '
             f'to read the result. {DO_NOT_RESUBMIT}: a resubmission runs it again.'
@@ -1149,13 +1162,34 @@ def _submitted_response(
         workspace=workspace,
         **echo,
     )
+    if isinstance(submitted, dict):
+        await _attach_work_session_pause(
+            response, submitted, region=region, workspace=workspace, token=token
+        )
+    return response
 
 
-def _submitted_entry(result: JsonValue) -> dict[str, JsonValue]:
+async def _submitted_entry(
+    result: JsonValue,
+    *,
+    region: str,
+    workspace: str,
+    token: str | None,
+    sessions: dict[str, JsonValue],
+) -> dict[str, JsonValue]:
     entry: dict[str, JsonValue] = {'status': 'success', 'data': result}
     row = result[0] if isinstance(result, list) and result else result
     if isinstance(row, dict) and isinstance(command_id := row.get('id'), str):
         entry['command_id'] = command_id
+    if isinstance(row, dict):
+        await _attach_work_session_pause(
+            entry,
+            row,
+            region=region,
+            workspace=workspace,
+            token=token,
+            sessions=sessions,
+        )
     return entry
 
 
@@ -1218,7 +1252,7 @@ async def _settle_submission(
             stdin_fed=stdin_fed,
         )
     else:
-        response = _submitted_response(
+        response = await _submitted_response(
             submitted,
             command_id=command_id,
             server_id=server_id,
@@ -1227,6 +1261,7 @@ async def _settle_submission(
             workspace=workspace,
             region=region,
             stdin_fed=stdin_fed,
+            token=token,
         )
     if _purpose_was_truncated(purpose):
         response['purpose_truncated'] = True
@@ -1885,7 +1920,168 @@ _COMMAND_IN_PROGRESS = frozenset(
 _COMMAND_REFUSED = frozenset({'denied', 'rejected'})
 
 
-def _settled_response(
+async def _current_work_session(
+    session_id: object,
+    *,
+    region: str,
+    workspace: str,
+    token: str | None,
+    sessions: dict[str, JsonValue] | None,
+) -> JsonValue:
+    if not isinstance(session_id, str) or validate_path_identifier(
+        'session_id', session_id
+    ):
+        return None
+    if sessions is not None and session_id in sessions:
+        return sessions[session_id]
+    session = await http_client.get(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/work-sessions/sessions/{session_id}/',
+        token=token,
+    )
+    if sessions is not None:
+        sessions[session_id] = session
+    return session
+
+
+def _work_session_status(session: JsonValue) -> str | None:
+    status = (
+        session.get('status')
+        if isinstance(session, dict) and 'error' not in session
+        else None
+    )
+    return (
+        status
+        if isinstance(status, str)
+        and status
+        in (
+            'paused',
+            'active',
+            'completed',
+            'revoked',
+            'expired',
+            'rejected',
+            'cancelled',
+            'pending',
+            'approved',
+        )
+        else None
+    )
+
+
+async def _attach_work_session_pause(
+    response: MutableMapping[str, JsonValue],
+    result: _CommandRecord,
+    *,
+    region: str,
+    workspace: str,
+    token: str | None,
+    sessions: dict[str, JsonValue] | None = None,
+) -> None:
+    """Keep pause history separate from the visible current Work Session state."""
+    marked = result.get('work_session_paused') is True
+    code = result.get('denial_code')
+    pause_code = code if isinstance(code, str) and code in PAUSE_DENIAL_CODES else None
+    if not (marked or pause_code):
+        return
+    if marked:
+        response['work_session_paused'] = True
+    if pause_code:
+        response['denial_code'] = pause_code
+    session = result.get('work_session')
+    session_id = result.get('work_session_id')
+    if isinstance(session, dict):
+        session_id = session.get('id') or session_id
+    if _work_session_status(session) is None:
+        session = await _current_work_session(
+            session_id,
+            region=region,
+            workspace=workspace,
+            token=token,
+            sessions=sessions,
+        )
+    if isinstance(session_id, str) and session_id:
+        response['work_session_id'] = session_id
+    status = _work_session_status(session)
+    response['work_session_status'] = status
+    if status != 'paused':
+        if status in ('completed', 'revoked', 'expired', 'rejected', 'cancelled'):
+            response['message'] = f'The Work Session is {status}; it cannot resume.'
+            response['next_action'] = (
+                'The Work Session has ended. Stop polling and tell the user; '
+                'do not resubmit a command against this session.'
+            )
+            response.pop('requires_human_approval', None)
+            if response.get('status') == 'pending_approval':
+                response['status'] = 'success'
+                response['data'] = dict(result)
+                response.pop('category', None)
+        elif status is None:
+            response['next_action'] = (
+                'This command records a past Work Session pause. Check work_session_get '
+                'for its current status before proceeding; continue only if active, '
+                'wait for a person if paused, and stop if completed, revoked or expired.'
+            )
+            if result.get('status') == 'awaiting_approval':
+                response['message'] = (
+                    'The current Work Session status could not be verified. Any '
+                    'pending command approval or confirmation may still be decided; '
+                    'if the session is paused, that decision is recorded but '
+                    'delivery also waits for Resume.'
+                )
+        return
+    response['requires_human_approval'] = True
+    if isinstance(session, dict) and isinstance(
+        paused_at := session.get('paused_at'), str
+    ):
+        response['work_session_paused_at'] = paused_at
+    response['next_action'] = WORK_SESSION_PAUSED_NEXT_ACTION
+    if response.get('status') == 'error':
+        if isinstance(message := response.get('message'), str):
+            response['message'] = message + ' The Work Session is paused.'
+    elif (
+        result.get('status') == 'awaiting_approval'
+        or result.get('status') in _COMMAND_IN_PROGRESS
+    ):
+        response['message'] = (
+            'The Work Session is paused. Any pending command approval can still be '
+            'decided. Approval recorded while paused does not release the command; '
+            'delivery waits for both approval and Resume.'
+        )
+        response['next_action'] = WORK_SESSION_PAUSED_NEXT_ACTION + (
+            ' Any pending command approval must also be decided. Resume does not '
+            'approve a held command or replay a refused command.'
+        )
+
+
+async def _settled_response(
+    result: _CommandRecord,
+    *,
+    command_id: str,
+    region: str,
+    workspace: str,
+    echo: Mapping[str, str],
+    stdin_fed: bool,
+    token: str | None,
+) -> ToolResponse | None:
+    """The tool answer for a command row, or None while it has nothing to report yet."""
+    response = _settled_row_response(
+        result,
+        command_id=command_id,
+        region=region,
+        workspace=workspace,
+        echo=echo,
+        stdin_fed=stdin_fed,
+    )
+    if response is not None:
+        await _attach_work_session_pause(
+            response, result, region=region, workspace=workspace, token=token
+        )
+    return response
+
+
+def _settled_row_response(
     result: _CommandRecord,
     *,
     command_id: str,
@@ -1894,7 +2090,6 @@ def _settled_response(
     echo: Mapping[str, str],
     stdin_fed: bool,
 ) -> ToolResponse | None:
-    """The tool answer for a command row, or None while it has nothing to report yet."""
     status = result.get('status', '')
 
     if (
@@ -2067,16 +2262,34 @@ async def _poll_command_result(
 
         if isinstance(result, dict):
             if (
-                settled := _settled_response(
+                settled := await _settled_response(
                     result,
                     command_id=command_id,
                     region=region,
                     workspace=workspace,
                     echo=echo,
                     stdin_fed=stdin_fed,
+                    token=token,
                 )
             ) is not None:
                 return settled
+
+            if result.get('work_session_paused') is True or (
+                isinstance(pause_code := result.get('denial_code'), str)
+                and pause_code in PAUSE_DENIAL_CODES
+            ):
+                paused = success_response(
+                    data=result,
+                    command_id=command_id,
+                    region=region,
+                    workspace=workspace,
+                    **echo,
+                )
+                await _attach_work_session_pause(
+                    paused, result, region=region, workspace=workspace, token=token
+                )
+                if 'next_action' in paused:
+                    return paused
 
             # Still advancing—reset deadline (within hard cap) so a slow AI
             # verification or delayed delivery does not time out a command
@@ -2209,13 +2422,14 @@ async def check_command_status(
     # The caller knows neither the server nor the line, and cannot say whether
     # it fed stdin, so this reads the row as state_command_purpose does.
     if (
-        settled := _settled_response(
+        settled := await _settled_response(
             result,
             command_id=command_id,
             region=region,
             workspace=workspace,
             echo={},
             stdin_fed=False,
+            token=token,
         )
     ) is not None:
         return settled
@@ -2234,7 +2448,7 @@ async def check_command_status(
             f'Command status {status!r} is not one this tool recognizes, and the '
             'command has reported no result yet; check again shortly.'
         )
-    return success_response(
+    response = success_response(
         message=message,
         data=result,
         next_action=_CHECK_AGAIN,
@@ -2242,6 +2456,10 @@ async def check_command_status(
         region=region,
         workspace=workspace,
     )
+    await _attach_work_session_pause(
+        response, result, region=region, workspace=workspace, token=token
+    )
+    return response
 
 
 @mcp_tool_handler(
@@ -2295,6 +2513,7 @@ async def execute_command_multi_server(
     successful_count = 0
     failed_count = 0
     purpose_truncated = _purpose_was_truncated(purpose)
+    sessions: dict[str, JsonValue] = {}
 
     if parallel:
         results = await asyncio.gather(
@@ -2312,7 +2531,13 @@ async def execute_command_multi_server(
                 deploy_results[sid] = err
                 failed_count += 1
             else:
-                deploy_results[sid] = _submitted_entry(result)
+                deploy_results[sid] = await _submitted_entry(
+                    result,
+                    region=region,
+                    workspace=workspace,
+                    token=token,
+                    sessions=sessions,
+                )
                 successful_count += 1
     else:
         for sid in server_ids:
@@ -2324,7 +2549,13 @@ async def execute_command_multi_server(
                     deploy_results[sid] = err
                     failed_count += 1
                 else:
-                    deploy_results[sid] = _submitted_entry(result)
+                    deploy_results[sid] = await _submitted_entry(
+                        result,
+                        region=region,
+                        workspace=workspace,
+                        token=token,
+                        sessions=sessions,
+                    )
                     successful_count += 1
             except Exception as e:
                 deploy_results[sid] = _failed_entry(e)
