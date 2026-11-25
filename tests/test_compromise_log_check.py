@@ -1169,3 +1169,16 @@ def test_copy_named_outside_the_rotation_rules_is_reported(
 
     assert f'file path={log} status=odd_copy' in out
     assert out[-1].startswith('search=incomplete')
+
+
+def test_copy_named_outside_the_rotation_rules_is_read_once_when_listed(
+    shell: str, log: Path
+) -> None:
+    copy = Path(f'{log}-20260804T193000.gz')
+    copy.write_bytes(gzip.compress((RESET + '\n').encode()))
+
+    out = _search(shell, log, copy)
+
+    assert 'odd_copy' not in _file_lines(out).values()
+    assert 'total pattern=1 count=1 shown=1' in out
+    assert out[-1] == 'search=complete files=2 problems=0'
