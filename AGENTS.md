@@ -166,6 +166,9 @@ Things the code will not tell you at a glance:
   only a currently paused session gets `requires_human_approval` for the pause.
   Keep lookups local to the call. An unverified trigger still gets one event-only
   alert; remember its command id when later linking it to a known pause episode.
+  Compact nested sessions omit `paused_at`: share one current pause identity
+  across command ids, and retire it after observing a non-paused command result
+  or `work_session_get`. The first timestamp links to that identity without an alert.
   Approval during pause is recorded but delivery still needs Resume.
 - **Transport settings live at the entry point, not on the constructor.** SDK 2.x
   takes `host`, `json_response` and `stateless_http` on

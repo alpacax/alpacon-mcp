@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Command history uses the visible nested `work_session` state before a fallback lookup, including rows that omit flat pause markers and session ids (#507). When a trigger's current session state remains unknown, its first desktop alert reports the past pause event once and asks the person to check the current state; a later successful lookup does not repeat that alert. Clients keep parsing the existing optional response fields.
+- Command history uses the visible nested `work_session` state before a fallback lookup, including rows that omit flat pause markers and session ids (#507). Desktop alerts share the current pause across triggering and superseded command ids when the nested session omits `paused_at`; a trigger whose current state remains unknown still gets one past-event alert, and a later successful lookup does not repeat it. Clients keep parsing the existing optional response fields.
 
 - `execute_command`, `execute_command_multi_server` and `execute_file` no longer send `groupname: "alpacon"` when the caller names no group; the field is left out and the server chooses the group, which is the account's primary group on that server once the Alpacon server release that resolves it is deployed, and `alpacon` on an older server (#496). `groupname` is now optional with no default in the tool schema, and a blank value counts as unnamed. A rerun suggestion built from a recorded command carries that command's `groupname` as recorded, `alpacon` included, so it runs as the group the original ran as. Response shapes are unchanged.
 

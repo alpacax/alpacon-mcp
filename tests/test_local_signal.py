@@ -23,7 +23,7 @@ from mcp.types import CallToolResult, TextContent
 
 import server
 from tests.conftest import streamable_http_client
-from tools import command_tools
+from tools import command_tools, work_session_tools
 from utils import local_signal, mfa_step_up
 from utils.common import (
     WorkSessionGateCode,
@@ -65,6 +65,259 @@ def signal_environment(monkeypatch):
 async def drain_signals():
     if local_signal._tasks:
         await asyncio.gather(*local_signal._tasks)
+
+
+@pytest.fixture
+def nested_pause_commands(monkeypatch, mock_token_manager):
+    session = {
+        'id': '8e063801-18ab-4c8a-a23e-b06d81bc6df8',
+        'title': 'Maintenance',
+        'description': 'Check service status',
+        'status': 'paused',
+        'assignee': None,
+    }
+    rows = {
+        'cmd-trigger': {
+            'id': 'cmd-trigger',
+            'status': 'rejected',
+            'work_session_paused': True,
+            'work_session': session,
+        },
+        'cmd-superseded': {
+            'id': 'cmd-superseded',
+            'status': 'rejected',
+            'denial_code': 'superseded_by_pause',
+            'work_session': session,
+        },
+    }
+
+    async def get(*, endpoint, **kwargs):
+        if endpoint.startswith('/api/work-sessions/sessions/'):
+            return deepcopy(session)
+        command_id = endpoint.removeprefix('/api/events/commands/').strip('/')
+        return deepcopy(rows[command_id])
+
+    get_mock = AsyncMock(side_effect=get)
+    monkeypatch.setattr(http_client, 'get', get_mock)
+    return session, rows, get_mock
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('trigger_first', [True, False])
+async def test_nested_pause_commands_share_one_desktop_alert(
+    monkeypatch, desktop_notifications, nested_pause_commands, trigger_first
+):
+    session, rows, get_mock = nested_pause_commands
+    now = [0.0]
+    monkeypatch.setattr(local_signal, 'monotonic', lambda: now[0])
+    ids = ['cmd-trigger', 'cmd-superseded']
+    if not trigger_first:
+        ids.reverse()
+    with local_signal.stdio_transport():
+        for index, command_id in enumerate([*ids, *ids]):
+            now[0] = index * 601
+            result = await command_tools.check_command_status(
+                command_id=command_id, workspace='testworkspace', region='ap1'
+            )
+            assert result['work_session_status'] == 'paused'
+            assert result['work_session_id'] == session['id']
+            assert 'work_session_paused_at' not in result
+            await drain_signals()
+
+    desktop_notifications.assert_called_once()
+    assert get_mock.await_count == 4
+
+
+@pytest.mark.asyncio
+async def test_nested_pause_links_a_timestamp_recovered_from_another_command(
+    monkeypatch, desktop_notifications, nested_pause_commands
+):
+    session, rows, get_mock = nested_pause_commands
+    now = [0.0]
+    monkeypatch.setattr(local_signal, 'monotonic', lambda: now[0])
+    with local_signal.stdio_transport():
+        await command_tools.check_command_status(
+            command_id='cmd-trigger', workspace='testworkspace', region='ap1'
+        )
+        await drain_signals()
+        rows['cmd-superseded'].pop('work_session')
+        rows['cmd-superseded']['work_session_id'] = session['id']
+        for timestamp, paused_at, expected in (
+            (61, '2026-11-25T07:00:00Z', 1),
+            (122, '2026-11-26T07:00:00Z', 2),
+        ):
+            now[0] = timestamp
+            session['paused_at'] = paused_at
+            await command_tools.check_command_status(
+                command_id='cmd-superseded', workspace='testworkspace', region='ap1'
+            )
+            await drain_signals()
+            assert desktop_notifications.call_count == expected
+
+    assert get_mock.await_count == 5
+    assert all(
+        ' more.' not in call.args[1] for call in desktop_notifications.call_args_list
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('resume_via', ['command', 'work_session_get'])
+async def test_nested_pause_alerts_again_after_an_observed_resume(
+    monkeypatch, desktop_notifications, nested_pause_commands, resume_via
+):
+    session, rows, get_mock = nested_pause_commands
+    now = [0.0]
+    monkeypatch.setattr(local_signal, 'monotonic', lambda: now[0])
+    with local_signal.stdio_transport():
+        await command_tools.check_command_status(
+            command_id='cmd-trigger', workspace='testworkspace', region='ap1'
+        )
+        await drain_signals()
+        session['status'] = 'active'
+        if resume_via == 'command':
+            await command_tools.check_command_status(
+                command_id='cmd-superseded', workspace='testworkspace', region='ap1'
+            )
+        else:
+            await work_session_tools.work_session_get(
+                session_id=session['id'], workspace='testworkspace', region='ap1'
+            )
+        await drain_signals()
+        assert desktop_notifications.call_count == 1
+        session['status'] = 'paused'
+        for index, command_id in enumerate(('cmd-trigger', 'cmd-superseded')):
+            now[0] = 61 + index * 61
+            await command_tools.check_command_status(
+                command_id=command_id, workspace='testworkspace', region='ap1'
+            )
+            await drain_signals()
+            assert desktop_notifications.call_count == 2
+
+    assert get_mock.await_count == 4
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('scope', ['session', 'workspace', 'region'])
+async def test_nested_pause_notifications_keep_session_workspace_and_region_separate(
+    monkeypatch, desktop_notifications, nested_pause_commands, scope
+):
+    session, rows, get_mock = nested_pause_commands
+    arguments = {'workspace': 'testworkspace', 'region': 'ap1'}
+    with local_signal.stdio_transport():
+        await command_tools.check_command_status(command_id='cmd-trigger', **arguments)
+        await drain_signals()
+        if scope == 'session':
+            session['id'] = 'eb7b68db-c152-405c-a71a-b4b2ce78ef41'
+        elif scope == 'workspace':
+            arguments['workspace'] = 'anotherworkspace'
+        else:
+            arguments['region'] = 'us1'
+        await command_tools.check_command_status(
+            command_id='cmd-superseded', **arguments
+        )
+        await drain_signals()
+
+    assert desktop_notifications.call_count == 2
+    assert get_mock.await_count == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('initial_timestamp', [False, True])
+async def test_unverified_historical_trigger_does_not_restore_a_resumed_pause(
+    monkeypatch, desktop_notifications, nested_pause_commands, initial_timestamp
+):
+    session, rows, get_mock = nested_pause_commands
+    now = [0.0]
+    monkeypatch.setattr(local_signal, 'monotonic', lambda: now[0])
+    trigger = rows['cmd-trigger']
+    if initial_timestamp:
+        session['paused_at'] = '2026-11-25T07:00:00Z'
+        trigger.pop('work_session')
+        trigger['work_session_id'] = session['id']
+    original_get = get_mock.side_effect
+
+    async def forbidden_session_get(*, endpoint, **kwargs):
+        if endpoint.startswith('/api/work-sessions/sessions/'):
+            return {'error': 'Forbidden', 'status_code': 403}
+        return await original_get(endpoint=endpoint, **kwargs)
+
+    with local_signal.stdio_transport():
+        await command_tools.check_command_status(
+            command_id='cmd-trigger', workspace='testworkspace', region='ap1'
+        )
+        await drain_signals()
+        session['status'] = 'active'
+        await work_session_tools.work_session_get(
+            session_id=session['id'], workspace='testworkspace', region='ap1'
+        )
+        trigger.pop('work_session', None)
+        trigger['work_session_id'] = session['id']
+        get_mock.side_effect = forbidden_session_get
+        now[0] = 61
+        result = await command_tools.check_command_status(
+            command_id='cmd-trigger', workspace='testworkspace', region='ap1'
+        )
+        assert result['work_session_status'] is None
+        await drain_signals()
+        desktop_notifications.assert_called_once()
+        get_mock.side_effect = original_get
+        session['status'] = 'paused'
+        session.pop('paused_at', None)
+        trigger['work_session'] = session
+        now[0] = 122
+        calls_before = get_mock.await_count
+        await command_tools.check_command_status(
+            command_id='cmd-trigger', workspace='testworkspace', region='ap1'
+        )
+        await drain_signals()
+
+    assert desktop_notifications.call_count == 2
+    assert get_mock.await_count == calls_before + 1
+
+
+@pytest.mark.parametrize('compact', [False, True])
+def test_unannounced_historical_trigger_does_not_restore_a_resumed_pause(
+    monkeypatch, compact
+):
+    now = [0.0]
+    monkeypatch.setattr(local_signal, 'monotonic', lambda: now[0])
+    limiter = local_signal.RateLimiter()
+    assert limiter.take('ws-1', 'paused', pause_id='episode-a') == 0
+    if compact:
+        limiter.observe_session('ws-1', 'active', '', '')
+    now[0] = 1
+    assert (
+        limiter.take(
+            'ws-1',
+            'paused',
+            pause_id='session:compact' if compact else 'episode-b',
+            pause_command_id='cmd-b',
+        )
+        is None
+    )
+    limiter.observe_session('ws-1', 'active', '', '')
+    now[0] = 61
+    assert limiter.take('ws-1', 'paused', pause_command_id='cmd-b') == 0
+    now[0] = 122
+    assert (
+        limiter.take(
+            'ws-1', 'paused', pause_id='session:compact', pause_command_id='cmd-c'
+        )
+        == 0
+    )
+
+
+def test_current_pause_identities_are_bounded_and_oldest_is_evicted(monkeypatch):
+    now = [0.0]
+    monkeypatch.setattr(local_signal, 'monotonic', lambda: now[0])
+    limiter = local_signal.RateLimiter()
+    for index in range(257):
+        assert limiter.take(f'ws-{index}', 'paused', pause_id='session:current') == 0
+
+    assert len(limiter._pause_sessions) == 256
+    now[0] = 61
+    assert limiter.take('ws-256', 'paused', pause_id='session:current') is None
+    assert limiter.take('ws-0', 'paused', pause_id='session:current') == 0
 
 
 @pytest.mark.asyncio
