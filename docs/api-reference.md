@@ -463,7 +463,7 @@ Execute a command on a server and wait for the result, or with `wait: false` ret
 - `shell` (string, default: "system"): Shell type
 - `username` (string, optional): Username for execution
 - `groupname` (string, optional): Group to run as. Omitted, the field is not sent and the server uses the account's primary group on that host (requires an Alpacon server release that resolves it; an older server uses `alpacon`); pass it only to name a different group the account may use
-- `env` (object, optional): Environment variables
+- `env` (object, optional): Environment variables. When the server refuses this input with HTTP 400, the error result includes `refused_keys` if the server supplies it. The list contains variable names and may be empty.
 - `run_after` (array, optional): Command IDs to wait for before executing
 - `scheduled_at` (string, optional): ISO 8601 datetime for scheduled execution
 - `data` (string, optional): Stdin data
