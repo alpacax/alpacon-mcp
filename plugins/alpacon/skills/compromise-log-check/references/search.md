@@ -73,8 +73,9 @@ copies() {
   done
   [ "$#" = 0 ] || ls "$o" -- "$@" 2>/dev/null || echo '!list-failed'
   [ "$o" = -1dtr ] || for g; do if { [ "$g" != "$l" ] || ! written "$g"; } && [ -f "$g" ] && [ -r "$g" ]; then echo "$g $(stat -L -c '%y %z' -- "$g" 2>/dev/null || stat -L -f '%Fm %Fc' -- "$g" 2>/dev/null || date -u -r "$g" +%s) $(wc -c < "$g")"; fi; done
+  [ "$o" = -1dtr ] || for g; do if [ -L "$g" ] && [ -e "$g" ]; then echo "$g -> $(ls -1diL -- "$g" 2>/dev/null)"; fi; done
 }
-snap() { printf '%s\n' "$logs" | while IFS= read -r l; do [ -z "$l" ] || copies "$l" -1diL; done; }
+snap() { printf '%s\n' "$logs" | while IFS= read -r l; do [ -z "$l" ] || copies "$l" -1di; done; }
 report() {
   s0=$(snap)
   printf '%s\n' "$logs" | while IFS= read -r l; do
@@ -82,7 +83,7 @@ report() {
     d=${l%/*}; [ -r "${d:-/}" ] && [ -x "${d:-/}" ] || echo "file path=$l status=dir_unreadable"
     size=$([ -f "$l" ] && wc -c < "$l" 2>/dev/null); n=${size:-0}; [ "$n" -le 512 ] 2>/dev/null || n=512
     top=$([ -f "$l" ] && head -c "$n" "$l" 2>/dev/null | cksum)
-    before=$(copies "$l" -1diL); [ -n "$before" ] || { echo "file path=$l status=missing"; continue; }
+    before=$(copies "$l" -1di); [ -n "$before" ] || { echo "file path=$l status=missing"; continue; }
     [ -e "$l" ] || ! printf '%s\n' "$active" | grep -Fxq -- "$l" || echo "file path=$l status=missing"
     copies "$l" -1dtr | while read -r g; do
       case $g in ('!'*) echo "file path=$l status=list_failed"; continue ;; esac
@@ -94,7 +95,7 @@ report() {
     [ -z "$size" ] || { [ "$([ -f "$l" ] && wc -c < "$l" 2>/dev/null)" -ge "$size" ] 2>/dev/null && [ "$(head -c "$n" "$l" 2>/dev/null | cksum)" = "$top" ]; } || echo "file path=$l status=changed"
     case $before in (*'!unsafe-name'*) echo "file path=$l status=unsafe_name" ;; esac
     case $before in (*'!odd-copy'*) echo "file path=$l status=odd_copy" ;; esac
-    case $before in (*'!list-failed'*) echo "file path=$l status=list_failed" ;; ("$(copies "$l" -1diL)") ;; (*) echo "file path=$l status=changed" ;; esac
+    case $before in (*'!list-failed'*) echo "file path=$l status=list_failed" ;; ("$(copies "$l" -1di)") ;; (*) echo "file path=$l status=changed" ;; esac
   done
   [ "$s0" = "$(snap)" ] || printf '%s\n' "$logs" | sed '/^$/d; s/.*/file path=& status=changed/'
 }
