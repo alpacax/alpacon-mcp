@@ -361,7 +361,7 @@ class RateLimiter:
         self._pause_commands: OrderedDict[PauseKey, tuple[str | None, bool]] = (
             OrderedDict()
         )
-        self._pause_sessions: OrderedDict[WindowKey, str] = OrderedDict()
+        self._pause_sessions: OrderedDict[WindowKey, tuple[str, str]] = OrderedDict()
         self._pause_counter = 0
 
     def observe_session(
@@ -381,13 +381,33 @@ class RateLimiter:
                 (session_id[:128], 'paused', workspace, region), None
             )
 
+    def _pause_command_keys(self, key: WindowKey, episode: str) -> list[PauseKey]:
+        return [
+            command_key
+            for command_key, (known, _) in self._pause_commands.items()
+            if (command_key[0], command_key[2], command_key[3])
+            == (key[0], key[2], key[3])
+            and (
+                known == episode
+                or (
+                    known is None
+                    and episode == f'{_PAUSE_COMMAND_PREFIX}{command_key[1]}'
+                )
+            )
+        ]
+
     def _shared_pause_identity(
         self, key: WindowKey, pause_id: str, command_id: str, *, shared: bool
     ) -> tuple[str, str, bool]:
-        previous = self._pause_sessions.get(key) if key[0] else None
-        fresh = shared and previous is None
+        previous, previous_trigger = (
+            self._pause_sessions.get(key, ('', '')) if key[0] else ('', '')
+        )
+        trigger_changed = bool(
+            command_id and previous_trigger and command_id != previous_trigger
+        )
+        fresh = trigger_changed or (shared and not previous)
         if shared:
-            if previous is None:
+            if not previous or trigger_changed:
                 self._pause_counter += 1
                 pause_id = f'{_PAUSE_SESSION_PREFIX}{self._pause_counter}'
             else:
@@ -397,24 +417,22 @@ class RateLimiter:
         alias = ''
         if (
             previous
+            and not trigger_changed
             and previous.startswith((_PAUSE_COMMAND_PREFIX, _PAUSE_SESSION_PREFIX))
             and pause_id
             and not pause_id.startswith((_PAUSE_COMMAND_PREFIX, _PAUSE_SESSION_PREFIX))
         ):
             alias = previous
-            for command_key, (episode, announced) in self._pause_commands.items():
-                if (command_key[0], command_key[2], command_key[3]) == (
-                    key[0],
-                    key[2],
-                    key[3],
-                ) and (
-                    episode == alias
-                    or (
-                        episode is None
-                        and alias == f'{_PAUSE_COMMAND_PREFIX}{command_key[1]}'
-                    )
-                ):
-                    self._pause_commands[command_key] = (pause_id, announced)
+            for command_key in self._pause_command_keys(key, previous):
+                _, announced = self._pause_commands[command_key]
+                self._pause_commands[command_key] = (pause_id, announced)
+        if key[0] and pause_id:
+            current_trigger = command_id or (
+                previous_trigger if pause_id == previous or alias == previous else ''
+            )
+            self._pause_sessions[key] = (pause_id, current_trigger)
+            if len(self._pause_sessions) > 256:
+                self._pause_sessions.popitem(last=False)
         return pause_id, alias, fresh
 
     def _remember_pause(
@@ -423,18 +441,11 @@ class RateLimiter:
         command_key: PauseKey | None,
         *,
         announced: bool = True,
-        remember_session: bool = True,
     ) -> None:
         if announced and pause_key is not None:
             self._pauses[pause_key] = None
             if len(self._pauses) > 256:
                 self._pauses.popitem(last=False)
-        if remember_session and pause_key is not None and pause_key[0]:
-            self._pause_sessions[
-                (pause_key[0], 'paused', pause_key[2], pause_key[3])
-            ] = pause_key[1]
-            if len(self._pause_sessions) > 256:
-                self._pause_sessions.popitem(last=False)
         known_episode = (
             pause_key[1]
             if pause_key and not pause_key[1].startswith(_PAUSE_COMMAND_PREFIX)
@@ -580,9 +591,7 @@ class RateLimiter:
             )
         ):
             self._merge_pause_alias(key, episode, trigger, announced=True)
-            self._remember_pause(
-                pause_key, command_key, remember_session=remember_session
-            )
+            self._remember_pause(pause_key, command_key)
             return None
         while (
             self._pending and now - next(iter(self._pending.values())) >= _PENDING_TTL
@@ -609,7 +618,6 @@ class RateLimiter:
                     pause_key,
                     command_key,
                     announced=False,
-                    remember_session=remember_session,
                 )
                 if pending_key is not None:
                     if pending_key in folded_pending:
@@ -627,7 +635,7 @@ class RateLimiter:
             self._pending[pending_key] = now
             if len(self._pending) > 256:
                 self._pending.popitem(last=False)
-        self._remember_pause(pause_key, command_key, remember_session=remember_session)
+        self._remember_pause(pause_key, command_key)
         return folded
 
 

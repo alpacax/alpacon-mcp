@@ -160,7 +160,8 @@ Things the code will not tell you at a glance:
   user's desktop. Never enable `stdio_transport()` outside that run; a
   remote equivalent belongs in a client-side hook.
 - **Pause guidance covers command rows as well as tool envelopes.** A
-  command's `work_session_paused` marker and pause denial code are historical.
+  pause denial code is historical; `work_session_paused` names the latest
+  triggering command and can remain true after Resume.
   Prefer the visible nested `work_session.status`: history omits the flat pause
   marker and session id. Read the session only when its current state is absent;
   only a currently paused session gets `requires_human_approval` for the pause.
@@ -169,6 +170,8 @@ Things the code will not tell you at a glance:
   Compact nested sessions omit `paused_at`: share one current pause identity
   across command ids, and retire it after observing a non-paused command result
   or `work_session_get`. The first timestamp links to that identity without an alert.
+  A distinct marked trigger identifies another pause even without an active read;
+  keep the current trigger with its pause identity when command history is evicted.
   Approval during pause is recorded but delivery still needs Resume.
 - **Transport settings live at the entry point, not on the constructor.** SDK 2.x
   takes `host`, `json_response` and `stateless_http` on

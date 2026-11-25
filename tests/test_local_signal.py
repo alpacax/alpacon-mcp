@@ -129,6 +129,72 @@ async def test_nested_pause_commands_share_one_desktop_alert(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('first_timestamp', [False, True])
+@pytest.mark.parametrize('second_timestamp', [False, True])
+@pytest.mark.parametrize('second_trigger_at', [1, 61])
+async def test_distinct_pause_triggers_alert_without_an_intervening_active_read(
+    monkeypatch,
+    desktop_notifications,
+    nested_pause_commands,
+    first_timestamp,
+    second_timestamp,
+    second_trigger_at,
+):
+    session, rows, get_mock = nested_pause_commands
+    now = [0.0]
+    monkeypatch.setattr(local_signal, 'monotonic', lambda: now[0])
+    if first_timestamp:
+        session['paused_at'] = '2026-11-25T07:00:00Z'
+        rows['cmd-trigger'].pop('work_session')
+        rows['cmd-trigger']['work_session_id'] = session['id']
+    with local_signal.stdio_transport():
+        await command_tools.check_command_status(
+            command_id='cmd-trigger', workspace='testworkspace', region='ap1'
+        )
+        await drain_signals()
+        desktop_notifications.assert_called_once()
+        session.pop('paused_at', None)
+        rows['cmd-next-trigger'] = {
+            'id': 'cmd-next-trigger',
+            'status': 'rejected',
+            'work_session_paused': True,
+            'work_session': session,
+        }
+        if second_timestamp:
+            session['paused_at'] = '2026-11-26T07:00:00Z'
+            rows['cmd-next-trigger'].pop('work_session')
+            rows['cmd-next-trigger']['work_session_id'] = session['id']
+            rows['cmd-superseded']['work_session'] = {
+                key: value for key, value in session.items() if key != 'paused_at'
+            }
+        for timestamp, command_id, expected in (
+            (
+                second_trigger_at,
+                'cmd-next-trigger',
+                1 if second_trigger_at < 60 else 2,
+            ),
+            (second_trigger_at + 61, 'cmd-next-trigger', 2),
+            (second_trigger_at + 122, 'cmd-superseded', 2),
+        ):
+            now[0] = timestamp
+            result = await command_tools.check_command_status(
+                command_id=command_id, workspace='testworkspace', region='ap1'
+            )
+            assert result['work_session_status'] == 'paused'
+            if second_timestamp and command_id == 'cmd-next-trigger':
+                assert result['work_session_paused_at'] == session['paused_at']
+            else:
+                assert 'work_session_paused_at' not in result
+            await drain_signals()
+            assert desktop_notifications.call_count == expected
+
+    assert get_mock.await_count == 4 + int(first_timestamp) + 2 * int(second_timestamp)
+    assert all(
+        ' more.' not in call.args[1] for call in desktop_notifications.call_args_list
+    )
+
+
+@pytest.mark.asyncio
 async def test_nested_pause_links_a_timestamp_recovered_from_another_command(
     monkeypatch, desktop_notifications, nested_pause_commands
 ):
@@ -302,6 +368,29 @@ def test_unannounced_historical_trigger_does_not_restore_a_resumed_pause(
     assert (
         limiter.take(
             'ws-1', 'paused', pause_id='session:compact', pause_command_id='cmd-c'
+        )
+        == 0
+    )
+
+
+def test_current_trigger_survives_command_history_eviction(monkeypatch):
+    now = [0.0]
+    monkeypatch.setattr(local_signal, 'monotonic', lambda: now[0])
+    limiter = local_signal.RateLimiter()
+    assert (
+        limiter.take(
+            'ws-1', 'paused', pause_id='session:compact', pause_command_id='cmd-a'
+        )
+        == 0
+    )
+    now[0] = 1
+    for index in range(256):
+        limiter.take('another-session', 'paused', pause_command_id=f'cmd-{index}')
+    now[0] = 61
+
+    assert (
+        limiter.take(
+            'ws-1', 'paused', pause_id='session:compact', pause_command_id='cmd-b'
         )
         == 0
     )
