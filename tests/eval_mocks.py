@@ -124,7 +124,7 @@ CMD_HOST_FALLBACK = '0a1b2c3d-4e5f-4678-89ab-cdef01234567'
 HOST_RESULT = (
     'secret path=/app/.env account= exists=yes atime=2026-09-14T03:14:00Z mtime=2026-07-01T00:00:00Z ctime=2026-07-01T00:00:00Z mount=/app atime_mode=noatime\n'
     'check kind=secret status=complete\n'
-    'run v=1 uid=0 now=2026-11-24T00:00:00Z since=2026-08-03 sha256=e1a233d5fb228ac6a369968d04329dae49432c03d405947264e32753f2ddeb6b\n'
+    'run v=1 uid=0 now=2026-11-24T00:00:00Z since=2026-08-03 sha256=8c24cf6235748df7774bc3e3dfac62b6fdabf2f8a762960f628647b7a78f6805\n'
     'account name=xadmin uid=1001 gid=1001 home=/home/xadmin shell=/bin/bash class=human password=set pwchanged=2026-09-14\n'
     'check kind=account status=complete\n'
     'check kind=sudoers status=complete\n'

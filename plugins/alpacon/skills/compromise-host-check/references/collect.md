@@ -148,6 +148,14 @@ change_times() {
   [ "${ct_target%:*}" -le "${CT%:*}" ] || CT=${ct_target%:*}:${CT#*:}
   [ "${ct_target#*:}" -le "${CT#*:}" ] || CT=${CT%:*}:${ct_target#*:}
 }
+target_packaged() {
+  [ "${PACKAGE_KNOWN:-no}" = yes ] || return 1
+  tp=$(readlink -f -- "$1" 2>/dev/null) || return 1; tp=${tp#"$R"}; tp_alt=$(alt_path "$tp")
+  while IFS= read -r owned; do [ "$owned" != "$tp" ] && [ "$owned" != "${tp_alt:-/}" ] || return 0; done <<EOF
+$PACKAGE_OWNED
+EOF
+  return 1
+}
 alt_path() { case "$1" in /usr/lib/*) printf '%s\n' "${1#/usr}";; /lib/*) printf '%s\n' "/usr$1";; esac; }
 no_accounts() { reason=unreadable; secret_overlap /etc/passwd && reason=secret-overlap; unknown "$1" /etc/passwd "$reason"; }
 
@@ -205,6 +213,7 @@ secret_overlap() {
     for secret_file do
       secret_target=$(readlink -f -- "$secret_file" 2>/dev/null) || continue
       [ "$overlap_target" != "$secret_target" ] || return 0
+      if [ -d "$secret_file" ]; then case "$overlap_target" in "$secret_target"/*) return 0;; esac; fi
       [ -z "$overlap_id" ] || [ "$overlap_id" != "$(stat -L -c '%d:%i' -- "$secret_file" 2>/dev/null)" ] || return 0
     done
   done <<EOF
@@ -325,7 +334,7 @@ collect_sudoers() {
     if secret_overlap "$logical"; then unknown sudoers "$logical" secret-overlap; continue; fi
     [ -r "$file" ] || { unknown sudoers "$logical" unreadable; continue; }
     change_times "$file" || { unknown sudoers "$logical" unreadable; continue; }; mtime=${CT%:*}; ctime=${CT#*:}
-    rows=$(awk 'function rule(s,n, p,np,al){sub(/^[ \t]+/,"",s);if(s~/^(@|#)include(dir)?[ \t]+/){split(s,a,/[ \t]+/);print n "\t@include\t" a[2];return}if(s==""||s~/^#/||s~/^Defaults([ \t]|$)/||s~/^[A-Za-z_]+_Alias([ \t]|$)/)return;split(s,a,/[ \t]+/);p=a[1];np=(s~/NOPASSWD:/?"yes":"no");al=(s~/ALL[ \t]*=[ \t]*\(ALL(:ALL)?\)[ \t]*(NOPASSWD:[ \t]*)?ALL/?"yes":"no");print n "\t" p "\t" np "\t" al} {if(buf=="")start=NR;line=$0;if(line~/\\[ \t]*$/){sub(/\\[ \t]*$/, "", line);buf=buf line " ";next}rule(buf line,start);buf=""} END{if(buf!="")rule(buf,start)}' "$file")
+    rows=$(awk 'function rule(s,n, p,np,al){sub(/^[ \t]+/,"",s);if(s~/^(@|#)include(dir)?[ \t]+/){split(s,a,/[ \t]+/);print n "\t@include\t" a[2];return}if(s==""||s~/^#/||s~/^Defaults([ \t:@!>]|$)/||s~/^[A-Za-z_]+_Alias([ \t]|$)/)return;split(s,a,/[ \t]+/);p=a[1];np=(s~/NOPASSWD:/?"yes":"no");al=(s~/ALL[ \t]*=[ \t]*\(ALL(:ALL)?\)[ \t]*(NOPASSWD:[ \t]*)?ALL/?"yes":"no");print n "\t" p "\t" np "\t" al} {if(buf=="")start=NR;line=$0;if(line~/\\[ \t]*$/){sub(/\\[ \t]*$/, "", line);buf=buf line " ";next}rule(buf line,start);buf=""} END{if(buf!="")rule(buf,start)}' "$file")
     [ -n "$rows" ] || continue
     while IFS='	' read -r line principal nopasswd all; do
       if [ "$principal" = @include ]; then case "$nopasswd" in /etc/sudoers.d) :;; *) unknown sudoers "$logical" include-outside-default;; esac; continue; fi
@@ -345,9 +354,9 @@ collect_authkeys() {
     [ -e "$cfg" ] || continue
     if secret_overlap "${cfg#"$R"}"; then unknown authkey "${cfg#"$R"}" secret-overlap; continue; fi
     [ -r "$cfg" ] || { unknown authkey "${cfg#"$R"}" unreadable; continue; }
-    if awk 'tolower($1)=="include"{for(i=2;i<=NF;i++){p=$i;if(p!~/^\//)p="/etc/ssh/" p;if(index(p,"/etc/ssh/sshd_config.d/")!=1)f=1}} END{exit !f}' "$cfg"; then unknown authkey "${cfg#"$R"}" include-outside-default; fi
-    if awk 'tolower($1)=="authorizedkeyscommand"&&$2!="none"{f=1} tolower($1)=="authorizedkeysfile"{for(i=2;i<=NF;i++)if($i!=".ssh/authorized_keys"&&$i!=".ssh/authorized_keys2")f=2} END{exit !f}' "$cfg"; then
-      if awk 'tolower($1)=="authorizedkeyscommand"&&$2!="none"{f=1} END{exit !f}' "$cfg"; then unknown authkey "${cfg#"$R"}" authorized-keys-command; else unknown authkey "${cfg#"$R"}" non-default-authorized-keys-file; fi
+    if awk 'match($0,/^[ \t]*[A-Za-z]+[ \t]*=/){$0=substr($0,1,RLENGTH-1) " " substr($0,RLENGTH+1)} tolower($1)=="include"{for(i=2;i<=NF;i++){p=$i;if(p!~/^\//)p="/etc/ssh/" p;if(index(p,"/etc/ssh/sshd_config.d/")!=1)f=1}} END{exit !f}' "$cfg"; then unknown authkey "${cfg#"$R"}" include-outside-default; fi
+    if awk 'match($0,/^[ \t]*[A-Za-z]+[ \t]*=/){$0=substr($0,1,RLENGTH-1) " " substr($0,RLENGTH+1)} tolower($1)=="authorizedkeyscommand"&&$2!="none"{f=1} tolower($1)=="authorizedkeysfile"{for(i=2;i<=NF;i++)if($i!=".ssh/authorized_keys"&&$i!=".ssh/authorized_keys2")f=2} END{exit !f}' "$cfg"; then
+      if awk 'match($0,/^[ \t]*[A-Za-z]+[ \t]*=/){$0=substr($0,1,RLENGTH-1) " " substr($0,RLENGTH+1)} tolower($1)=="authorizedkeyscommand"&&$2!="none"{f=1} END{exit !f}' "$cfg"; then unknown authkey "${cfg#"$R"}" authorized-keys-command; else unknown authkey "${cfg#"$R"}" non-default-authorized-keys-file; fi
     fi
   done
   while IFS=: read -r account uid gid home shell class passwd_password; do
@@ -406,7 +415,7 @@ EOF
   target= sha=? hits= hits_key=hits
   if [ -L "$file" ]; then
     target=$(readlink -- "$file" 2>/dev/null || printf %s '?')
-    if change_times "$file"; then mtime=${CT%:*}; ctime=${CT#*:}; fi
+    if ! target_packaged "$file" && change_times "$file"; then mtime=${CT%:*}; ctime=${CT#*:}; fi
   fi
   if [ -f "$file" ]; then
     [ ! -L "$file" ] || size=$(stat -L -c %s -- "$file" 2>/dev/null) || size=?
@@ -437,13 +446,16 @@ collect_persistence() {
   walk_"$persistence" >/dev/null
   PACKAGE_SCAN=no PACKAGE_KNOWN=no PACKAGE_OWNED=
   set --
-  while IFS= read -r path; do [ -z "$path" ] || set -- "$@" "$path" $(alt_path "$path"); done <<EOF
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue; set -- "$@" "$path" $(alt_path "$path")
+    if [ -L "$R$path" ] && link_target=$(readlink -f -- "$R$path" 2>/dev/null); then set -- "$@" "${link_target#"$R"}" $(alt_path "${link_target#"$R"}"); fi
+  done <<EOF
 $PACKAGE_PATHS
 EOF
   if [ "$#" -gt 0 ]; then
     if command -v dpkg >/dev/null 2>&1; then
       owned=$(dpkg --search "$@" 2>/dev/null); rc=$?
-      if [ "$rc" -le 1 ]; then PACKAGE_KNOWN=yes; PACKAGE_OWNED=$(printf '%s\n' "$owned" | awk '{sub(/^[^\/]*: \//,"/");if($0~/^\//)print}'); fi
+      if [ "$rc" -le 1 ]; then PACKAGE_KNOWN=yes; PACKAGE_OWNED=$(printf '%s\n' "$owned" | awk '/^(local )?diversion /{next}{sub(/^[^\/]*: \//,"/");if($0~/^\//)print}'); fi
     elif command -v rpm >/dev/null 2>&1; then
       owned=$(rpm -qf --queryformat '[%{FILENAMES}\n]' -- "$@" 2>/dev/null); rc=$?
       if [ "$rc" -le 1 ] || printf '%s\n' "$owned" | awk 'NF&&!/^\//&&!/ is not owned by any package$/{bad=1} END{exit bad}'; then PACKAGE_KNOWN=yes; PACKAGE_OWNED=$(printf '%s\n' "$owned" | awk '/^\//'); fi
@@ -646,9 +658,11 @@ EOF
 
 collect_webroots() {
   [ -n "$WEBROOTS" ] || { not_requested webroot_file; return; }
-  begin_kind webroot_file
+  begin_kind webroot_file; PACKAGE_KNOWN=no WEB_SEEN='
+'
   while IFS= read -r root; do
     [ -d "$R$root" ] || { unknown webroot_file "$root" not-a-directory; continue; }
+    WEB_ROOT_REAL=$(readlink -f -- "$R$root" 2>/dev/null) || { unknown webroot_file "$root" unreadable; continue; }
     web_walk "$root" "$R$root"
   done <<EOF
 $WEBROOTS
@@ -659,13 +673,20 @@ EOF
 web_walk() {
   web_root=$1; web_dir=$2
   if dir_unsearchable "$web_dir"; then unknown webroot_file "${web_dir#"$R"}" unsearchable; return; fi
+  web_real=$(readlink -f -- "$web_dir" 2>/dev/null) || { unknown webroot_file "${web_dir#"$R"}" unreadable; return; }
+  case "$web_real/" in "$WEB_ROOT_REAL"/*) :;; *) unknown webroot_file "${web_dir#"$R"}" outside-webroot; return;; esac
+  case "$WEB_SEEN" in *"
+$web_real
+"*) return;; esac
+  WEB_SEEN="$WEB_SEEN$web_real
+"
   for file in "$web_dir"/* "$web_dir"/.[!.]* "$web_dir"/..?*; do
     [ -e "$file" ] || [ -L "$file" ] || continue
-    if [ -d "$file" ] && [ ! -L "$file" ]; then web_walk "$web_root" "$file"; continue; fi
+    if [ -d "$file" ]; then web_walk "$web_root" "$file"; continue; fi
     base=${file##*/}
     case "$base" in .htaccess|.user.ini|*.php|*.php[34578]|*.phtml|*.phar|*.pht|*.jsp|*.jspx|*.jspf|*.asp|*.aspx|*.ashx|*.cfm|*.cgi|*.pl|*.py|*.rb|*.sh|*.war) :;; *) continue;; esac
-    times=$(stat -c '%Y:%Z' -- "$file" 2>/dev/null) || { unknown webroot_file "${file#"$R"}" unreadable; continue; }
-    mtime=${times%:*}; ctime=${times#*:}
+    change_times "$file" || { [ -L "$file" ] && [ -n "$CT" ]; } || { unknown webroot_file "${file#"$R"}" unreadable; continue; }
+    mtime=${CT%:*}; ctime=${CT#*:}
     if [ "$mtime" -ge "$SINCE_EPOCH" ] 2>/dev/null || [ "$ctime" -ge "$SINCE_EPOCH" ] 2>/dev/null; then file_record webroot_file "${file#"$R"}" '' "$web_root"; fi
   done
 }
@@ -756,6 +777,6 @@ The collector requires POSIX `sh`, `awk`, `grep`, `od`, `stat`, `sha256sum`, `re
 
 Absolute secrets are stat’ed before account files or any other file is read. Home-relative secrets are stat’ed immediately after reading only passwd and login.defs. Secret overlap checks logical paths, targets resolved with `readlink -f`, and device and inode numbers, so a hard link is also an overlap, before opening, hashing, or grepping; an unresolved candidate is skipped conservatively. Account records include every passwd entry, classify numeric UID zero as `root`, and classify non-login system accounts as `system-nologin`. An empty passwd password field overrides shadow with `password=none`. When passwd is not read, the `secret` check for `~/` paths and the `authkey` and `systemd_unit` checks emit `unknown` for `/etc/passwd`. An `authorized_keys` line that is neither blank, a comment, nor parsed as a key emits `reason=unparsed`. A symlink is recorded even when its target is gone, so a dangling link is a record rather than `unreadable`; a regular-file target is hashed and searched through the link, and the record reports the later of the link's and the target's times. Runtime `.scope` and `.slice` units and their drop-in directories are skipped. When `/lib` is a symlink, the `/lib` unit directories are not walked a second time, and package ownership accepts either the `/lib` or the `/usr/lib` spelling. A secret pattern that passes through a directory the collector cannot search or list is `unknown` with `reason=unsearchable`, even when other matches exist. A read-only mount reports `atime_mode=readonly`, and the last mount on a mount point decides the mode. `pkg_modified` records carry the file's `mtime` and `ctime`. The alias check stats every package path in one batched `xargs` call and compares device and inode numbers with the secrets'.
 
-Socket records use the last `pid=N,fd=` occurrence in the `users:((...))` field and normalize IPv4-mapped addresses before encoding. Systemd discovery also includes `/run/systemd/transient`, both `system.control` directories, and every account’s `~/.local/share/systemd/user`. A secret whose nearest existing parent directory is unsearchable is `unknown` with `reason=unsearchable`. A failed pattern search prints `hits=?` and an `unknown` record for the file. A symlinked sudoers or `authorized_keys` file reports the later of the link’s and the target’s times. Only TCP listeners set `listening=yes` on a TCP connection. A file whose device or inode changed while it was read is dropped as `reason=changed-during-read`. An sshd `Include` outside `/etc/ssh/sshd_config.d` is `reason=include-outside-default`. Sudoers files that sudo skips, those with a dot or a trailing `~`, are not read. An RPM `missing` line with an error is `unknown` with `reason=unreadable`. A login without a remote address has an empty `from`. Cron coverage includes `/etc/cron.yearly`; systemd coverage includes `/run/systemd/user` and the system and user generator directories. Package verification preserves spaced paths, accepts RPM attribute markers `c`, `d`, `g`, `l`, `r`, and ignores non-file diagnostics. Unknown digest evidence means position 3 for dpkg or position 3 (the `5` test) for RPM, rather than any `?` elsewhere.
+Socket records use the last `pid=N,fd=` occurrence in the `users:((...))` field and normalize IPv4-mapped addresses before encoding. Systemd discovery also includes `/run/systemd/transient`, both `system.control` directories, and every account’s `~/.local/share/systemd/user`. A secret whose nearest existing parent directory is unsearchable is `unknown` with `reason=unsearchable`. A failed pattern search prints `hits=?` and an `unknown` record for the file. A symlinked sudoers or `authorized_keys` file reports the later of the link’s and the target’s times. Only TCP listeners set `listening=yes` on a TCP connection. Sshd keywords written as `Keyword=value` are read like `Keyword value`, and `dpkg` diversion lines never count as package ownership. A file whose device or inode changed while it was read is dropped as `reason=changed-during-read`. An sshd `Include` outside `/etc/ssh/sshd_config.d` is `reason=include-outside-default`. Sudoers files that sudo skips, those with a dot or a trailing `~`, are not read. An RPM `missing` line with an error is `unknown` with `reason=unreadable`. A login without a remote address has an empty `from`. Cron coverage includes `/etc/cron.yearly`; systemd coverage includes `/run/systemd/user` and the system and user generator directories. Package verification preserves spaced paths, accepts RPM attribute markers `c`, `d`, `g`, `l`, `r`, and ignores non-file diagnostics. Unknown digest evidence means position 3 for dpkg or position 3 (the `5` test) for RPM, rather than any `?` elsewhere.
 
 RPM verification passes [`--nodeps --noscripts`](https://rpm.org/docs/latest/man/rpm.8) so package verification scriptlets do not execute on the host.

@@ -2713,3 +2713,134 @@ def test_a_dangling_rc_local_symlink_is_recorded(tmp_path: Path, shell: str):
     result = _collect(tmp_path, shell, root, f'since={SINCE}')
 
     assert [row['path'] for row in result.records('rc_local')] == ['/etc/rc.local']
+
+
+def test_an_enable_link_to_a_packaged_unit_keeps_its_own_times(
+    tmp_path: Path, shell: str
+):
+    root = _host_tree(tmp_path)
+    target = _write(root, 'usr/lib/systemd/system/ssh.service', '[Service]\n')
+    (root / 'lib').symlink_to('usr/lib')
+    link = root / 'etc/systemd/system/multi-user.target.wants/ssh.service'
+    link.parent.mkdir(parents=True)
+    link.symlink_to(root / 'lib/systemd/system/ssh.service')
+    os.utime(link, (BEFORE, BEFORE), follow_symlinks=False)
+
+    result = _collect(
+        tmp_path,
+        shell,
+        root,
+        f'since={SINCE}',
+        DPKG_SEARCH_EXIT='1',
+        DPKG_SEARCH_OUT='openssh-server: /lib/systemd/system/ssh.service',
+    )
+
+    wanted = next(
+        row
+        for row in result.records('systemd_unit')
+        if row['path'].endswith('.wants/ssh.service')
+    )
+    assert (wanted['packaged'], wanted['mtime']) == ('no', '2025-07-31T22:13:20Z')
+    assert target.exists()
+
+
+def test_web_directory_links_are_walked_inside_the_root_only(
+    tmp_path: Path, shell: str
+):
+    root = _host_tree(tmp_path)
+    _write(root, 'var/www/html/releases/1/shell.php', '<?php ?>\n')
+    (root / 'var/www/html/current').symlink_to(root / 'var/www/html/releases/1')
+    (root / 'var/www/html/releases/1/loop').symlink_to(root / 'var/www/html')
+    _write(root, 'srv/shared/uploads/up.php', '<?php ?>\n')
+    (root / 'var/www/html/uploads').symlink_to(root / 'srv/shared/uploads')
+
+    result = _collect(tmp_path, shell, root, f'since={SINCE}', 'webroot=/var/www/html')
+
+    paths = [row['path'] for row in result.records('webroot_file')]
+    assert len(paths) == 1
+    assert paths[0].endswith('/shell.php')
+    assert (
+        'unknown kind=webroot_file path=/var/www/html/uploads reason=outside-webroot'
+        in result.lines
+    )
+
+
+def test_sshd_keywords_written_with_an_equals_sign_are_read(tmp_path: Path, shell: str):
+    root = _host_tree(tmp_path)
+    _write(root, 'etc/ssh/sshd_config', 'AuthorizedKeysFile=/etc/keys/%u\n')
+
+    result = _collect(tmp_path, shell, root, f'since={SINCE}')
+
+    assert (
+        'unknown kind=authkey path=/etc/ssh/sshd_config '
+        'reason=non-default-authorized-keys-file'
+    ) in result.lines
+
+
+def test_a_web_script_link_is_selected_by_its_target_change_time(
+    tmp_path: Path, shell: str
+):
+    root = _host_tree(tmp_path)
+    target = _write(root, 'srv/shared/config.php', '<?php ?>\n', 1_830_000_000)
+    link = root / 'var/www/html/config.php'
+    link.symlink_to(target)
+    os.utime(link, (BEFORE, BEFORE), follow_symlinks=False)
+
+    result = _collect(
+        tmp_path, shell, root, 'since=2027-06-01', 'webroot=/var/www/html'
+    )
+
+    assert [row['path'] for row in result.records('webroot_file')] == [
+        '/var/www/html/config.php'
+    ]
+
+
+def test_a_dpkg_diversion_does_not_make_a_file_packaged(tmp_path: Path, shell: str):
+    root = _host_tree(tmp_path)
+    _write(root, 'etc/cron.d/evil', '* * * * * root /tmp/x\n')
+
+    result = _collect(
+        tmp_path,
+        shell,
+        root,
+        f'since={SINCE}',
+        DPKG_SEARCH_EXIT='0',
+        DPKG_SEARCH_OUT='local diversion from: /etc/cron.d/evil\nlocal diversion to: /etc/cron.d/evil.distrib',
+    )
+
+    assert result.records('cron')[0]['packaged'] == 'no'
+
+
+def test_sudoers_defaults_lines_are_never_rules(tmp_path: Path, shell: str):
+    root = _host_tree(tmp_path)
+    _write(
+        root,
+        'etc/sudoers',
+        'Defaults!/usr/local/bin/db-backup noexec\nDefaults>root env_reset\n'
+        'Defaults:alice !lecture\nDefaults@web01 log_output\nroot ALL=(ALL:ALL) ALL\n',
+    )
+
+    result = _collect(tmp_path, shell, root, f'since={SINCE}')
+
+    assert [row['principal'] for row in result.records('sudoers')] == ['root']
+    assert 'db-backup' not in '\n'.join(result.lines)
+
+
+def test_files_under_a_secret_directory_are_never_opened(tmp_path: Path, shell: str):
+    root = _host_tree(tmp_path)
+    _write(root, 'var/www/html/config/db.php', '<?php $pw = "fixture"; ?>\n')
+
+    result = _collect(
+        tmp_path,
+        shell,
+        root,
+        f'since={SINCE}',
+        'webroot=/var/www/html',
+        'secret=/var/www/html/config',
+    )
+
+    assert result.records('webroot_file') == []
+    assert (
+        'unknown kind=webroot_file path=/var/www/html/config/db.php '
+        'reason=secret-overlap'
+    ) in result.lines
