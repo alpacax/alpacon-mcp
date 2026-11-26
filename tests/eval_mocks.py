@@ -85,6 +85,32 @@ EXPOSURE_RESULT = (
     'findings=port:9000@0.0.0.0,port:9001@0.0.0.0\n'
     'unknowns=\n'
 )
+LOG_CASE = 'compromise-log-check-reports-short-retention-as-unknown/mocks/alpacon'
+PAIR_CASE = 'compromise-log-check-pairs-only-a-later-request/mocks/alpacon'
+LOG_SCRIPT = '/home/ubuntu/alpacon-log-search-CVE-2026-72898.sh'
+LOG_SESSION = {
+    'servers': [SID],
+    'scopes': ['command', 'webftp'],
+    'target_account_username': 'ubuntu',
+    'description': 'Search the nginx logs on web-01 for one request pattern; '
+    'writes one search script and changes nothing else.',
+}
+CMD_LOG = '4b7d9e21-3c5a-4f68-9d0e-8a1b2c3d4e5f'
+LOG_RESULT = (
+    'now=2026-11-23T16:00:00+0900\n'
+    'mtime path=/var/log/nginx/access.log.1 utc=2026-11-22T15:00:00Z\n'
+    'file path=/var/log/nginx/access.log.1 status=ok lines=2 control=2 '
+    'first=[[10/Nov/2026:00:00:04 +0900]] '
+    'last=[[22/Nov/2026:23:59:51 +0900]] '
+    'days=[10/Nov/2026,22/Nov/2026]\n'
+    'mtime path=/var/log/nginx/access.log utc=2026-11-23T06:59:58Z\n'
+    'file path=/var/log/nginx/access.log status=ok lines=1 control=1 '
+    'first=[[23/Nov/2026:15:59:58 +0900]] '
+    'last=[[23/Nov/2026:15:59:58 +0900]] '
+    'days=[23/Nov/2026]\n'
+    'total pattern=1 count=0 shown=0\n'
+    'search=complete files=2 problems=0\n'
+)
 SERVER_NAMES = {SID: 'web-01', SID2: 'web-02', SID3: 'web-03'}
 SERVER = {'id': SID, 'name': 'web-01'}
 ECHO = 'ECHO-INPUT-COMMAND'
@@ -134,6 +160,11 @@ def exposure_check_line() -> str:
     )
 
 
+def log_search_script() -> str:
+    """The compromise-log-check skill's search with its Metabase anchor, as an agent submits it."""
+    return doc_blocks('compromise-log-check/references/search.md', 'sh')[0]
+
+
 def session_row(sid: str, status: str, **extra: object) -> dict[str, object]:
     row = {
         'id': sid,
@@ -169,6 +200,16 @@ def page(results: list[dict[str, object]]) -> httpx.Response:
 COMMANDS = '/api/events/commands/'
 SESSIONS = '/api/work-sessions/sessions/'
 UPLOADS = '/api/webftp/uploads/'
+UPLOAD_ROUTES: Routes = {
+    ('POST', UPLOADS): httpx.Response(
+        201,
+        json={'id': UPLOAD_ID, 'upload_url': 'https://s3.example.test/put'},
+    ),
+    ('GET', f'{UPLOADS}{UPLOAD_ID}/upload/'): httpx.Response(200, json={}),
+    ('GET', f'{UPLOADS}{UPLOAD_ID}/status/'): httpx.Response(
+        200, json={'success': True}
+    ),
+}
 CSRS = '/api/cert/sign-requests/'
 CSR_ROW = {
     'id': CSR_ID,
@@ -607,17 +648,58 @@ MOCKS: list[Mock] = [
             command_id=CMD_EXPOSURE, workspace=WS, region=REGION
         ),
     ),
+    *_rollout_mocks(LOG_CASE, LOG_SESSION),
+    *_rollout_mocks(PAIR_CASE, LOG_SESSION),
+    Mock(  # offered so that falling back to a command line is seen
+        f'{LOG_CASE}/execute_command_multi_server.md',
+        {('POST', COMMANDS): httpx.Response(201, json={'id': CMD_LOG})},
+        lambda: command_tools.execute_command_multi_server(
+            server_ids=[SID],
+            command=ECHO,
+            workspace=WS,
+            region=REGION,
+            username='ubuntu',
+            work_session_id=WSID,
+            purpose='search the nginx logs for the advisory pattern; read-only',
+        ),
+        echo=ECHO,
+    ),
+    Mock(
+        f'{LOG_CASE}/execute_file.md',
+        UPLOAD_ROUTES
+        | {
+            ('POST', COMMANDS): httpx.Response(201, json={'id': CMD_LOG}),
+            ('GET', f'{COMMANDS}{CMD_LOG}/'): httpx.Response(
+                200,
+                json=command_row(
+                    CMD_LOG,
+                    f'/bin/sh {LOG_SCRIPT}',
+                    result=LOG_RESULT,
+                    added_at='2026-11-23T06:59:59Z',  # the run's `now`, so its clock reads right
+                    handled_at='2026-11-23T07:00:02Z',
+                ),
+            ),
+        },
+        _s3_accepts(
+            lambda: command_tools.execute_file(
+                server_id=SID,
+                path=LOG_SCRIPT,
+                content=log_search_script(),
+                write_file=True,
+                interpreter='/bin/sh',
+                workspace=WS,
+                region=REGION,
+                username='ubuntu',
+                work_session_id=WSID,
+                purpose='search the nginx logs for the advisory pattern',
+                timeout=1,
+            )
+        ),
+    ),
     Mock(  # every run of the recipe fails, so only the first server may see one
         f'{PATCH_CASE}/execute_file.md',
-        {
-            ('POST', UPLOADS): httpx.Response(
-                201,
-                json={'id': UPLOAD_ID, 'upload_url': 'https://s3.example.test/put'},
-            ),
-            ('GET', f'{UPLOADS}{UPLOAD_ID}/upload/'): httpx.Response(200, json={}),
-            ('GET', f'{UPLOADS}{UPLOAD_ID}/status/'): httpx.Response(
-                200, json={'success': True}
-            ),
+        UPLOAD_ROUTES
+        | {
             ('POST', COMMANDS): httpx.Response(201, json={'id': CMD_PATCH}),
             ('GET', f'{COMMANDS}{CMD_PATCH}/'): httpx.Response(
                 200,
@@ -656,6 +738,7 @@ HAND_WRITTEN = {
     f'{SECOND_CASE}/execute_command.md',
     f'{SECOND_CASE}/execute_file.md',  # an agent responder: each server answers differently
     f'{NO_CVE_CASE}/check_command_status.md',  # answers for whichever command was submitted
+    f'{PAIR_CASE}/execute_file.md',  # answers differ by the script submitted
     *(
         f'{case}/{tool}.md'
         for case in PREFLIGHT_CASES
