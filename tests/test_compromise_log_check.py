@@ -378,6 +378,24 @@ def test_long_path_keeps_the_address_and_status(shell: str, log: Path) -> None:
     assert 'a' * 400 not in match
 
 
+def test_match_marks_clipping_without_confusing_literal_dots(
+    shell: str, log: Path
+) -> None:
+    literal_dots = RESET.replace('/api', '/.../api')
+    long_path = RESET.replace('/api', f'/{"a" * 350}/api')
+    long_prefix = RESET.replace(' - - ', f' - {"a" * 210} ')
+    log.write_text(f'{literal_dots}\n{long_path}\n{long_prefix}\n')
+
+    out = _search(shell, log)
+
+    matches = [line for line in out if line.startswith('match ')]
+    assert len(matches) == 3
+    assert 'line=1 text=' in matches[0]
+    assert '/.../api' in matches[0]
+    assert 'line=2 clipped text=' in matches[1]
+    assert 'line=3 clipped text=' in matches[2]
+
+
 def test_each_pattern_gets_its_own_total(shell: str, log: Path) -> None:
     anchor = re.search(r"^patterns='(.*)'$", doc_blocks(SEARCH, 'sh')[0], re.M)
     assert anchor
