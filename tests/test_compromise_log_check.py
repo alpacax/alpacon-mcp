@@ -33,8 +33,8 @@ NOTICE_MARK = '^[0-9/]+ [0-9:]+ [[]notice[]] '
 pytestmark = pytest.mark.parametrize('shell', ['sh', 'bash'])
 
 
-def _search(shell: str, *logs: Path, **values: str) -> list[str]:
-    """Run the documented search, filled with `values`; returns its output lines."""
+def _run(shell: str, logs: tuple[Path, ...], values: dict[str, str]) -> tuple[str, str]:
+    """Run the documented search, filled with `values`; returns its stdout and stderr."""
     script = doc_blocks(SEARCH, 'sh')[0]
     listed = '\n'.join(map(str, logs))
     for name, value in {'logs': listed, 'active': listed, **values}.items():
@@ -48,7 +48,19 @@ def _search(shell: str, *logs: Path, **values: str) -> list[str]:
             [shell, file.name], text=True, capture_output=True, check=False, timeout=10
         )
     assert result.returncode == 0, result.stderr
-    return result.stdout.splitlines()
+    return result.stdout, result.stderr
+
+
+def _search(shell: str, *logs: Path, **values: str) -> list[str]:
+    """The search's output lines; it must print nothing to stderr."""
+    out, err = _run(shell, logs, values)
+    assert err == ''
+    return out.splitlines()
+
+
+def _search_despite_stderr(shell: str, *logs: Path, **values: str) -> list[str]:
+    """The search's output lines where the shell itself writes to stderr."""
+    return _run(shell, logs, values)[0].splitlines()
 
 
 def _file_lines(out: list[str]) -> dict[str, str]:
@@ -164,6 +176,18 @@ def test_missing_log_is_incomplete(shell: str, log: Path) -> None:
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason='root reads everything')
+def test_unreadable_log_is_reported_without_an_error_message(
+    shell: str, log: Path
+) -> None:
+    log.chmod(0)
+
+    out = _search(shell, log)
+
+    assert _file_lines(out)['access.log'] == 'unreadable'
+    assert out[-1].startswith('search=incomplete')
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason='root reads everything')
 def test_unreadable_rotated_copy_is_incomplete(shell: str, log: Path) -> None:
     old = Path(f'{log}.1')
     old.write_text(RESET + '\n')
@@ -233,6 +257,44 @@ def test_archive_without_its_decompressor_is_incomplete(
     assert out[-1] == 'search=incomplete files=2 problems=1'
 
 
+def test_archive_read_by_a_decompressor_that_skips_trailing_data_is_read_failed(
+    shell: str, log: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = gzip.compress((HOME + '\n').encode())
+    hidden = gzip.compress((RESET + '\n').encode())
+    Path(f'{log}.1.gz').write_bytes(first + b'JUNKJUNK' + hidden)
+    real = shutil.which('gzip')
+    install_fakes(
+        tmp_path / 'bin',
+        {
+            'gzip': f'case $1 in (-dc) "{real}" -dc 2>/dev/null | head -n 1; exit 0 ;; esac\n'
+            f'exec "{real}" "$@"'
+        },
+    )
+    monkeypatch.setenv('PATH', f'{tmp_path / "bin"}{os.pathsep}{os.environ["PATH"]}')
+
+    out = _search(shell, log)
+
+    assert _file_lines(out)['access.log.1.gz'] == 'read_failed'
+    assert out[-1] == 'search=incomplete files=2 problems=1'
+
+
+def test_archive_read_by_a_decompressor_that_cannot_be_probed_is_read_failed(
+    shell: str, log: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    Path(f'{log}.1.gz').write_bytes(gzip.compress((HOME + '\n').encode()))
+    real = shutil.which('gzip')
+    install_fakes(
+        tmp_path / 'bin',
+        {'gzip': f'case $1 in (-dc) exec "{real}" -dc ;; esac\nexit 1'},
+    )
+    monkeypatch.setenv('PATH', f'{tmp_path / "bin"}{os.pathsep}{os.environ["PATH"]}')
+
+    out = _search(shell, log)
+
+    assert _file_lines(out)['access.log.1.gz'] == 'read_failed'
+
+
 @pytest.mark.parametrize('field', ['agent', 'referer', 'user'])
 def test_request_written_by_the_client_is_not_counted(
     shell: str, log: Path, field: str
@@ -291,7 +353,7 @@ def test_bytes_that_are_not_utf8_do_not_stop_the_search(
     monkeypatch.setenv('LC_ALL', 'en_US.UTF-8')
     log.write_bytes(RESET.encode().replace(b'agent-x', b'\xff\xfe') + b'\n')
 
-    out = _search(shell, log)
+    out = _search_despite_stderr(shell, log)  # bash warns of a missing locale
 
     assert 'total pattern=1 count=1 shown=1' in out
     assert out[-1] == 'search=complete files=1 problems=0'
@@ -651,7 +713,13 @@ def test_pairing_run_keeps_only_lines_holding_every_fixed_string(
         (RESET.replace('/api/session/', '/api/v2/session/'), 0),
         (RESET.replace('/api/session/', '/api/a/b/../../session/'), 1),
         (RESET.replace('/session/', '/session/a/b/../../'), 1),
-        (RESET.replace('POST /', 'POST x /'), 0),
+        (RESET.replace('POST /', 'POST x /'), 1),
+        (RESET.replace('POST /api', 'POST /x /../api'), 1),
+        (RESET.replace('POST /api', r'POST /a\"b/../api'), 1),
+        (RESET.replace('POST /api', r'POST /a\\b/../api'), 1),
+        (RESET.replace('/api/session/', r'/api/a\"b/../session/'), 1),
+        (RESET.replace('HTTP/1.1" 400', 'HTTP/1.1" 499'), 1),
+        (RESET.replace('HTTP/1.1" 400', 'HTTP/1.1" 404'), 0),
         (RESET.replace('POST /', 'POST   /'), 1),
         (RESET.replace('HTTP/1.1', 'http/1.1'), 1),
         (RESET.replace(' HTTP/1.1', ''), 1),
@@ -690,6 +758,14 @@ def test_metabase_anchor_matches_only_a_refused_reset(
         (CURRENT.replace('/api/user/', '/api/v2/user/'), 0),
         (CURRENT.replace('/api/user/', '/api/a/b/../../user/'), 1),
         (CURRENT.replace('/user/', '/user/a/b/../../'), 1),
+        (CURRENT.replace('GET /api', 'GET http://metabase.example/api'), 1),
+        (CURRENT.replace('GET /api', 'GET HTTPS://metabase.example:443/api'), 1),
+        (CURRENT.replace('GET /api', 'GET http://metabase.example/x/api'), 0),
+        (CURRENT.replace('GET /api', 'GET ftp://metabase.example/api'), 0),
+        (CURRENT.replace('GET /api', 'GET /x /../api'), 1),
+        (CURRENT.replace('GET /api', r'GET /a\"b/../api'), 1),
+        (CURRENT.replace('/api/user/', r'/api/a\"b/../user/'), 1),
+        (CURRENT.replace('" 200', '" 499'), 1),
     ],
 )
 def test_metabase_second_request_matches_only_an_answered_read(
@@ -719,6 +795,8 @@ def test_rotated_name_cannot_forge_a_status(shell: str, log: Path, suffix: str) 
 
     out = _search(shell, log)
 
+    assert f'file path={log} status=unsafe_name' in out
+    assert not any(line.split()[-1] == 'status=ok' for line in out)
     assert out[-1].startswith('search=incomplete')
 
 
@@ -959,7 +1037,9 @@ def test_line_holding_two_requests_is_not_read_as_one(shell: str, log: Path) -> 
     assert _file_lines(out) == {'access.log': 'partial'}
 
 
-def test_line_cut_before_its_status_is_not_read(shell: str, log: Path) -> None:
+def test_line_cut_before_its_status_makes_the_file_partial(
+    shell: str, log: Path
+) -> None:
     cut = RESET.split(' 400')[0].removesuffix('"')
     log.write_text(f'{HOME}\n{cut}{HOME}\n')
 
@@ -999,7 +1079,9 @@ def test_match_hides_path_parameters_and_fragments(
     assert any('reset_password?..." 400' in line for line in out), out
 
 
-def test_line_with_a_nul_inside_its_request_is_not_read(shell: str, log: Path) -> None:
+def test_line_with_a_nul_inside_its_request_makes_the_file_partial(
+    shell: str, log: Path
+) -> None:
     log.write_bytes(
         f'{HOME}\n'.encode() + RESET.encode().replace(b'pass', b'pa\0s') + b'\n'
     )
@@ -1030,7 +1112,9 @@ def test_file_line_dates_carry_no_address_or_user_name(shell: str, log: Path) ->
     assert not re.search('alice|198.51.100.7', file_line)
 
 
-def test_line_with_a_raw_byte_in_its_request_is_not_read(shell: str, log: Path) -> None:
+def test_line_with_a_raw_byte_in_its_request_makes_the_file_partial(
+    shell: str, log: Path
+) -> None:
     log.write_bytes(
         f'{HOME}\n'.encode() + RESET.encode().replace(b'pass', b'pa\xffs') + b'\n'
     )
@@ -1045,6 +1129,7 @@ def test_match_hides_a_query_that_holds_an_at_sign(shell: str, log: Path) -> Non
 
     out = _search(shell, log, patterns='^"[A-Z]+ [^"]*reset')
 
+    assert 'total pattern=1 count=1 shown=1' in out
     assert 's3cret' not in '\n'.join(out)
 
 
@@ -1060,7 +1145,7 @@ def test_record_overwritten_by_nul_bytes_leaves_the_file_partial(
     assert _file_lines(out) == {'access.log': 'partial'}
 
 
-def test_line_cut_after_its_time_is_not_read(shell: str, log: Path) -> None:
+def test_line_cut_after_its_time_makes_the_file_partial(shell: str, log: Path) -> None:
     log.write_text(f'{HOME}\n203.0.113.9 - - {TIME} {HOME}\n')
 
     out = _search(shell, log)
@@ -1076,7 +1161,7 @@ def test_line_cut_after_its_time_is_not_read(shell: str, log: Path) -> None:
         f'198.51.100.8 - - {RESET}',
     ],
 )
-def test_record_joined_to_a_cut_one_is_not_read(
+def test_record_joined_to_a_cut_one_makes_the_file_partial(
     shell: str, log: Path, joined: str
 ) -> None:
     log.write_text(f'{HOME}\n{joined}\n')
@@ -1141,6 +1226,94 @@ def test_match_on_a_line_that_breaks_the_format_is_marked(
 
     assert 'total pattern=1 count=1 shown=1' in out
     assert any(line.startswith('match ') and ' broken text=' in line for line in out)
+
+
+def test_broken_match_shows_only_its_request_not_what_precedes_it(
+    shell: str, log: Path
+) -> None:
+    cut = f'198.51.100.8 - - {TIME} "GET /embed/PLACEHOLDER-SEGMENT'
+    log.write_text(f'{HOME}\n{cut}{RESET}\n')
+
+    out = _search(shell, log)
+
+    shown = [line for line in out if line.startswith('match ')]
+    assert len(shown) == 1
+    assert ' broken text="POST /api/session/reset_password?..." 400' in shown[0]
+    assert not any('PLACEHOLDER-SEGMENT' in line for line in out)
+    assert not any('198.51.100.8' in line for line in shown)
+
+
+def test_match_in_a_later_request_on_a_joined_line_is_found_as_broken(
+    shell: str, log: Path
+) -> None:
+    log.write_text(f'{HOME}\n{HOME[:-3]}{RESET}\n')
+
+    out = _search(shell, log)
+
+    shown = [line for line in out if line.startswith('match ')]
+    assert 'total pattern=1 count=1 shown=1' in out
+    assert len(shown) == 1
+    assert ' broken text="POST /api/session/reset_password?..." 400' in shown[0]
+    assert _file_lines(out) == {'access.log': 'partial'}
+
+
+@pytest.mark.parametrize('secret', ['S3C#RET', 'S3C;RET'])
+def test_password_holding_a_query_mark_leaves_no_part_of_the_login(
+    shell: str, log: Path, secret: str
+) -> None:
+    line = RESET.replace('POST /api', f'POST http://alice:{secret}@host.example/api')
+    log.write_text(f'{HOME}\n{line}\n')
+
+    out = _search(shell, log)
+
+    shown = [line for line in out if line.startswith('match ')]
+    assert len(shown) == 1
+    assert 'alice' not in shown[0]
+    assert 'S3C' not in shown[0]
+
+
+@pytest.mark.parametrize('secret', ['p@ss', 'a@b@c'])
+def test_password_holding_an_at_sign_is_masked_whole(
+    shell: str, log: Path, secret: str
+) -> None:
+    line = RESET.replace('POST /api', f'POST http://user:{secret}@host.example/api')
+    log.write_text(f'{HOME}\n{line}\n')
+
+    out = _search(shell, log)
+
+    shown = [line for line in out if line.startswith('match ')]
+    assert len(shown) == 1
+    assert '"POST http://...@host.example/api/session/reset_password?..."' in shown[0]
+
+
+def test_search_that_stops_before_every_file_is_read_is_incomplete(
+    shell: str, log: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    old = Path(f'{log}.1')
+    old.write_text(HOME + '\n')
+    os.utime(old, (1_700_000_000, 1_700_000_000))
+    install_fakes(
+        tmp_path / 'bin', {'tr': f'kill -9 "$PPID"; exec "{shutil.which("tr")}" "$@"'}
+    )
+    monkeypatch.setenv('PATH', f'{tmp_path / "bin"}{os.pathsep}{os.environ["PATH"]}')
+
+    out = _search_despite_stderr(shell, log)  # the shell reports the killed job
+
+    assert not any(line.startswith(f'file path={log} ') for line in out)
+    assert out[-1].startswith('search=incomplete')
+
+
+def test_time_slice_is_tried_on_the_time_field_not_on_text_a_client_wrote(
+    shell: str, log: Path
+) -> None:
+    decoy = RESET.replace('04/Aug/2026', '02/Aug/2026').replace(
+        '?token=s3cret', '?q=[04/Aug/2026:10:12:'
+    )
+    log.write_text('\n'.join([decoy] * 11 + [RESET, '']))
+
+    out = _search(shell, log, also='[04/Aug/2026:10:12:')
+
+    assert 'total pattern=1 count=1 shown=1' in out
 
 
 def test_log_refilled_past_its_size_while_read_is_changed(
