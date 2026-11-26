@@ -8,7 +8,7 @@ A Work Session is the approved window an agent works inside: which servers, whic
 - Never open a second session while one is pending; the result says so in `next_action`, and the second request only waits beside the first.
 - Ask `work_session_create` for what the whole task needs: every target server, the `scopes`, an `expires_at` long enough for the work, and a `description` the approver can judge.
 - Scopes: `command` runs `execute_command` and `execute_file`, `webftp` moves files, `tunnel` forwards ports, and `sudo` elevates. `execute_file` with `write_file` or `read_from_server` also moves the file, so it needs `webftp` as well as `command`. Request `sudo` only when the task truly needs root. Interactive Websh access is not available to an agent; asking for the `websh` scope is refused with `work_session_scope_not_allowed`.
-- To run as another OS account such as `root`, set `target_account_username` at creation. The session approves that one account; pass the same account as `username` on each command. `work_session_update` cannot change the account, so a different account needs a new session, or a person who changes the session for you.
+- To run as another OS account such as `root`, set `target_account_username` at creation. The session approves that one account; pass the same account as `username` on each command. `work_session_update` cannot change the account, so a different account needs a new session, or a person who changes the session for you. The Alpacon server refuses commands and file transfers as `root` with `workspace_direct_root_disabled` unless the workspace's `allow_direct_root` setting is on (off by default; `get_workspace_access_control` reads it), even when the session names `root`.
 
 ## Waiting for approval
 
