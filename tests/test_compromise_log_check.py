@@ -27,6 +27,7 @@ CURRENT = (
 SECOND = doc_blocks(SEARCH, 'text')[0].strip()
 LINE = re.search("^line='(.*)'$", doc_blocks(SEARCH, 'sh')[0], re.M)[1]  # type: ignore[index]
 VHOST_LINE = LINE.replace('^', '^[^ "[]+ ', 1)
+BROKEN = re.compile(r'match pattern=\d+ file=\S+ line=\d+ broken')
 NOTICE = '2026/08/04 10:12:01 [notice] 42#42: signal process started'
 NOTICE_MARK = '^[0-9/]+ [0-9:]+ [[]notice[]] '
 
@@ -457,7 +458,7 @@ def test_record_run_into_the_tail_of_a_broken_line_is_searched_as_broken(
     out = _search(shell, log)
 
     assert 'total pattern=1 count=1 shown=1' in out
-    assert any(line.startswith('match ') and ' broken text=' in line for line in out)
+    assert any(BROKEN.fullmatch(line) for line in out)
     assert any('status=partial lines=1 control=1' in line for line in out)
 
 
@@ -1243,12 +1244,10 @@ def test_match_on_a_line_that_breaks_the_format_is_marked(
     out = _search(shell, log)
 
     assert 'total pattern=1 count=1 shown=1' in out
-    assert any(line.startswith('match ') and ' broken text=' in line for line in out)
+    assert any(BROKEN.fullmatch(line) for line in out)
 
 
-def test_broken_match_shows_only_its_request_not_what_precedes_it(
-    shell: str, log: Path
-) -> None:
+def test_broken_match_returns_no_text_from_its_line(shell: str, log: Path) -> None:
     cut = f'198.51.100.8 - - {TIME} "GET /embed/PLACEHOLDER-SEGMENT'
     log.write_text(f'{HOME}\n{cut}{RESET}\n')
 
@@ -1256,9 +1255,25 @@ def test_broken_match_shows_only_its_request_not_what_precedes_it(
 
     shown = [line for line in out if line.startswith('match ')]
     assert len(shown) == 1
-    assert ' broken text="POST /api/session/reset_password?..." 400' in shown[0]
-    assert not any('PLACEHOLDER-SEGMENT' in line for line in out)
-    assert not any('198.51.100.8' in line for line in shown)
+    assert shown[0].endswith(' line=2 broken')
+    assert not any(
+        'PLACEHOLDER-SEGMENT' in line or 'reset_password' in line for line in out
+    )
+
+
+def test_broken_match_in_a_field_after_the_status_returns_none_of_it(
+    shell: str, log: Path
+) -> None:
+    later = '"POST /TRAILING-SECRET/api/session/reset_password HTTP/1.1" 400'
+    log.write_text(f'{HOME}\n{HOME} {later}\n')
+
+    out = _search(shell, log)
+
+    shown = [line for line in out if line.startswith('match ')]
+    assert 'total pattern=1 count=1 shown=1' in out
+    assert len(shown) == 1
+    assert shown[0].endswith(' line=2 broken')
+    assert not any('TRAILING-SECRET' in line for line in out)
 
 
 def test_match_in_a_later_request_on_a_joined_line_is_found_as_broken(
@@ -1271,7 +1286,7 @@ def test_match_in_a_later_request_on_a_joined_line_is_found_as_broken(
     shown = [line for line in out if line.startswith('match ')]
     assert 'total pattern=1 count=1 shown=1' in out
     assert len(shown) == 1
-    assert ' broken text="POST /api/session/reset_password?..." 400' in shown[0]
+    assert shown[0].endswith(' line=2 broken')
     assert _file_lines(out) == {'access.log': 'partial'}
 
 
@@ -1360,7 +1375,7 @@ def test_address_run_into_another_record_is_broken(shell: str, log: Path) -> Non
 
     out = _search(shell, log, patterns=SECOND, also='^203.0.113.9 ')
 
-    assert any(line.startswith('match ') and ' broken text=' in line for line in out)
+    assert any(BROKEN.fullmatch(line) for line in out)
 
 
 def test_copy_named_outside_the_rotation_rules_is_reported(
