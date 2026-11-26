@@ -2,8 +2,9 @@
 
 import os
 import re
+import shutil
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 
 SKILLS = Path(__file__).resolve().parents[1] / 'plugins/alpacon/skills'
@@ -21,6 +22,20 @@ def install_fakes(bin_dir: Path, fakes: dict[str, str]) -> None:
         path = bin_dir / name
         path.write_text('#!/bin/sh\n' + body + '\n')
         path.chmod(0o755)
+
+
+GNU_COREUTILS = {'sha256sum', 'stat'}  # macOS installs these as gstat, gsha256sum
+
+
+def toolbox(bin_dir: Path, real: Iterable[str]) -> str:
+    bin_dir.mkdir(exist_ok=True)
+    for name in real:
+        gnu = shutil.which(f'g{name}') if name in GNU_COREUTILS else None
+        resolved = gnu or shutil.which(name)
+        if resolved is None:
+            raise FileNotFoundError(name)
+        (bin_dir / name).symlink_to(Path(resolved).resolve())
+    return str(bin_dir)
 
 
 def run_with_fakes(
