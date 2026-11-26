@@ -111,6 +111,42 @@ LOG_RESULT = (
     'total pattern=1 count=0 shown=0\n'
     'search=complete files=2 problems=0\n'
 )
+HOST_CASE = 'compromise-host-check-finds-a-backdoor-account/mocks/alpacon'
+HOST_SESSION = {
+    'servers': [SID],
+    'scopes': ['command', 'webftp'],
+    'target_account_username': 'root',
+    'description': 'Read host artifacts on web-01; writes one collector and changes nothing else.',
+}
+HOST_ARGS = ['since=2026-08-03', 'secret=/app/.env', 'pattern=/dev/tcp/']
+CMD_HOST = 'f6a7b8c9-d0e1-4234-8567-89abcdef0123'
+CMD_HOST_FALLBACK = '0a1b2c3d-4e5f-4678-89ab-cdef01234567'
+HOST_RESULT = (
+    'secret path=/app/.env account= exists=yes atime=2026-09-14T03:14:00Z mtime=2026-07-01T00:00:00Z ctime=2026-07-01T00:00:00Z mount=/app atime_mode=noatime\n'
+    'check kind=secret status=complete\n'
+    'run v=1 uid=0 now=2026-11-24T00:00:00Z since=2026-08-03 sha256=e1a233d5fb228ac6a369968d04329dae49432c03d405947264e32753f2ddeb6b\n'
+    'account name=xadmin uid=1001 gid=1001 home=/home/xadmin shell=/bin/bash class=human password=set pwchanged=2026-09-14\n'
+    'check kind=account status=complete\n'
+    'check kind=sudoers status=complete\n'
+    'authkey account=xadmin path=/home/xadmin/.ssh/authorized_keys line=1 type=ssh-ed25519 fp=SHA256:jadepuff options= mtime=2026-09-14T03:12:55Z ctime=2026-09-14T03:12:55Z\n'
+    'check kind=authkey status=complete\n'
+    'cron path=/etc/cron.d/.sysupdate owner=root mode=644 size=56 mtime=2026-09-14T03:13:40Z ctime=2026-09-14T03:13:40Z sha256=ed4e4a7c1f98be0b60fac626da0907c4e16fd1b325601688f1dfae4019130b36 hits=1@1 packaged=no\n'
+    'check kind=cron status=complete\n'
+    'check kind=systemd_unit status=complete\n'
+    'check kind=rc_local status=complete\n'
+    'check kind=listen status=complete\n'
+    'connection laddr=10.0.0.10 lport=49152 raddr=203.0.113.50 rport=4444 pid=4121 process=.sysupdate exe=/dev/shm/.x deleted=yes listening=no count=1\n'
+    'connection laddr=10.0.0.10 lport=49153 raddr=198.51.100.20 rport=443 pid=844 process=alpamon exe=/usr/bin/alpamon deleted=no listening=no count=1\n'
+    'check kind=connection status=complete\n'
+    'pkg_modified manager=dpkg path=/etc/ssh/sshd_config flags=%3F%3F5%3F%3F%3F%3F%3F%3F conf=yes mtime=? ctime=?\n'
+    'check kind=pkg_modified status=complete\n'
+    'check kind=webroot_file status=not_requested\n'
+    'login user=xadmin tty=pts/0 from=203.0.113.50 start=2026-09-14T03:11:02Z end=2026-09-14T03:42:18Z\n'
+    'check kind=login status=complete\n'
+    'wtmp path=/var/log/wtmp begins=2026-07-01T00:00:00Z\n'
+    'check kind=wtmp status=complete\n'
+    'end status=complete records=23 unknowns=0\n'
+)
 SERVER_NAMES = {SID: 'web-01', SID2: 'web-02', SID3: 'web-03'}
 SERVER = {'id': SID, 'name': 'web-01'}
 ECHO = 'ECHO-INPUT-COMMAND'
@@ -163,6 +199,10 @@ def exposure_check_line() -> str:
 def log_search_script() -> str:
     """The compromise-log-check skill's search with its Metabase anchor, as an agent submits it."""
     return doc_blocks('compromise-log-check/references/search.md', 'sh')[0]
+
+
+def host_check_script() -> str:
+    return doc_blocks('compromise-host-check/references/collect.md', 'sh')[0]
 
 
 def session_row(sid: str, status: str, **extra: object) -> dict[str, object]:
@@ -620,6 +660,79 @@ MOCKS: list[Mock] = [
         echo=ECHO,
     ),
     *_rollout_mocks(EXPOSURE_CASE, EXPOSURE_SESSION),
+    *_rollout_mocks(HOST_CASE, HOST_SESSION),
+    Mock(
+        f'{HOST_CASE}/execute_command.md',
+        {
+            ('POST', COMMANDS): httpx.Response(201, json={'id': CMD_HOST_FALLBACK}),
+            ('GET', f'{COMMANDS}{CMD_HOST_FALLBACK}/'): httpx.Response(
+                200, json=command_row(CMD_HOST_FALLBACK, ECHO)
+            ),
+        },
+        lambda: command_tools.execute_command(
+            server_id=SID,
+            command=ECHO,
+            workspace=WS,
+            region=REGION,
+            username='root',
+            work_session_id=WSID,
+            purpose='read host artifacts',
+        ),
+        echo=ECHO,
+    ),
+    Mock(
+        f'{HOST_CASE}/execute_command_multi_server.md',
+        {('POST', COMMANDS): httpx.Response(201, json={'id': CMD_HOST_FALLBACK})},
+        lambda: command_tools.execute_command_multi_server(
+            server_ids=[SID],
+            command=ECHO,
+            workspace=WS,
+            region=REGION,
+            username='root',
+            work_session_id=WSID,
+            purpose='read host artifacts',
+        ),
+        echo=ECHO,
+    ),
+    Mock(
+        f'{HOST_CASE}/execute_file.md',
+        {
+            ('POST', UPLOADS): httpx.Response(
+                201,
+                json={'id': UPLOAD_ID, 'upload_url': 'https://s3.example.test/put'},
+            ),
+            ('GET', f'{UPLOADS}{UPLOAD_ID}/upload/'): httpx.Response(200, json={}),
+            ('GET', f'{UPLOADS}{UPLOAD_ID}/status/'): httpx.Response(
+                200, json={'success': True}
+            ),
+            ('POST', COMMANDS): httpx.Response(201, json={'id': CMD_HOST}),
+            ('GET', f'{COMMANDS}{CMD_HOST}/'): httpx.Response(
+                200,
+                json=command_row(
+                    CMD_HOST,
+                    '/bin/sh /root/alpacon-compromise-host-check.sh since=2026-08-03 secret=/app/.env pattern=/dev/tcp/',
+                    result=HOST_RESULT,
+                ),
+            ),
+        },
+        _s3_accepts(
+            lambda: command_tools.execute_file(
+                server_id=SID,
+                path='/root/alpacon-compromise-host-check.sh',
+                content=host_check_script(),
+                interpreter='/bin/sh',
+                args=HOST_ARGS,
+                write_file=True,
+                overwrite=True,
+                workspace=WS,
+                region=REGION,
+                username='root',
+                work_session_id=WSID,
+                purpose='read host artifacts since 2026-08-03; leaves one collector file',
+                timeout=900,
+            )
+        ),
+    ),
     Mock(  # accepted whatever the command; the result is read with check_command_status
         f'{EXPOSURE_CASE}/execute_command_multi_server.md',
         {('POST', COMMANDS): httpx.Response(201, json={'id': CMD_EXPOSURE})},
