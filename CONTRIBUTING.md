@@ -198,6 +198,10 @@ async def test_list_servers_success():
 
 Skill evals are kept locally under `plugins/alpacon/evals/`, which `.gitignore` excludes. A skill's behavior that must hold is pinned by an ordinary pytest test instead, such as the tests that run a skill's scripts directly (`tests/test_exposure_check.py`).
 
+### Hardening check
+
+`plugins/alpacon/skills/hardening-check/references/items.md` is the item registry and `scripts/hardening-check.sh` the script that runs on each server. After changing either, run `python -m tests.hardening --fix`: it rewrites the generated counts and ATT&CK indexes in `items.md` and the script digest pinned in `SKILL.md`, and `pytest tests/test_hardening_registry.py` fails until you do. `tests/test_hardening_check.py` runs the script against fake host commands. The `lima` tests run it on real Ubuntu 24.04 and Rocky Linux 9 VMs and are skipped by default: start a disposable Lima VM and run `HARDENING_VM_DEBIAN=<vm> pytest -m lima tests/lima` (`HARDENING_VM_RHEL` for Rocky); the "Hardening check VM" workflow runs them in CI.
+
 ## 🔧 Adding new features
 
 ### Adding new tools
