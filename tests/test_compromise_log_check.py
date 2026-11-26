@@ -60,7 +60,6 @@ def _search(shell: str, *logs: Path, **values: str) -> list[str]:
 
 
 def _search_despite_stderr(shell: str, *logs: Path, **values: str) -> list[str]:
-    """The search's output lines where the shell itself writes to stderr."""
     return _run(shell, logs, values)[0].splitlines()
 
 
