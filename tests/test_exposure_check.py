@@ -226,6 +226,24 @@ class TestExposureCheck:
         assert keys['findings'] == ''
         assert 'listen addr=0.0.0.0 port=22 scope=all watched=no process=sshd' in rows
 
+    def test_reports_every_watched_port_and_only_whole_port_numbers(
+        self, tmp_path: Path, shell: str
+    ):
+        keys, rows, _ = _check(
+            tmp_path,
+            shell,
+            ports='9000 9001',
+            SS_OUT=_ss(
+                'LISTEN 0 4096 0.0.0.0:9000 0.0.0.0:*',
+                'LISTEN 0 4096 0.0.0.0:9001 0.0.0.0:*',
+                'LISTEN 0 4096 0.0.0.0:900 0.0.0.0:*',
+            ),
+        )
+
+        assert keys['verdict'] == 'exposed'
+        assert keys['findings'] == 'port:9000@0.0.0.0,port:9001@0.0.0.0'
+        assert 'listen addr=0.0.0.0 port=900 scope=all watched=no process=' in rows
+
     def test_reports_a_docker_tcp_host_in_daemon_json_that_is_not_listening_yet(
         self, tmp_path: Path, shell: str
     ):
