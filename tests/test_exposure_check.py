@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from tests.eval_mocks import EXPOSURE_RESULT
 from tests.skill_scripts import doc_blocks, install_fakes, run_with_fakes
 
 CHECKS = 'exposure-check/references/checks.md'
@@ -226,6 +225,24 @@ class TestExposureCheck:
         assert keys['verdict'] == 'not_exposed'
         assert keys['findings'] == ''
         assert 'listen addr=0.0.0.0 port=22 scope=all watched=no process=sshd' in rows
+
+    def test_reports_every_watched_port_and_only_whole_port_numbers(
+        self, tmp_path: Path, shell: str
+    ):
+        keys, rows, _ = _check(
+            tmp_path,
+            shell,
+            ports='9000 9001',
+            SS_OUT=_ss(
+                'LISTEN 0 4096 0.0.0.0:9000 0.0.0.0:*',
+                'LISTEN 0 4096 0.0.0.0:9001 0.0.0.0:*',
+                'LISTEN 0 4096 0.0.0.0:900 0.0.0.0:*',
+            ),
+        )
+
+        assert keys['verdict'] == 'exposed'
+        assert keys['findings'] == 'port:9000@0.0.0.0,port:9001@0.0.0.0'
+        assert 'listen addr=0.0.0.0 port=900 scope=all watched=no process=' in rows
 
     def test_reports_a_docker_tcp_host_in_daemon_json_that_is_not_listening_yet(
         self, tmp_path: Path, shell: str
@@ -586,25 +603,6 @@ class TestExposureCheck:
         out, _ = _run(tmp_path, shell, 0, {}, SS_EXIT='1')
 
         assert out == 'verdict=unknown reason=ss-failed\n'
-
-    @pytest.mark.skipif(os.geteuid() == 0, reason='root sees every process name')
-    def test_the_eval_mock_answers_what_the_check_prints_for_minio(
-        self, tmp_path: Path, shell: str
-    ):
-        out, _ = _run(
-            tmp_path,
-            shell,
-            0,
-            {'ports': '9000 9001', 'endpoints': ''},
-            SS_OUT=_ss(
-                'LISTEN 0 4096 0.0.0.0:9000 0.0.0.0:*',
-                'LISTEN 0 4096 0.0.0.0:9001 0.0.0.0:*',
-                'LISTEN 0 128 0.0.0.0:22 0.0.0.0:*',
-                'LISTEN 0 128 [::]:22 [::]:*',
-            ),
-        )
-
-        assert out == EXPOSURE_RESULT
 
     def test_says_other_accounts_process_names_are_hidden(
         self, tmp_path: Path, shell: str

@@ -196,7 +196,7 @@ async def test_list_servers_success():
 
 ### Plugin skill evals
 
-`plugins/alpacon/evals/` holds `claude plugin eval` cases for the plugin's skills. A case uses either `prompt.md` plus `graders/*.md`, or one `case.yaml` containing `execution.prompt` and a `graders` list; the tests discover both formats. Their mock answers are the real tools' results for canned HTTP answers: after changing a tool's result or schema, run `python -m tests.eval_mocks` to rewrite them, and `pytest tests/test_plugin_evals.py` fails until you do. A grader can only watch a tool its case offers, and a mock file is what offers one. To run the cases (each run is a paid model call): `claude plugin eval plugins/alpacon --ablation none --threshold 0.67 --allow-tools Read Grep Glob`. The skills keep their commands in `references/`, and an eval run refuses file reads unless they are granted, so without `--allow-tools` the agent stops before running anything.
+Skill evals are kept locally under `plugins/alpacon/evals/`, which `.gitignore` excludes. A skill's behavior that must hold is pinned by an ordinary pytest test instead, such as the tests that run a skill's scripts directly (`tests/test_exposure_check.py`).
 
 ## 🔧 Adding new features
 

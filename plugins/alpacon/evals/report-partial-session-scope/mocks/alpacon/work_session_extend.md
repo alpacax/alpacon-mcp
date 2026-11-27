@@ -1,1 +1,0 @@
-{"status": "error", "message": "Failed to extend Work Session", "session_id": "5d1c2a7e-0b8f-4c3e-9a41-2f6d8e3b9c10", "region": "ap1", "workspace": "acme", "status_code": 403, "recovery_hints": ["Check if your token has the required permissions for this action.", "Contact your workspace administrator for access."]}

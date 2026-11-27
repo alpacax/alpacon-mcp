@@ -1,1 +1,0 @@
-{"status": "error", "message": "Failed to get Work Session", "region": "ap1", "workspace": "acme", "session_id": "5d1c2a7e-0b8f-4c3e-9a41-2f6d8e3b9c10", "status_code": 404, "recovery_hints": ["The resource was not found. Check the ID or name.", "Use the corresponding list tool to find valid IDs."]}
