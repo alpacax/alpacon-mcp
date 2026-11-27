@@ -61,7 +61,7 @@ Write in the person's language with these headings only, short sentences and tab
 
 - A table with one row per server: name, verdict, artifact count, count of items not judged.
 - One sentence: an artifact has the shape of an intruder's leftover and needs confirmation; it is not proof of intrusion.
-- Per server, two or three sentences on its state: what explains the artifacts if anything does (such as `wtmp` beginning after `since`, so the host's own setup may explain them), and the notable absences, such as no outside connection or an unread secret.
+- Per server, two or three sentences on its state: what explains the artifacts if anything does, and the notable absences. For example: "This server was set up on 11-27, after the intrusion date, and all 23 artifacts changed within two minutes of that setup. No outside connection beyond the agent's, and the secret directory is empty."
 - What to do now, numbered, at most three: answer the questions below, preserve the handoff files before changing anything, and resolve an item not judged when one exists.
 
 ### One section per server
@@ -74,7 +74,7 @@ Write in the person's language with these headings only, short sentences and tab
 
 1. **Not covered**: the mapping's `Not covered` areas, unnamed web roots, unpackaged binaries, rootkit-hidden items, reads that bypass atime.
 2. **Left on the server**: the script path; nothing removed, locked or isolated.
-3. **Response handoff**: for every `artifact_found` server, this table, so a responder can preserve evidence before changing it. Rows of one kind with the same time may be grouped; a kind with no hash, such as `sudoers` or `authkey`, gets `—`. When `compromise-response` is installed, hand it each `artifact_found` server with this table.
+3. **Response handoff**: for every `artifact_found` server, this table, so a responder can preserve evidence before changing it. Group rows only when they share kind, time and hash, so every row keeps its hash; a kind with no hash, such as `sudoers` or `authkey`, gets `—`. With one server, name its UUID above the table and drop the column. When `compromise-response` is installed, hand it each `artifact_found` server with this table.
 
 | Server UUID | Kind | Identifier | mtime/ctime | SHA-256 | ATT&CK |
 |---|---|---|---|---|---|
