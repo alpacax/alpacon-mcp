@@ -12,7 +12,7 @@ from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
-from typing import Literal, NewType, cast, overload
+from typing import Literal, NewType, cast
 from urllib.parse import unquote_to_bytes
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -51,6 +51,24 @@ ALLOWED: Mapping[Group, frozenset[Verdict]] = MappingProxyType(
     }
 )
 
+PERSON_KEYS: Mapping[ItemId, frozenset[str]] = MappingProxyType(
+    {
+        ItemId('U-07'): frozenset({'login_accounts', 'names', 'more'}),
+        ItemId('U-08'): frozenset({'admin_accounts', 'names', 'more'}),
+        ItemId('U-09'): frozenset({'orphan_groups', 'names', 'more'}),
+        ItemId('U-11'): frozenset({'login_shell_accounts', 'names', 'more'}),
+        ItemId('U-23'): frozenset({'privileged_files', 'paths', 'more'}),
+        ItemId('U-25'): frozenset({'world_writable', 'paths', 'more'}),
+        ItemId('U-26'): frozenset({'non_device_files', 'paths', 'more'}),
+        ItemId('U-28'): frozenset({'firewall', 'tcp_wrappers', 'listeners'}),
+        ItemId('U-33'): frozenset({'hidden_paths', 'paths', 'more'}),
+        ItemId('U-39'): frozenset({'nfs_installed', 'nfs_active'}),
+        ItemId('U-56'): frozenset({'ftp_access_control', 'rules'}),
+        ItemId('U-58'): frozenset({'snmp_installed', 'snmp_active'}),
+        ItemId('U-66'): frozenset({'logging', 'destinations', 'remote'}),
+    }
+)
+
 
 @dataclass(frozen=True)
 class AttackMapping:
@@ -64,7 +82,6 @@ class Item:
     title: str
     group: Group
     mappings: tuple[AttackMapping, ...]
-    points_to: str | None
 
     @property
     def mitigation(self) -> str | None:
@@ -102,7 +119,6 @@ class Attack:
     bundle_sha256: str
     mitigations: Mapping[str, str]
     mitigates: frozenset[tuple[str, str]]
-    relationship_ids: Mapping[tuple[str, str], str]
     techniques: Mapping[str, Technique]
     tactic_order: tuple[str, ...]
 
@@ -116,7 +132,6 @@ class ItemResult:
 
 @dataclass(frozen=True)
 class Run:
-    version: int
     family: Literal['debian', 'rhel', 'unknown']
     os: str
     sha256: str
@@ -131,7 +146,6 @@ def _ids(cell: str, prefix: str) -> tuple[str, ...]:
 
 
 def load_registry(path: Path = ITEMS_MD) -> Registry:
-    """Load the strict Markdown registry."""
     text = path.read_text()
     edition_match = re.search(r'^Edition: (\S+)$', text, re.MULTILINE)
     release_match = re.search(r'^ATT&CK release: (\S+)$', text, re.MULTILINE)
@@ -194,9 +208,7 @@ def load_registry(path: Path = ITEMS_MD) -> Registry:
                 raise ValueError(f'invalid repeated item row: {item_id}')
             items[item_id] = replace(existing, mappings=existing.mappings + mapping)
         else:
-            items[item_id] = Item(
-                item_id, item_match.group(2), Group.SCRIPT, mapping, None
-            )
+            items[item_id] = Item(item_id, item_match.group(2), Group.SCRIPT, mapping)
 
     if unmapped_rows != set(exception_ids):
         raise ValueError('unmapped table rows and mapping exceptions differ')
@@ -214,8 +226,7 @@ def load_registry(path: Path = ITEMS_MD) -> Registry:
             raise ValueError(f'duplicate item: {item_id}')
         tag = match.group('tag')
         group = Group.PERSON if tag == 'person' else Group.POINTER
-        points_to = None if group is Group.PERSON else tag.removeprefix('pointer:')
-        items[item_id] = Item(item_id, match.group('title'), group, (), points_to)
+        items[item_id] = Item(item_id, match.group('title'), group, ())
 
     ordered = tuple(
         items[item_id] for item_id in sorted(items, key=lambda value: int(value[2:]))
@@ -252,7 +263,6 @@ def _strings(value: object, context: str) -> tuple[str, ...]:
 
 
 def load_attack(path: Path = ATTACK_SUBSET) -> Attack:
-    """Load the generated ATT&CK subset."""
     raw = _object(json.loads(path.read_text()), 'ATT&CK subset')
     collection = _object(raw.get('collection'), 'collection')
     bundle = _object(raw.get('bundle'), 'bundle')
@@ -275,7 +285,6 @@ def load_attack(path: Path = ATTACK_SUBSET) -> Attack:
             record.get('linux') is True,
         )
     pairs: set[tuple[str, str]] = set()
-    relationship_ids: dict[tuple[str, str], str] = {}
     for value in relationships_raw:
         record = _object(value, 'relationship')
         pair = (
@@ -283,13 +292,11 @@ def load_attack(path: Path = ATTACK_SUBSET) -> Attack:
             _string(record.get('technique'), 'relationship technique'),
         )
         pairs.add(pair)
-        relationship_ids[pair] = _string(record.get('id'), 'relationship id')
     return Attack(
         _string(collection.get('version'), 'collection version'),
         _string(bundle.get('sha256'), 'bundle sha256'),
         MappingProxyType(mitigations),
         frozenset(pairs),
-        MappingProxyType(relationship_ids),
         MappingProxyType(techniques),
         _strings(raw.get('tactic_order'), 'tactic order'),
     )
@@ -315,7 +322,6 @@ def _active(record: Mapping[str, object]) -> bool:
 
 
 def build_attack_subset(bundle: Path) -> dict[str, object]:
-    """Build the deterministic Enterprise ATT&CK subset used by registry tests."""
     bundle_bytes = bundle.read_bytes()
     raw = _object(json.loads(bundle_bytes), 'ATT&CK bundle')
     values = raw.get('objects')
@@ -476,24 +482,8 @@ def _replace_span(text: str, name: str, body: str) -> str:
     return pattern.sub(f'{start}\n{body.rstrip()}\n{end}', text)
 
 
-@overload
-def render_derived(reg: Registry, attack: Attack, items_md: str) -> str: ...
-
-
-@overload
-def render_derived(
-    reg: Registry, attack: Attack, items_md: str, skill_md: str, script: bytes
-) -> tuple[str, str]: ...
-
-
-def render_derived(
-    reg: Registry,
-    attack: Attack,
-    items_md: str,
-    skill_md: str | None = None,
-    script: bytes = b'',
-) -> str | tuple[str, str]:
-    """Rewrite the registry indexes and any available skill digest span."""
+def render_derived(reg: Registry, attack: Attack, items_md: str) -> str:
+    """Rewrite the registry indexes in the items reference."""
     counts = Counter(item.group for item in reg.items)
     count_line = (
         f'The script judges {counts[Group.SCRIPT]} of the {len(reg.items)} items. '
@@ -553,13 +543,11 @@ def render_derived(
         for technique_cell, item_cells in sorted(by_tactic[tactic].items()):
             index.append(f'| {technique_cell} | {", ".join(item_cells)} |')
         index.append('')
-    rendered = _replace_span(rendered, 'BY TACTIC', '\n'.join(index))
+    return _replace_span(rendered, 'BY TACTIC', '\n'.join(index))
 
-    digest = hashlib.sha256(script).hexdigest() if script else 'unknown'
-    if skill_md is None:
-        return rendered
-    skill_rendered = _replace_span(skill_md, 'SCRIPT SHA256', digest)
-    return rendered, skill_rendered
+
+def render_skill_digest(skill_md: str, script: bytes) -> str:
+    return _replace_span(skill_md, 'SCRIPT SHA256', hashlib.sha256(script).hexdigest())
 
 
 def _decode(value: str) -> str:
@@ -577,8 +565,6 @@ def _decode(value: str) -> str:
 
 def _tokens(line: str) -> tuple[str, dict[str, str]]:
     parts = line.split(' ')
-    if not parts:
-        raise ValueError('empty record')
     values: dict[str, str] = {}
     for token in parts[1:]:
         if '=' not in token:
@@ -603,8 +589,6 @@ def parse_run(
     reg = registry or load_registry()
     expected_ids = reg.run_ids()
     lines = stdout.removesuffix('\n').split('\n')
-    if not lines:
-        raise ValueError('missing header')
     kind, header = _tokens(lines[0])
     required_header = {'protocol', 'edition', 'family', 'os', 'uid', 'sha256'}
     if (
@@ -624,7 +608,6 @@ def parse_run(
 
     if header['sha256'] == 'unknown' or header['sha256'] != expected_sha256:
         return Run(
-            1,
             cast(Literal['debian', 'rhel', 'unknown'], family),
             header['os'],
             header['sha256'],
@@ -769,7 +752,6 @@ def parse_run(
     if not end_valid or not summary_valid:
         parsed = {item_id: _unknown(item_id, 'incomplete') for item_id in expected_ids}
     return Run(
-        1,
         cast(Literal['debian', 'rhel', 'unknown'], family),
         header['os'],
         header['sha256'],
@@ -780,7 +762,7 @@ def parse_run(
 
 def _write_json(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, indent=2, sort_keys=False) + '\n')
+    path.write_text(json.dumps(value, indent=2) + '\n')
 
 
 def main() -> None:
@@ -798,21 +780,10 @@ def main() -> None:
     if args.fix:
         registry = load_registry()
         attack = load_attack()
-        original = ITEMS_MD.read_text()
-        if SKILL_MD.exists():
-            if not SCRIPT.exists():
-                raise ValueError('the delivered skill requires the host script')
-            rendered, skill_rendered = render_derived(
-                registry,
-                attack,
-                original,
-                SKILL_MD.read_text(),
-                SCRIPT.read_bytes(),
-            )
-            ITEMS_MD.write_text(rendered)
-            SKILL_MD.write_text(skill_rendered)
-        else:
-            ITEMS_MD.write_text(render_derived(registry, attack, original))
+        ITEMS_MD.write_text(render_derived(registry, attack, ITEMS_MD.read_text()))
+        SKILL_MD.write_text(
+            render_skill_digest(SKILL_MD.read_text(), SCRIPT.read_bytes())
+        )
         return
     parser.error('choose --fix or attack-subset')
 

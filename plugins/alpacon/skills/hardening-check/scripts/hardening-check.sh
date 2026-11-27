@@ -72,7 +72,7 @@ pq(){
 case $PKG in
 dpkg-query)
 ps=$(dpkg-query -W -f='${Status}' "$1" 2>&1);pr=$?
-if [ "$pr" = 0 ];then case $ps in 'install ok installed') return 0;;*' not-installed'|*' config-files') return 1;;esac;fi
+if [ "$pr" = 0 ];then case $ps in *' installed') return 0;;*' not-installed'|*' config-files') return 1;;esac;fi
 [ "$pr" != 1 ]||[ "$ps" != "dpkg-query: no packages found matching $1" ]||return 1
 ;;
 rpm)
@@ -131,8 +131,8 @@ rhel|rocky|centos|almalinux) FAM=rhel;break;;
 esac
 done
 case $FAM in
-debian) PKG=dpkg-query;SSH=openssh-server;TELNET='telnetd inetutils-telnetd';RSH='rsh-server rsh-redone-server';SB='640 root shadow'
-FINGER='fingerd';FTP='vsftpd proftpd-core';INET='openbsd-inetd xinetd';MAIL='postfix sendmail-bin exim4-daemon-light'
+debian) PKG=dpkg-query;SSH=openssh-server;TELNET='telnetd inetutils-telnetd';RSH='rsh-server rsh-redone-server';SB='640 root shadow';AD=no
+FINGER='fingerd';FTP='vsftpd proftpd-core';INET='openbsd-inetd xinetd';MAIL='postfix sendmail-bin exim4-daemon-light exim4-daemon-heavy'
 DNS='bind9';NFS='nfs-kernel-server';AUTO='autofs';NIS='nis ypserv ypbind-mt';TALK='talkd';TFTP='tftpd-hpa';QL='tftpd-hpa tftp.socket tftp'
 SNMP='snmpd';TIME='chrony ntpsec systemd-timesyncd';SAMBA='samba';RPC='rpcbind'
 PP=/etc/pam.d/common-password;AA=/etc/pam.d/common-auth;AP=/etc/pam.d/common-account
@@ -141,7 +141,7 @@ CRON='cron at';DC=/etc/bind/named.conf
 rhel) PKG=rpm;SSH=openssh-server;TELNET='telnet-server';RSH='rsh-server';SB=''
 FINGER='finger-server';FTP='vsftpd proftpd';INET='xinetd';MAIL='postfix sendmail exim'
 DNS='bind';NFS='nfs-utils';AUTO='autofs';NIS='ypserv ypbind';TALK='talk-server';TFTP='tftp-server';QL='tftp.socket tftp'
-SNMP='net-snmp';TIME='chrony ntp';SAMBA='samba';RPC='rpcbind'
+AD=yes;SNMP='net-snmp';TIME='chrony ntp';SAMBA='samba';RPC='rpcbind'
 PP=/etc/pam.d/system-auth;AA=/etc/pam.d/system-auth;AP=/etc/pam.d/system-auth
 CRON='cronie at';DC=/etc/named.conf
 ;;
@@ -149,7 +149,7 @@ esac
 QF='finger.socket finger';QG='vsftpd proftpd ftp.socket';QI='inetd openbsd-inetd xinetd'
 QM='postfix sendmail exim4 exim';DS='named bind9';QN='nfs-server nfs-kernel-server'
 QH='autofs';QJ='ypserv ypbind ypxfrd';QK='talk.socket talk ntalk.socket ntalk'
-QO='snmpd';QT='chronyd chrony ntpd ntp systemd-timesyncd'
+QO='snmpd';QT='chronyd chrony ntpd ntp ntpsec systemd-timesyncd'
 QQ='rsh.socket rsh rlogin.socket rlogin rexec.socket rexec'
 RSH_SERVICES='(^|[ /])(rsh|rlogin|rexec|shell|login|in[.](rshd|rlogind|rexecd))([ /{]|$)'
 QP='rpc-cmsd rpc-ttdbserverd sadmind rusersd walld sprayd rstatd rexd
@@ -182,7 +182,7 @@ fi
 WALK=$(td find "$@" -xdev -printf '%y\t%m\t%u\t%g\t%U\t%G\t%p\n' 2>&1)
 WRC=$?
 [ "$WALK_U" = 0 ]||WRC=1
-if [ "$WRC" = 0 ];then WALK=$(p '%s\n' "$WALK" | awk -F '\t' 'NF!=7{print;next}!sn[$7]++')||WRC=1;fi
+if [ "$WRC" = 0 ];then WALK=$(p '%s\n' "$WALK" | awk '!sn[$0]++')||WRC=1;fi
 DEV=$(td find "$R/dev" -xdev -printf '%y\t%m\t%u\t%g\t%U\t%G\t%p\n' 2>&1)
 DRC=$?
 fi
@@ -243,6 +243,7 @@ if [ "$ins" -gt 0 ]||[ -e "$E/ssh/sshd_config" ];then
 ssh_text=$(expand_config ssh /etc/ssh/sshd_config)
 case $ssh_text in *'!INCOMPLETE'*) unsure=1;;esac
 if p '%s\n' "$ssh_text" | awk '
+match($0,/^[ \t]*[A-Za-z]+[ \t]*=/){$0=substr($0,1,RLENGTH-1)" "substr($0,RLENGTH+1)}
 tolower($1)=="match"{m=1;next}
 m&&tolower($1)=="permitrootlogin"&&tolower($2)!="no"{bad=1}
 END{exit !bad}';then bad=1;fi
@@ -351,7 +352,8 @@ END{print a+0,b+0}
 ' "$L")||{ ur;return;}
 set -- $policy;md=$1;xd=$2
 c=''
-for pf in "$E/security/pwquality.conf" "$E/security/pwhistory.conf";do
+set +f;set -- "$E"/security/pwquality.conf.d/*.conf;set -f
+for pf in "$@" "$E/security/pwquality.conf" "$E/security/pwhistory.conf";do
 [ ! -e "$pf" ]||rd "$pf"||{ ur;return;}
 [ ! -r "$pf" ]||c="$c
 $(awk '{sub(/#.*/,"")}NF{print}' "$pf")"||return 1
@@ -370,7 +372,7 @@ pam{
     else if(mod=="pam_unix.so"){u=1;next}
     else next
 }
-function v(k,r){r=$0;sub(".*"k"[ \\t]*=[ \\t]*","",r);sub(/[ \\t].*/,"",r);return r}
+function v(k,r){r=$0;sub(".*"k"[ \\t]*=[ \\t]*","",r);sub(/[ \t].*/,"",r);return r}
 (!pam||mod=="pam_pwquality.so"){
     if(/minlen[ \t]*=/){x=v("minlen");a=(x~/^[0-9]+$/&&x>=8)}
     if(/dcredit[ \t]*=/)b=(v("dcredit")=="-1")
@@ -379,11 +381,12 @@ function v(k,r){r=$0;sub(".*"k"[ \\t]*=[ \\t]*","",r);sub(/[ \\t].*/,"",r);retur
     if(/ocredit[ \t]*=/)f=(v("ocredit")=="-1")
 }
 (!pam||mod=="pam_pwhistory.so")&&/remember[ \t]*=/{x=v("remember");g=(x~/^[0-9]+$/&&x>=4)}
-/enforce_for_root/{h=1}
-END{printf "%d%d%d%d%d%d%d%d%d%d%d%d",a,b,d,e,f,g,h,i,k,j,l,u}
+(!pam||mod=="pam_pwquality.so")&&/enforce_for_root/{h=1}
+(!pam||mod=="pam_pwquality.so")&&/(^|[ \t])enforcing[ \t]*=/{w=(v("enforcing")~/^0+$/)}
+END{printf "%d%d%d%d%d%d%d%d%d%d%d%d%d",a,b,d,e,f,g,h,i,k,j,l,u,!w}
 ')||return 1
 vd=fail
-[ "$md" -ge 1 ]&&[ "$xd" -ge 1 ]&&[ "$xd" -le 90 ]&&[ "$facts" = 111111111111 ]&&vd=pass
+[ "$md" -ge 1 ]&&[ "$xd" -ge 1 ]&&[ "$xd" -le 90 ]&&[ "$facts" = 1111111111111 ]&&vd=pass
 e "$vd" "min_days=$md" "max_days=$xd" "policy=$facts"
 }
 U03(){
@@ -400,17 +403,16 @@ stt=$(p '%s\n' "$c" | awk '
 $0=="!PAM"{pam=1;next}
 pam{
     if($1!="auth"||$0!~/(^|[ \t\/])pam_(faillock|tally2?)[.]so([ \t]|$)/)next
-    module=1
+    module+=$0!~/faillock/||/(^|[ \t])authfail([ \t]|$)/;cn+=/(^|[ \t])conf=/;as+=/(^|[ \t])authsucc([ \t]|$)/
+    c=/(^|[ \t])deny[ \t]*=/?dv():/faillock/?(cs?cd:3):0  # a line argument overrides faillock.conf
+    if(c>deny)deny=c;else if(c==0&&!/(^|[ \t])authsucc([ \t]|$)/)off=1
 }
-match($0,/(^|[ \t])deny[ \t]*=[ \t]*/){
-    candidate=substr($0,RSTART+RLENGTH)
-    sub(/[ \t].*/,"",candidate)
-    deny=(candidate~/^[0-9]+$/?candidate+0:0)
-}
-END{print module+0,(deny>=1 && deny<=10)}
+function dv(c){match($0,/(^|[ \t])deny[ \t]*=[ \t]*/);c=substr($0,RSTART+RLENGTH);sub(/[ \t].*/,"",c);return c~/^[0-9]+$/?c+0:0}
+!pam&&/(^|[ \t])deny[ \t]*=/{cd=dv();cs=1}
+END{print (module>0),(!off&&deny>=1&&deny<=10),cn+0,as+0}
 ')||return 1
-set -- $stt
-a=0;need "$cf"||return 0
+set -- $stt;[ "$3" = 0 ]||{ ur;return;}
+a=0;[ "$4" = 0 ]||a=1;need "$cf"||return 0
 awk '{sub(/#.*/,"")}$1=="account"&&/(^|[ \t\/])pam_(faillock|tally2?)[.]so([ \t]|$)/{ok=1}END{exit!ok}' "$cf"&&a=1
 if [ "$1$2$a" = 111 ];then ep "module=$1" "threshold=$2";else ef "module=$1" "threshold=$2";fi
 }
@@ -453,7 +455,7 @@ need "$E/pam.d/su"||return 0
 pg=$(awk '
 {sub(/#.*/,"")}
 $1=="auth"&&$2=="sufficient"&&$3!~/(^|\/)pam_rootok[.]so$/&&!wheel{bypass=1}
-$1=="auth"&&$2=="required"&&$3~/(^|\/)pam_wheel[.]so$/{wheel=1;
+$1=="auth"&&$2~/^requi(red|site)$/&&$3~/(^|\/)pam_wheel[.]so$/&&!/(^|[ \t])deny([ \t]|$)/{wheel=1;
 group="wheel";for (i=1;i<=NF;i++)if ($i~/^group=/){sub(/^group=/,"",$i);group=$i};print group;exit
 }
 END{if(bypass)print "!BYPASS"}
@@ -500,6 +502,7 @@ if [ "$FAM" != unknown ]&&[ -f "$E/shells" ]&&[ -r "$E/shells" ]&&
     shells_ok=1
 fi
 login_shell(){
+set -- "${1:-/bin/sh}"
 if [ "$shells_ok" = 0 ];then
     case ${1##*/} in nologin|false) return 1;;esac
     return 0
@@ -743,7 +746,7 @@ while IFS=: read -r account _ _ _ _ h shell||[ -n "$account" ];do
     m=$(fm "$R$h")||{ u=1;continue;}
     vm "$m"||{ u=1;continue;}
     set -- $m
-    if [ "$2" != "$account" ]||! wn "$1" 755;then
+    if [ "$2" != "$account" ]||! wn "$1" 2755;then
         case $bad_homes in
             *"$nl$h$nl"*) ;;
             *) b=$((b+1));bad_homes="$bad_homes$nl$h$nl";;
@@ -797,6 +800,7 @@ $files
 EOF
     p '%s %s %s\n' "$bad" "$incomplete" "$count"
 }
+nomembers(){ awk -F: -v g="$1" 'FILENAME==ARGV[1]{if($1==g){id=$3;m=$4!=""};next}id!=""&&$4==id{m=1}END{exit id==""||m}' "$G" "$P";}
 U37(){
 pi=0;pu=0;ci=0;ai=0
 for p in $CRON;do rc=0;package "$p"||rc=$?;case $rc in 0) pi=1;case $p in at) ai=1;;*) ci=1;;esac;;1) :;;*) pu=1;;esac;done
@@ -811,7 +815,7 @@ for spec in "$ci:$B/bin/crontab" "$ai:$B/bin/at";do
 m=$(fm "$cf")||{ u=1;continue;}
 vm "$m"||{ u=1;continue;}
 set -- $m
-[ "$2" = root ]&&wn "$1" 750||b=$((b+1))
+[ "$2" = root ]&&wn "$1" 750&&{ [ "$3" = root ]||wn "$1" 700||nomembers "$3";}||b=$((b+1))
 done
 stt=$(walk_modes '^/etc/(crontab$|cron([.]|/|$)|at[.](allow|deny)$)|^/var/spool/(cron|at)(/|$)' 640)||{
 eu reason=check-error;return;
@@ -885,10 +889,10 @@ rd "$ef"||{ p '!INCOMPLETE\n';continue;}
 if [ -d "$ef" ];then
 if [ ! -x "$ef" ];then p '!access-denied\n' >&2;p '!INCOMPLETE\n';continue;fi
 set +f
-case $ek in xinetd|snmp) set -- "$ef"/*;;*) set -- "$ef"/*.conf;;esac
+case $ek in xinetd|snmp|proftpd) set -- "$ef"/*;;*) set -- "$ef"/*.conf;;esac
 set -f
 [ "$#" -gt 1 ]||exists "$1"||continue
-for child do case $ek:$child in xinetd:*~|snmp:*~) continue;;esac;expand_config "$ek" "$child" "$((ed+1))";done
+for child do case $ek:${child##*/} in xinetd:*.*|xinetd:*~|snmp:*~) continue;;esac;expand_config "$ek" "$child" "$((ed+1))";done
 continue
 fi
 et=$(cfg "$ef")||{ p '!INCOMPLETE\n';continue;}
@@ -897,11 +901,12 @@ p '%s\n' "$el"
 case $el in *[iI][nN][cC][lL][uU][dD][eE]*) :;;*) continue;;esac
 ei=$(p '%s\n' "$el" | awk -v k="$ek" '
 {line=$0;sub(/[ \t]*#.*/,"",line)}
-k=="ssh"&&tolower($1)=="include"{for(i=2;i<=NF;i++)print $i}
+k=="ssh"&&match(line,/^[ \t]*[Ii][Nn][Cc][Ll][Uu][Dd][Ee]([ \t]*=[ \t]*|[ \t]+)/){n=split(substr(line,RLENGTH+1),a);for(i=1;i<=n;i++)print a[i]}
 k=="samba"&&tolower(line)~/^[ \t]*include[ \t]*=/{sub(/^[^=]*=[ \t]*/,"",line);print line}
 k=="snmp"&&tolower($1)~/^include(file|dir)$/{print $2}
 k=="xinetd"&&tolower($1)~/^include(dir)?$/{print $2}
 k=="exim"&&$1==".include"{print $2}
+k=="proftpd"&&tolower($1)=="include"{print $2}
 k=="exim"&&$1~/^[.]include/&&$1!=".include"{print "%"}
 k=="rsyslog"&&tolower($1)=="$includeconfig"{print $2}
 k=="rsyslog"&&tolower(line)~/^[ \t]*include[ \t]*\(/&&match(line,/file[ \t]*=[ \t]*"[^"]*"/){v=substr(line,RSTART,RLENGTH);sub(/^[^"]*"/,"",v);sub(/"$/,"",v);print v}
@@ -926,6 +931,7 @@ effective_cfg(){
 ec=$1
 case $ec in
 */exim/*.conf|*/exim4/*.conf) expand_config exim "$ec";;
+*proftpd*) expand_config proftpd "$ec";;
 */postfix/main.cf)
 cfg "$ec"||return
 p '!POSTFIX_MASTER\n'
@@ -947,7 +953,8 @@ records(){ awk '{sub(/#.*/,"");if($0~/^[ \t]*$/)next;if($0~/^[ \t]/)s=s " " $0;e
 postfix_va(){
 p '%s\n' "$2" | awk -F= -v mode="$1" '
 function trim(v){sub(/^[ \t]+/,"",v);sub(/[ \t]+$/,"",v);return v}
-function safe(v){return v~/(reject|defer)_unauth_destination/&&v!~/(^|[, \t])permit([, \t]|$)/}
+function safe(v,a,n,i){n=split(v,a,/[, \t]+/);for(i=1;i<=n;i++){if(a[i]=="warn_if_reject")i++
+else if(a[i]~/^((reject|defer)_unauth_destination|reject)$/)return 1;else if(a[i]=="permit")return 0}}
 function judge(rec, a,n,r,l,d,net,s,end,pair,eq,name,value){
 n=split(rec,a,/[ \t]+/)
 if(a[2]!="inet"||a[8]!~/(^|\/)smtpd$/)return 3
@@ -969,10 +976,11 @@ return policy(r,l,d,net,greeting)
 }
 function policy(r,l,d,net,greeting){
     if(mode=="mail")return d!="yes"
-    if(mode=="banner")return greeting==""
+    if(mode=="banner")return greeting==""||greeting~/[$]mail_name/
     if(net~/\/0([, \t]|$)|(^|[, \t])[*]([, \t]|$)/)return 1
-    return !safe(l!=""?l:r)
+    return !safe(l)&&!safe(r)
 }
+BEGIN{relay="defer_unauth_destination"}
 $0=="!POSTFIX_MASTER"{master=1;next}
 $0=="!INCOMPLETE"{unknown=1;next}
 !master{
@@ -1000,10 +1008,11 @@ va(){
 mode=$1;path=$2;text=$3
 case $mode:$path in relay:*postfix*|relay:*exim*|mail:*postfix*|mail:*exim*) text=$(p '%s\n' "$text"|records)||return 2;;esac
 case $mode:$path in
-anon:*/exports) p '%s\n' "$text" | awk '/anon(uid|gid)[ \t]*=/{exit 1}';;
-anon:*vsftpd*) p '%s\n' "$text" | awk -F= 'tolower($1)~/^[ \t]*anonymous_enable[ \t]*$/{v=tolower($2);sub(/[ \t]*#.*/,"",v);gsub(/[ \t]/,"",v)}END{exit(v!="no")}';;
+anon:*/exports) p '%s\n' "$text" | awk '{sub(/#.*/,"")}/anon(uid|gid)[ \t]*=/{exit 1}';;
+anon:*vsftpd*) p '%s\n' "$text" | awk -F= -v d="$AD" 'tolower($1)~/^[ \t]*anonymous_enable[ \t]*$/{v=tolower($2);sub(/[ \t]*#.*/,"",v);gsub(/[ \t]/,"",v)
+sub(/^(false|0)$/,"no",v)}END{exit((v==""?d:v)!="no")}';;
 anon:*proftpd*) p '%s\n' "$text" | awk 'tolower($0)~/<anonymous[ \t]/{exit 1}';;
-anon:*) p '%s\n' "$text" | awk -F= 'tolower($1)~/guest ok/&&tolower($2)~/yes|true/{exit 1}';;
+anon:*) p '%s\n' "$text" | awk -F= '{k=tolower($1);v=tolower($2);gsub(/[ \t]/,"",k);gsub(/[ \t]/,"",v)}(k=="guestok"||k=="public")&&v~/^(yes|true|1|on)$/{exit 1}';;
 relay:*sendmail*) p '%s\n' "$text" | awk 'tolower($0)~/promiscuous_relay/{exit 1}';;
 relay:*postfix*) postfix_va relay "$text";;
 relay:*) p '%s\n' "$text"|awk -F= '{k=tolower($1);v=tolower($2);if(k~/relay_from_hosts/){ok=1;if(v~/[$]/)u=1}
@@ -1014,7 +1023,7 @@ mail:*sendmail*) p '%s\n' "$text" | awk 'tolower($0)~/privacyoptions/&&(tolower(
 mail:*postfix*) postfix_va mail "$text";;
 mail:*) p '%s\n' "$text" | awk 'tolower($0)~/acl_smtp_(vrfy|expn)[ \t]*=[ \t]*accept/{exit 1}';;
 banner:*vsftpd*) p '%s\n' "$text" | awk -F= 'tolower($1)~/^[ \t]*ftpd_banner[ \t]*$/{ok=(tolower($2)!~/(vsftpd|ftp|version|[0-9]+[.][0-9]+)/)}END{exit!ok}';;
-banner:*) p '%s\n' "$text" | awk 'tolower($1)=="serverident"&&(tolower($2)=="off"||tolower($0)!~/(proftp|ftp|[0-9]+[.][0-9]+)/){ok=1}END{exit!ok}';;
+banner:*) p '%s\n' "$text" | awk 'tolower($1)=="serverident"{n++;b+=!(tolower($2)~/^(off|no|false|0)$/||NF>2&&tolower($0)!~/(proftp|ftp|%|[0-9]+[.][0-9]+)/)}END{exit!n||b}';;
 esac
 }
 scan(){
@@ -1103,22 +1112,22 @@ for row in $homes;do account=${row%%:*};home=${row#*:};exists "$R$home/.rhosts"|
 meta='';meta=$(fm "$R$home/.rhosts")||ur=1
 if [ -n "$meta" ];then IFS=$oldifs;if vm "$meta";then set -- $meta;{ [ "$2" = root ]||[ "$2" = "$account" ];}&&wn "$1" 600||bad=1;else ur=1;fi;IFS='
 ';fi
-if text=$(cfg "$R$home/.rhosts");then p '%s\n' "$text" | awk '{for(i=1;i<=NF;i++)if($i=="+")exit 1}'||bad=1;else ur=1;fi
+if [ -L "$R$home/.rhosts" ]||[ ! -f "$R$home/.rhosts" ];then ur=1;elif text=$(cfg "$R$home/.rhosts");then p '%s\n' "$text" | awk '{for(i=1;i<=NF;i++)if($i=="+")exit 1}'||bad=1;else ur=1;fi
 done
 IFS=$oldifs
 if exists "$H";then ck=$((ck+1));meta='';meta=$(fm "$H")||ur=1
 if [ -n "${meta-}" ];then if vm "$meta";then set -- $meta;[ "$2" = root ]&&wn "$1" 600||bad=1;else ur=1;fi;fi
-if text=$(cfg "$H");then p '%s\n' "$text" | awk '{for(i=1;i<=NF;i++)if($i=="+")exit 1}'||bad=1;else ur=1;fi
+if [ ! -f "$H" ];then ur=1;elif text=$(cfg "$H");then p '%s\n' "$text" | awk '{for(i=1;i<=NF;i++)if($i=="+")exit 1}'||bad=1;else ur=1;fi
 fi
 finish "$bad" "$ur" "$ck"
 }
 U34(){ disabled "$FINGER" "$QF" '(^|[ /])(finger|in[.]fingerd)([ /{]|$)';}
 U35(){
 so "$FTP $SAMBA $NFS" "$QG $QN smb smbd nmbd";inetd_installation "$FTP_SERVICES";ready||return 0
-scan anon 1:"$E/vsftpd.conf" 1:"$C" 2:"$D" 4:"$E/samba/smb.conf" 64:"$X"
+scan anon 1:"$E/vsftpd.conf" 1:"$C" 2:"$D" 2:"$E/proftpd.conf" 4:"$E/samba/smb.conf" 64:"$X"
 }
 U36(){ disabled "$RSH" "$QQ" "$RSH_SERVICES";}
-U38(){ disabled "$INET" "$QI $QD" '(^|[ /])(echo|discard|daytime|chargen)([ /{]|$)';}
+U38(){ disabled "$INET" "$QD" '(^|[ /])(echo|discard|daytime|chargen)([ /{]|$)';}
 U40(){
 so "$NFS" "$QN";ready||return 0
 ct=0;broad=0;bad=0;incomplete=$SU;metadata=''
@@ -1143,9 +1152,10 @@ for conf do
         incomplete=1
     fi
     counts=$(awk '
-    {sub(/#.*/, ""); if(sub(/\\[ \t]*$/, "")){record=record $0 " ";next}
-     $0=record $0;record=""}
-    NF{n++;for(i=2;i<=NF;i++)if($i~/^(\*|0[.]0[.]0[.]0\/(0|0[.]0[.]0[.]0)|::\/0)($|\()/)b++}
+    {q=0;for(i=1;i<=length($0);i++){ch=substr($0,i,1);if(ch=="\"")q=!q;else if(ch=="#"&&!q){$0=substr($0,1,i-1);break}}
+     if(sub(/\\[ \t]*$/, "")){record=record $0 " ";next}
+     $0=record $0;record="";sub(/^[ \t]*"[^"]*"/,"P");gsub(/"/,"")}
+    NF{n++;c=0;for(i=2;i<=NF;i++){c+=$i!~/^-/;if($i~/^(\(|(\*|[0-9a-f:.]+\/(0|0[.]0[.]0[.]0|::))($|\())/)b++}b+=!c}
     END{if(record!="")exit 1;print n+0,b+0}
     ' "$conf")||{ incomplete=1;continue;}
     set -- $counts
@@ -1195,8 +1205,8 @@ function unquote(line,txt,a,n,v){while(match(line,/"([^"\\]|\\.)*"/)){a=RSTART;n
 txt=txt substr(line,1,a-1) (v=="any"||v=="none"?v:"@");line=substr(line,a+n)}q+=(line~/"/);return txt line}
 {o=o " " unquote($0)}END{gsub(/^[ \t\r\n]+/,"",o);gsub(/[{};]/," & ",o);n=split(tolower(o),t,/[ \t\r\n]+/);
 d=0;st[0]=1
-for(i=1;i<=n;i++)if(t[i]=="{"){h=t[st[d]];if(h==k){r++;g=op[d];j=i;l=1;u=v=0;while(l&&j<n){j++;if(t[j]=="{")l++;else if(t[j]=="}")l--;else{a=t[j];
-sub(/^!/,"",a);if(a~/^(any|0[.]0[.]0[.]0\/(0|0[.]0[.]0[.]0)|::\/0)$/)u=1;else if(a!~/^[;!]$/&&a!="none"&&!ip(a))v=1}}if(l)x++;
+for(i=1;i<=n;i++)if(t[i]=="{"){h=t[st[d]];if(h==k){r++;g=op[d];j=i;l=1;u=v=dn=0;while(l&&j<n){j++;if(t[j]=="{")l++;else if(t[j]=="}")l--;else{a=t[j];
+ng=sub(/^!/,"",a)||t[j-1]=="!";if(a~/^(any|0[.]0[.]0[.]0\/(0|0[.]0[.]0[.]0)|::\/0)$/){if(ng)dn=1;else u+=!dn}else if(!dn&&a!=""&&a!~/^[;!]$/&&a!="none"&&!ip(a))v=1}}if(l)x++;
 b+=u;x+=v;gl+=g&&!u&&!v}
 op[++d]=h=="options";st[d]=i+1}else if(t[i]==";")st[d]=i+1;else if(t[i]=="}"){d--;st[d]=i+1}print r+0,b+0,x+q+(d!=0),gl+0}' )||{ eu rules=unknown coverage=unknown reason=check-error;return;}
 set -- $s;r=$1
@@ -1213,7 +1223,7 @@ FTP_SERVICES='(^|[ /])(ftp|in[.]ftpd|vsftpd|proftpd)([ /{]|$)'
 ftp(){ so "$FTP" "$QG";inetd_installation "$FTP_SERVICES";}
 U53(){
 ftp;ready||return 0
-scan banner 1:"$E/vsftpd.conf" 1:"$C" 2:"$D"
+scan banner 1:"$E/vsftpd.conf" 1:"$C" 2:"$D" 2:"$E/proftpd.conf"
 }
 U54(){ disabled "$FTP" "$QG" "$FTP_SERVICES";}
 U55(){
@@ -1225,26 +1235,28 @@ else case $shell in /bin/false|/sbin/nologin|/usr/sbin/nologin) if [ "$SU" = 0 ]
 U57(){
 ftp;ready||return 0
 fd=0;bad=0;ur=$SU;sn=0;[ "$PM" -gt 0 ]||ur=1
-root_list "$E/ftpusers $E/ftpd/ftpusers";ftpusers=$RL
-root_list "$E/vsftpd/ftpusers $E/vsftpd.ftpusers";vsusers=$RL
 root_list "$E/vsftpd/user_list $E/vsftpd.user_list";userlist=$RL
 if want 1;then for conf in "$E/vsftpd.conf" "$C";do [ -e "$conf" ]||continue;fd=$((fd+1));text=$(cfg "$conf")||{ ur=1;continue;};mark 1
-stt=$(p '%s\n' "$text" | awk -F= '{k=tolower($1);v=tolower($2);gsub(/[ \t]/,"",k);gsub(/[ \t]/,"",v);if(k=="userlist_enable")e=v;if(k=="userlist_deny")d=v}END{print e,d}')
+stt=$(p '%s\n' "$text" | awk -F= '{k=tolower($1);v=tolower($2);gsub(/[ \t]/,"",k);gsub(/[ \t]/,"",v)
+sub(/^(true|1)$/,"yes",v);sub(/^(false|0)$/,"no",v);if(k=="userlist_enable")e=v;if(k=="userlist_deny")d=v}END{print (e==""?"no":e),(d==""?"yes":d)}')
 ul=$(p '%s\n' "$text" | awk -F= 'tolower($1)~/^[ \t]*userlist_file[ \t]*$/{v=$2;sub(/[ \t]*#.*/,"",v);gsub(/^[ \t]+|[ \t]+$/,"",v)}END{print v}')
-set -- $stt;if [ "${1-no}" = no ];then [ "$ftpusers" = 1 ]||[ "$vsusers" = 1 ]||bad=1
-elif [ "$1" = yes ]&&[ "${2-yes}" = yes ];then
+ps=$(p '%s\n' "$text" | awk -F= 'tolower($1)~/^[ \t]*pam_service_name[ \t]*$/{v=$2;gsub(/[ \t]/,"",v)}END{print v}');pf=$E/pam.d/${ps:-vsftpd};pl=0
+if rd "$pf";then for x in $(awk '{sub(/#.*/,"")}$1=="auth"&&/pam_listfile[.]so/&&/sense=deny/&&/item=user/{for(i=1;i<=NF;i++)if(sub(/^file=/,"",$i))print $i}' "$pf");do
+root_list "$R$x";[ "$RL" = 0 ]||pl=1;done;else ur=1;fi
+set -- $stt;if [ "$1" = no ];then [ "$pl" = 1 ]||bad=1
+elif [ "$1" = yes ];then
     selected=$userlist
     case $ul in
         '') :;;
         /*) if rd "$R$ul";then root_list "$R$ul";selected=$RL;else ur=1;continue;fi;;
         *) ur=1;continue;;
     esac
-    [ "$selected" = 1 ]||bad=1
+    case $2:$selected in yes:1|no:0) :;;*) [ "$pl" = 1 ]||bad=1;;esac
 else bad=1;fi
 done;fi
-if want 2;then for conf in "$E/proftpd.conf" "$D";do [ -e "$conf" ]||continue;fd=$((fd+1));text=$(cfg "$conf")||{ ur=1;continue;};mark 2
-stt=$(p '%s\n' "$text" | awk 'tolower($1)=="useftpusers"{u=tolower($2)}tolower($1)=="rootlogin"{r=tolower($2)}END{print u,r}')
-set -- $stt;if [ "${1-on}" = off ];then [ "$2" = off ]||bad=1;else [ "$ftpusers" = 1 ]||bad=1;fi
+if want 2;then for conf in "$E/proftpd.conf" "$D";do [ -e "$conf" ]||continue;fd=$((fd+1));text=$(expand_config proftpd "$conf")||{ ur=1;continue;};mark 2
+case $text in *'!INCOMPLETE'*) ur=1;;esac
+p '%s\n' "$text" | awk 'tolower($1)=="rootlogin"&&tolower($2)~/^(on|yes|true|1)$/{exit 1}'||bad=1
 done;fi
 cv||ur=1
 finish "$bad" "$ur" "$fd"
@@ -1255,7 +1267,8 @@ U59(){
 snmp;ready||return 0
 text=$(snmp_cfg)||{ ur;return;}
 ur=$SU;case $text in *'!INCOMPLETE'*) ur=1;text=$(p '%s\n' "$text"|awk '$0!="!INCOMPLETE"');;esac
-stt=$(p '%s\n' "$text" | awk 'tolower($1)~/^(rouser|rwuser)$/{v3++}tolower($1)~/^(rocommunity6?|rwcommunity6?|com2sec6?)$/{old++}END{print v3+0,old+0}')||{ ur;return;}
+stt=$(p '%s\n' "$text" | awk 'tolower($1)~/^(rouser|rwuser)$/||tolower($1)=="group"&&tolower($3)=="usm"{v3++}
+tolower($1)~/^(rocommunity6?|rwcommunity6?|com2sec6?|authcommunity)$/{old++}END{print v3+0,old+0}')||{ ur;return;}
 set -- $stt
 if [ "$2" -gt 0 ];then ef version=legacy-or-mi
 elif [ "$1" -gt 0 ]&&[ "$ur" = 0 ];then ep version=3
@@ -1271,7 +1284,8 @@ for conf in "$V/lib/snmp/snmpd.conf" "$V/lib/net-snmp/snmpd.conf";do [ ! -e "$co
 [ ! -r "$conf" ]||all="$all
 $(cfg "$conf")"||ur=1;done
 result=$(p '%s\n' "$all" | awk "$FL"'
-{d=tolower(f($0,1));if(d~/^com2sec6?$/)n=(f($0,2)=="-Cn"?6:4);else n=(d=="createuser"?4:2);if(d~/^(rocommunity6?|rwcommunity6?|com2sec6?|createuser)$/){v=f($0,n);
+{d=tolower(f($0,1));if(d~/^com2sec6?$/)n=(f($0,2)=="-Cn"?6:4);else n=(d=="createuser"?(f($0,2)=="-e"?6:4):d=="authcommunity"?3:2)
+if(d~/^(rocommunity6?|rwcommunity6?|com2sec6?|createuser|authcommunity)$/){v=f($0,n);
 sn=1
 if(v=="\001"||v=="")bad=1;else if(tolower(v)~/^(public|private)$/)r="default";else if(r!="default"&&(v!~/[[:alpha:]]/||v!~/[[:digit:]]/||(length(v)<10&&(length(v)<8||v!~/[^[:alnum:]]/))))r="weak"}}
 END{if(r!="")print r;else if(bad||!sn)print "unknown";else print "ok"}')||result=unknown
@@ -1282,8 +1296,8 @@ snmp;ready||return 0
 text=$(snmp_cfg)||{ ur;return;}
 inc=0;case $text in *'!INCOMPLETE'*) inc=1;text=$(p '%s\n' "$text"|awk '$0!="!INCOMPLETE"');;esac
 stt=$(p '%s\n' "$text" | awk "$FL"'
-{d=tolower(f($0,1));if(d~/^(rocommunity6?|rwcommunity6?|com2sec6?)$/){sn++;n=(d~/^com2sec6?$/&&f($0,2)=="-Cn"?5:3);v=tolower(f($0,n));if(v=="\001")bk=1
-else if(v==""||v~/^(default|[*]|0[.]0[.]0[.]0\/(0|0[.]0[.]0[.]0)|::\/0)$/)bad++}else if(d~/^(rouser|rwuser)$/)sn++}
+{d=tolower(f($0,1));if(d~/^(rocommunity6?|rwcommunity6?|com2sec6?|authcommunity)$/){sn++;n=(d~/^com2sec6?$/&&f($0,2)=="-Cn"?5:d=="authcommunity"?4:3);v=tolower(f($0,n));if(v=="\001")bk=1
+else if(v==""||v~/^(default|[*]|0[.]0[.]0[.]0\/(0|0[.]0[.]0[.]0)|::\/0)$/)bad++}else if(d~/^(rouser|rwuser|access)$/)sn++}
 END{print sn+0,bad+0,bk+0}')||{ ur;return;}
 set -- $stt;[ "$1" -gt 0 ]||set -- 0 1 "$3"
 if [ "$1" = 0 ]&&[ "$((SU+$3+inc))" -gt 0 ];then finish 0 1 0
@@ -1337,12 +1351,20 @@ so "$TIME" "$QT";ready||return 0
 if service systemd-timesyncd;then timesyncd;return;fi
 ht "$TO" "$TR"
 fd=0;sv=0;ur=$SU
-for conf in "$E/ntp.conf" "$E/chrony.conf" "$E/chrony/chrony.conf";do [ -e "$conf" ]||continue;fd=$((fd+1))
-text=$(cfg "$conf")||{ ur=1;continue;};ct=$(p '%s\n' "$text" | awk 'tolower($1)~/^(server|pool)$/{n++}END{print n+0}')
+for conf in "$E/ntp.conf" "$E/ntpsec/ntp.conf" "$E/chrony.conf" "$E/chrony/chrony.conf";do [ -e "$conf" ]||continue;fd=$((fd+1))
+text=$(cfg "$conf")||{ ur=1;continue;}
+q=$text;lv=0
+while [ -n "$q" ]&&[ "$lv" -lt 4 ];do lv=$((lv+1));nx=''
+for sd in $(p '%s\n' "$q"|awk '$1=="sourcedir"{for(i=2;i<=NF;i++)print $i"/*.sources"}$1=="confdir"{for(i=2;i<=NF;i++)print $i"/*.conf"}$1~/^include(file)?$/{print $2}');do
+set +f;set -- $R$sd;set -f;for sx do [ ! -e "$sx" ]||if rd "$sx"&&xt=$(cfg "$sx");then nx="$nx
+$xt";else ur=1;fi;done;done
+text="$text$nx";q=$nx;done
+[ -z "$q" ]||ur=1
+ct=$(p '%s\n' "$text" | awk 'tolower($1)~/^(server|pool)$/{n++}END{print n+0}')
 sv=$((sv+ct))
 done
-sy=0;[ "$TR" = 0 ]&&sy=$(p '%s\n' "$TO" | awk '/^[*]|^\^\*/{n++}END{print n+0}')
-if [ "$UA" = 0 ]||{ [ "$fd" -gt 0 ]&&[ "$sv" = 0 ];};then ef "servers=$sv" "selected=$sy" "active=$UA"
+sy=0;[ "$TR" = 0 ]&&sy=$(p '%s\n' "$TO" | awk '/^[*]|^[=^]\*/{n++}END{print n+0}')
+if { [ "$UA" = 0 ]&&[ "$ur" = 0 ];}||{ [ "$fd" -gt 0 ]&&[ "$sv" = 0 ]&&[ "$ur" = 0 ];};then ef "servers=$sv" "selected=$sy" "active=$UA"
 elif [ "$ur" -gt 0 ]||[ "$fd" = 0 ]||[ "$TR" != 0 ];then ur
 elif [ "$sy" = 0 ];then ef "servers=$sv" "selected=$sy" "active=$UA";else ep "servers=$sv" "selected=$sy" "active=$UA";fi
 }
@@ -1446,20 +1468,19 @@ case $2 in
         case $text in *'!INCOMPLETE'*) ur=1;;esac
         return;;
     smtp_banner) text=$(expand_config exim "$conf")||{ ur=1;return;};;
+    displaylogin) text=$(expand_config proftpd "$conf")||{ ur=1;return;};;
     *) text=$(cfg "$conf")||{ ur=1;return;};;
 esac
 fi
 partial=0
 case $text in *'!INCOMPLETE'*) partial=1;ur=1;;esac
 v=$(p '%s\n' "$text" | awk -v k="$2" '
-{line=$0;sub(/^[ \t]*/,"",line)}
+{line=$0;sub(/^[ \t]*(O[ \t]+)?/,"",line)}
 tolower(line)~"^" k "[ \t=]"{sub(/^[^ \t=]+[ \t=]*/,"",line);v=line}
 END{gsub(/[";]/,"",v);print v}
 ')||{ ur=1;return;}
 [ -n "$v" ]||{ [ "$partial" != 0 ]||mi=1;return;}
-if [ "$2" = displaylogin ];then
-case $v in /*) bf "$R$v";;*) ur=1;;esac
-fi
+case $2:$v in smtpgreetingmessage:*'$v'*|smtpgreetingmessage:*'$Z'*) mi=1;;displaylogin:/*) bf "$R$v";;displaylogin:*) ur=1;;esac
 }
 U62(){
 mi=0;ur=0;ck=0
@@ -1474,6 +1495,7 @@ fi
 ssh_text=$(expand_config ssh /etc/ssh/sshd_config)
 case $ssh_text in *'!INCOMPLETE'*) ur=1;ssh_text=$(p '%s\n' "$ssh_text"|awk '$0!="!INCOMPLETE"');;esac
 match_banners=$(p '%s\n' "$ssh_text" | awk '
+match($0,/^[ \t]*[A-Za-z]+[ \t]*=/){$0=substr($0,1,RLENGTH-1)" "substr($0,RLENGTH+1)}
 tolower($1)=="match"{m=1;next}
 m&&tolower($1)=="banner"{print $2}
 ')||ur=1

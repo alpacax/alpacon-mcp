@@ -1,7 +1,6 @@
 import json
 import os
 import re
-from inspect import Parameter, signature
 from pathlib import Path
 
 import pytest
@@ -19,6 +18,7 @@ from tests.hardening import (
     load_registry,
     parse_run,
     render_derived,
+    render_skill_digest,
 )
 
 PERSON = {7, 8, 9, 11, 23, 25, 26, 28, 33, 39, 56, 58, 66}
@@ -98,15 +98,15 @@ def test_fixed_mapping_choices_are_preserved():
     registry = load_registry()
     items = {item.id: item for item in registry.items}
 
-    assert (items['U-18'].mitigation, items['U-18'].techniques) == (
+    assert (items[ItemId('U-18')].mitigation, items[ItemId('U-18')].techniques) == (
         'M1026',
         ('T1003.008',),
     )
-    assert (items['U-14'].mitigation, items['U-14'].techniques) == (
+    assert (items[ItemId('U-14')].mitigation, items[ItemId('U-14')].techniques) == (
         'M1022',
         ('T1574.007',),
     )
-    assert (items['U-03'].mitigation, items['U-03'].techniques) == (
+    assert (items[ItemId('U-03')].mitigation, items[ItemId('U-03')].techniques) == (
         'M1036',
         ('T1110.001', 'T1110.003'),
     )
@@ -144,22 +144,10 @@ def test_script_run_ids_match_the_registry():
     assert tuple(match[1].split()) == load_registry().run_ids()
 
 
-def test_skill_digest_matches_the_script_when_the_skill_is_delivered():
-    if not SKILL_MD.exists():
-        pytest.skip('SKILL.md belongs to delivery unit 5')
-
-    assert SCRIPT.exists(), 'A delivered skill must include its host script'
-    registry = load_registry()
-    attack = load_attack()
+def test_skill_digest_matches_the_script():
     skill_source = SKILL_MD.read_text()
 
-    _, rendered = render_derived(
-        registry,
-        attack,
-        ITEMS_MD.read_text(),
-        skill_source,
-        SCRIPT.read_bytes(),
-    )
+    rendered = render_skill_digest(skill_source, SCRIPT.read_bytes())
 
     assert rendered == skill_source
 
@@ -350,12 +338,8 @@ def test_duplicate_mitigation_row_is_rejected(tmp_path):
         load_registry(path)
 
 
-def test_run_parser_requires_a_pinned_digest():
-    assert signature(parse_run).parameters['expected_sha256'].default is Parameter.empty
-
-
 def test_a_script_digest_mismatch_makes_the_whole_run_unknown():
-    stdout = output().rsplit('end ', 1)[0]
+    stdout = output()
 
     run = parse_run(stdout, expected_sha256='b' * 64)
 

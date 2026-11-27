@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from tests.hardening import (
+    PERSON_KEYS,
     SCRIPT,
     Group,
     ItemId,
@@ -102,25 +103,10 @@ SERVICE_IDS = {
     'U-61',
     'U-65',
 }
-PERSON_KEYS = {
-    'U-07': {'login_accounts', 'names', 'more'},
-    'U-08': {'admin_accounts', 'names', 'more'},
-    'U-09': {'orphan_groups', 'names', 'more'},
-    'U-11': {'login_shell_accounts', 'names', 'more'},
-    'U-23': {'privileged_files', 'paths', 'more'},
-    'U-25': {'world_writable', 'paths', 'more'},
-    'U-26': {'non_device_files', 'paths', 'more'},
-    'U-28': {'firewall', 'tcp_wrappers', 'listeners'},
-    'U-33': {'hidden_paths', 'paths', 'more'},
-    'U-39': {'nfs_installed', 'nfs_active'},
-    'U-56': {'ftp_access_control', 'rules'},
-    'U-58': {'snmp_installed', 'snmp_active'},
-    'U-66': {'logging', 'destinations', 'remote'},
-}
 KNOWN_PACKAGES = ' '.join(
     """openssh-server telnetd inetutils-telnetd telnet-server rsh-server rsh-redone-server fingerd finger-server
     vsftpd proftpd-basic proftpd-core proftpd openbsd-inetd xinetd postfix sendmail-bin
-    sendmail exim4-daemon-light exim bind9 bind nfs-kernel-server nfs-utils
+    sendmail exim4-daemon-light exim4-daemon-heavy exim bind9 bind nfs-kernel-server nfs-utils
     autofs nis ypserv ypbind ypbind-mt talkd talk-server tftpd-hpa tftp-server snmpd
     net-snmp chrony ntpsec ntp systemd-timesyncd samba rpcbind cron cronie at""".split()
 )
@@ -133,7 +119,7 @@ KNOWN_UNITS = ' '.join(
     nfs-server.service nfs-kernel-server.service autofs.service ypserv.service
     ypbind.service ypxfrd.service talk.socket talk.service ntalk.socket
     ntalk.service tftp.socket tftp.service tftpd-hpa.service snmpd.service chronyd.service
-    chrony.service ntpd.service ntp.service smb.service smbd.service
+    chrony.service ntpd.service ntp.service ntpsec.service smb.service smbd.service
     nmb.service nmbd.service echo.socket discard.socket daytime.socket
     chargen.socket rpc-statd.service rpc-rquotad.service rusersd.service
     rstatd.service rpcbind.service cron.service crond.service atd.service
@@ -172,7 +158,6 @@ class Host:
     walk_exit: int = 0
     stat_exit: int = 0
     query_exit: int = 2
-    pam_login: str = 'auth required pam_securetty.so\n'
     securetty: str = 'tty1\ntty2\n'
     package_error: str = ''
     inetd_conf: str | None = None
@@ -183,11 +168,11 @@ class Host:
     dev_walk: str = ''
     systemctl_error: str = ''
     time_source: str = '^* time.example.test\n'
-    time_source_exit: int = 0
     timesync: str = ''
     timedate: str = ''
-    listeners: str = 'Netid State Local Address:Port\ntcp LISTEN 0.0.0.0:22\n'
     unreadable: tuple[str, ...] = ()
+    held: str = ''
+    fifos: tuple[str, ...] = ()
 
 
 PASSWD = (
@@ -406,13 +391,13 @@ case "$1" in
     sshd) [ "$#" = 2 ] && [ "$2" = -T ] || exit 91; printf 'sshd\n' >> "$FAKE_CALL_LOG"; [ "$FAKE_SSHD_EXIT" = 124 ] && exit 124; printf '%s' "$FAKE_SSHD"; exit "$FAKE_SSHD_EXIT" ;;
     su) [ "$FAKE_SU_EXIT" != 124 ] || exit 124; exec "$@" ;;
     find|named-checkconf|timedatectl) command=$1; shift; exec "$command" "$@" ;;
-    chronyc) [ "$#" = 2 ] && [ "$2" = sources ] || exit 91; printf '%s' "$FAKE_TIME_SOURCE"; exit "$FAKE_TIME_SOURCE_EXIT" ;;
+    chronyc) [ "$#" = 2 ] && [ "$2" = sources ] || exit 91; printf '%s' "$FAKE_TIME_SOURCE" ;;
     *) exit 91 ;;
 esac""",
         )
     _write_executable(
         bin_dir / 'chronyc',
-        '[ "$#" = 1 ] && [ "$1" = sources ] || exit 91\nprintf \'%s\' "$FAKE_TIME_SOURCE"\nexit "$FAKE_TIME_SOURCE_EXIT"',
+        '[ "$#" = 1 ] && [ "$1" = sources ] || exit 91\nprintf \'%s\' "$FAKE_TIME_SOURCE"',
     )
     _write_executable(
         bin_dir / 'timedatectl',
@@ -425,7 +410,8 @@ esac""",
     )
     _write_executable(
         bin_dir / 'ss',
-        '[ "$#" = 1 ] && [ "$1" = -lntu ] || exit 91\nprintf \'%s\' "$FAKE_LISTENERS"',
+        '[ "$#" = 1 ] && [ "$1" = -lntu ] || exit 91\n'
+        "printf 'Netid State Local Address:Port\\ntcp LISTEN 0.0.0.0:22\\n'",
     )
     _write_executable(
         bin_dir / 'named-checkconf',
@@ -442,6 +428,7 @@ exit "$FAKE_BIND_EXIT"
         """[ "$#" = 3 ] && [ "$1" = -W ] && [ "$2" = '-f=${Status}' ] || exit 91
 case " $FAKE_KNOWN_PACKAGES " in *" $3 "*) ;; *) exit 91 ;; esac
 case " $FAKE_PACKAGE_ERROR " in *" $3 "*) printf '%s\\n' "$FAKE_FAILURE_MESSAGE" >&2; exit "$FAKE_QUERY_EXIT" ;; esac
+case " $FAKE_HELD " in *" $3 "*) printf 'hold ok installed'; exit 0 ;; esac
 case " $FAKE_INSTALLED " in *" $3 "*) printf 'install ok installed'; exit 0 ;; *) printf 'dpkg-query: no packages found matching %s\n' "$3" >&2; exit 1 ;; esac""",
     )
     _write_executable(
@@ -506,15 +493,16 @@ def _run(
     (etc / 'group').write_text(host.group)
     pam_dir = etc / 'pam.d'
     pam_dir.mkdir()
-    (pam_dir / 'login').write_text(host.pam_login)
-    defaults = {
+    (pam_dir / 'login').write_text('auth required pam_securetty.so\n')
+    defaults: dict[str, str | None] = {
         '/etc/security/pwquality.conf': 'minlen=8\ndcredit=-1\nucredit=-1\nlcredit=-1\nocredit=-1\nenforce_for_root\n',
         '/etc/security/pwhistory.conf': 'remember=4\nenforce_for_root\n',
         '/etc/pam.d/common-password': 'password requisite pam_pwquality.so enforce_for_root\npassword required pam_pwhistory.so remember=4\npassword required pam_unix.so\n',
-        '/etc/pam.d/common-auth': 'auth required pam_faillock.so deny=10\n',
+        '/etc/pam.d/common-auth': 'auth required pam_faillock.so preauth deny=10\nauth [default=die] pam_faillock.so authfail deny=10\n',
         '/etc/pam.d/common-account': 'account required pam_faillock.so\n',
-        '/etc/pam.d/system-auth': 'auth required pam_faillock.so deny=10\naccount required pam_faillock.so\npassword requisite pam_pwquality.so enforce_for_root\npassword required pam_pwhistory.so remember=4\npassword required pam_unix.so\n',
+        '/etc/pam.d/system-auth': 'auth required pam_faillock.so preauth deny=10\nauth [default=die] pam_faillock.so authfail deny=10\naccount required pam_faillock.so\npassword requisite pam_pwquality.so enforce_for_root\npassword required pam_pwhistory.so remember=4\npassword required pam_unix.so\n',
         '/etc/pam.d/su': 'auth required pam_wheel.so use_uid\n',
+        '/etc/pam.d/vsftpd': 'auth required pam_listfile.so item=user sense=deny file=/etc/ftpusers onerr=succeed\n',
         '/etc/profile': 'TMOUT=600\nexport TMOUT\numask 022\n',
         '/etc/shells': '/bin/bash\n/bin/sh\n',
         '/etc/hosts': '127.0.0.1 localhost\n',
@@ -578,10 +566,12 @@ def _run(
         link.parent.mkdir(parents=True, exist_ok=True)
         link.unlink(missing_ok=True)
         link.symlink_to(root / target.removeprefix('/'))
+    for name in host.fifos:
+        os.mkfifo(root / name.removeprefix('/'))
     for name in host.unreadable_dirs:
-        directory = root / name.removeprefix('/')
-        directory.mkdir(parents=True, exist_ok=True)
-        directory.chmod(0)
+        locked = root / name.removeprefix('/')
+        locked.mkdir(parents=True, exist_ok=True)
+        locked.chmod(0)
     link_file = tmp_path / 'links'
     link_file.write_text(''.join(f'{name}|{target}\n' for name, target in host.links))
     script = tmp_path / 'hardening-check.sh'
@@ -598,9 +588,10 @@ def _run(
             ('fake_awk', 'awk'),
         )
     )
+    original = SCRIPT.read_text()
+    assert all(seam in original for seam in ("R=''", 'dpkg-query -W', 'command awk'))
     source = (
-        SCRIPT.read_text()
-        .replace("R=''", f"R='{root}'\n{fake_functions}", 1)
+        original.replace("R=''", f"R='{root}'\n{fake_functions}", 1)
         .replace('dpkg-query -W', 'fake_dpkg_query -W')
         .replace('command awk', 'fake_awk')
     )
@@ -656,6 +647,7 @@ def _run(
             'FAKE_UID': str(host.uid),
             'FAKE_SHADOW_STAT': host.shadow_stat,
             'FAKE_INSTALLED': host.installed,
+            'FAKE_HELD': host.held,
             'FAKE_ACTIVE_UNITS': host.active_units,
             'FAKE_LOADED_UNITS': host.loaded_units,
             'FAKE_BIND_CONFIG': bind_config,
@@ -682,10 +674,8 @@ def _run(
             'FAKE_KNOWN_UNITS': KNOWN_UNITS,
             'FAKE_SYSTEMCTL_ERROR': host.systemctl_error,
             'FAKE_TIME_SOURCE': host.time_source,
-            'FAKE_TIME_SOURCE_EXIT': str(host.time_source_exit),
             'FAKE_TIMESYNC': host.timesync,
             'FAKE_TIMEDATE': host.timedate,
-            'FAKE_LISTENERS': host.listeners,
         },
         text=True,
         capture_output=True,
@@ -715,20 +705,24 @@ def _parsed_cases(
     return _parse_batch({name: tmp_path_factory.mktemp(name) for name in hosts}, hosts)
 
 
+def _absent(base: Host) -> Host:
+    return dataclasses.replace(
+        base,
+        installed='',
+        active_units='',
+        loaded_units='',
+        sshd_exit=127,
+        files=(('/etc/xinetd.conf', None),),
+    )
+
+
 @pytest.fixture(scope='module')
 def base_runs(tmp_path_factory):
     hosts = {}
     for base in (BASE_DEBIAN, BASE_RHEL):
         hosts['secured', base] = base
         hosts['weakened', base] = _weakened(base)
-        hosts['absent', base] = dataclasses.replace(
-            base,
-            installed='',
-            active_units='',
-            loaded_units='',
-            sshd_exit=127,
-            files=(('/etc/xinetd.conf', None),),
-        )
+        hosts['absent', base] = _absent(base)
 
     paths = {case: tmp_path_factory.mktemp(case[0]) for case in hosts}
     return {
@@ -804,9 +798,9 @@ def test_every_script_item_passes_on_a_secured_supported_host(base_runs, host: H
     assert run.items[ItemId('U-67')].facts['log_files'] == '1'
     assert run.items[ItemId('U-62')].facts['targets'] == '7'
     for item_id, keys in PERSON_KEYS.items():
-        item = run.items[ItemId(item_id)]
+        item = run.items[item_id]
         assert item.verdict is Verdict.REVIEW
-        assert set(item.facts) == keys
+        assert item.facts.keys() == keys
     assert 'Abcdef12!' not in result.stdout + result.stderr
 
 
@@ -843,7 +837,7 @@ def test_case_catalog_covers_the_registry_and_service_contract():
     assert SERVICE_IDS <= script_ids
 
 
-def test_later_lockout_value_wins_and_password_modules_must_precede_unix(
+def test_highest_lockout_value_counts_and_password_modules_must_precede_unix(
     tmp_path: Path,
 ):
     host = dataclasses.replace(
@@ -855,7 +849,7 @@ def test_later_lockout_value_wins_and_password_modules_must_precede_unix(
             ),
             (
                 '/etc/pam.d/common-auth',
-                'auth required pam_faillock.so deny=0\nauth required pam_faillock.so deny=10\n',
+                'auth required pam_faillock.so preauth deny=3\nauth required pam_faillock.so authfail deny=10\n',
             ),
         ),
     )
@@ -1019,13 +1013,13 @@ def test_a_known_mode_violation_beats_malformed_sibling_metadata(tmp_path: Path)
 
 
 def test_u01_fails_when_ssh_permits_root_login(edge_runs):
-    run, result = edge_runs['malformed_passwd_root_ssh']
+    run, _ = edge_runs['malformed_passwd_root_ssh']
 
     assert run.items[ItemId('U-01')].verdict is Verdict.FAIL
 
 
 def test_u01_fails_when_a_legacy_remote_login_service_is_active(edge_runs):
-    run, result = edge_runs['legacy_hashes_metadata']
+    run, _ = edge_runs['legacy_hashes_metadata']
 
     assert run.items[ItemId('U-01')].verdict is Verdict.FAIL
 
@@ -1039,7 +1033,7 @@ def test_u01_is_not_applicable_when_remote_login_packages_are_absent(base_runs):
 
 
 def test_u01_is_unknown_when_effective_sshd_configuration_times_out(edge_runs):
-    run, result = edge_runs['timeout_missing_shadow']
+    run, _ = edge_runs['timeout_missing_shadow']
 
     item = run.items[ItemId('U-01')]
     assert item.verdict is Verdict.UNKNOWN
@@ -1048,25 +1042,40 @@ def test_u01_is_unknown_when_effective_sshd_configuration_times_out(edge_runs):
 
 def test_u01_is_unknown_when_a_package_query_fails(tmp_path: Path):
     host = dataclasses.replace(
-        BASE_RHEL,
-        package_error='telnet-server',
-        failure_message='query: not found',
-        bind_exit=2,
-        login_defs=BASE_RHEL.login_defs + 'UMASK invalid\n',
+        BASE_RHEL, package_error='telnet-server', failure_message='query: not found'
     )
+
     run, _ = _parsed(tmp_path, host)
 
-    assert run.items[ItemId('U-30')].verdict is Verdict.UNKNOWN
     item = run.items[ItemId('U-01')]
     assert item.verdict is Verdict.UNKNOWN
     assert item.facts['reason'] == 'incomplete'
+
+
+def test_u30_is_unknown_when_login_defs_sets_an_invalid_umask(tmp_path: Path):
+    host = dataclasses.replace(
+        BASE_RHEL, login_defs=BASE_RHEL.login_defs + 'UMASK invalid\n'
+    )
+
+    run, _ = _parsed(tmp_path, host)
+
+    item = run.items[ItemId('U-30')]
+    assert item.verdict is Verdict.UNKNOWN
+    assert item.facts['reason'] == 'incomplete'
+
+
+def test_dns_items_are_unknown_when_named_checkconf_fails(tmp_path: Path):
+    host = dataclasses.replace(BASE_RHEL, bind_exit=2)
+
+    run, _ = _parsed(tmp_path, host)
+
     for item_id in ('U-50', 'U-51'):
         assert run.items[ItemId(item_id)].verdict is Verdict.UNKNOWN
         assert run.items[ItemId(item_id)].facts['reason'] == 'incomplete'
 
 
 def test_u01_is_unknown_when_sshd_omits_permit_root_login(edge_runs):
-    run, result = edge_runs['locked_default_shadow']
+    run, _ = edge_runs['locked_default_shadow']
 
     item = run.items[ItemId('U-01')]
     assert item.verdict is Verdict.UNKNOWN
@@ -1074,7 +1083,7 @@ def test_u01_is_unknown_when_sshd_omits_permit_root_login(edge_runs):
 
 
 def test_u01_is_unknown_when_inetd_declares_a_legacy_service(edge_runs):
-    run, result = edge_runs['yescrypt_special_mode']
+    run, _ = edge_runs['yescrypt_special_mode']
 
     item = run.items[ItemId('U-01')]
     assert item.verdict is Verdict.UNKNOWN
@@ -1100,7 +1109,7 @@ def test_u13_reports_hash_classes_without_reporting_hashes(edge_runs):
 
 
 def test_u13_passes_yescrypt_and_reports_the_login_default(edge_runs):
-    run, result = edge_runs['yescrypt_special_mode']
+    run, _ = edge_runs['yescrypt_special_mode']
 
     item = run.items[ItemId('U-13')]
     assert item.verdict is Verdict.PASS
@@ -1108,7 +1117,7 @@ def test_u13_passes_yescrypt_and_reports_the_login_default(edge_runs):
 
 
 def test_u13_is_unknown_when_shadow_cannot_be_read(edge_runs):
-    run, result = edge_runs['timeout_missing_shadow']
+    run, _ = edge_runs['timeout_missing_shadow']
 
     item = run.items[ItemId('U-13')]
     assert item.verdict is Verdict.UNKNOWN
@@ -1127,7 +1136,7 @@ def test_u13_counts_a_locked_weak_hash_without_printing_it(edge_runs):
 
 
 def test_u18_fails_and_marks_the_debian_default(edge_runs):
-    run, result = edge_runs['locked_default_shadow']
+    run, _ = edge_runs['locked_default_shadow']
 
     item = run.items[ItemId('U-18')]
     assert item.verdict is Verdict.FAIL
@@ -1135,7 +1144,7 @@ def test_u18_fails_and_marks_the_debian_default(edge_runs):
 
 
 def test_u18_is_unknown_when_shadow_metadata_cannot_be_read(edge_runs):
-    run, result = edge_runs['legacy_hashes_metadata']
+    run, _ = edge_runs['legacy_hashes_metadata']
 
     item = run.items[ItemId('U-18')]
     assert item.verdict is Verdict.UNKNOWN
@@ -1143,19 +1152,19 @@ def test_u18_is_unknown_when_shadow_metadata_cannot_be_read(edge_runs):
 
 
 def test_u18_rejects_special_permission_bits(edge_runs):
-    run, result = edge_runs['yescrypt_special_mode']
+    run, _ = edge_runs['yescrypt_special_mode']
 
     assert run.items[ItemId('U-18')].verdict is Verdict.FAIL
 
 
 def test_u18_accepts_no_permission_bits(edge_runs):
-    run, result = edge_runs['many_accounts_zero_mode']
+    run, _ = edge_runs['many_accounts_zero_mode']
 
     assert run.items[ItemId('U-18')].verdict is Verdict.PASS
 
 
 def test_u07_reports_at_most_twenty_login_capable_accounts(edge_runs):
-    run, result = edge_runs['many_accounts_zero_mode']
+    run, _ = edge_runs['many_accounts_zero_mode']
 
     item = run.items[ItemId('U-07')]
     assert item.verdict is Verdict.REVIEW
@@ -1165,7 +1174,7 @@ def test_u07_reports_at_most_twenty_login_capable_accounts(edge_runs):
 
 
 def test_u07_is_unknown_when_the_passwd_record_is_malformed(edge_runs):
-    run, result = edge_runs['malformed_passwd_root_ssh']
+    run, _ = edge_runs['malformed_passwd_root_ssh']
 
     item = run.items[ItemId('U-07')]
     assert item.verdict is Verdict.UNKNOWN
@@ -1273,6 +1282,7 @@ def test_vsftpd_uses_configured_banner_and_user_list_files(tmp_path: Path):
             ('/etc/vsftpd/banner', 'vsftpd 3.0\n'),
             ('/etc/vsftpd/custom-users', 'alice\n'),
             ('/etc/vsftpd/user_list', 'root\n'),
+            ('/etc/ftpusers', 'nobody\n'),
         ),
     )
 
@@ -1512,7 +1522,7 @@ def root_login_runs(tmp_path_factory, account_check_host: Host):
         'missing-markers': {'login_path': '/usr/sbin:/bin', 'path_markers': False},
     }
     hosts = {
-        name: dataclasses.replace(account_check_host, **overrides)
+        name: dataclasses.replace(account_check_host, **overrides)  # type: ignore[arg-type]
         for name, overrides in cases.items()
     }
     return _parsed_cases(tmp_path_factory, hosts)
@@ -1685,7 +1695,7 @@ def test_u65_requires_timesyncd_to_synchronize_with_a_configured_server(
 def test_script_fits_the_delivery_size_and_line_limits():
     source = SCRIPT.read_bytes()
 
-    assert len(source) <= 60 * 1024
+    assert len(source) <= 63 * 1024  # execute_file takes 64 KB; the rest is headroom
     assert max(map(len, source.splitlines())) <= 200
 
 
@@ -1711,8 +1721,8 @@ def test_script_runs_under_supported_shells(tmp_path: Path, shell: str, base_run
     assert run.os == 'rocky-9.5'
 
 
-def test_u01_does_not_pass_when_a_template_remote_login_service_is_active(edge_runs):
-    run, result = edge_runs['many_accounts_zero_mode']
+def test_u01_is_unknown_when_a_template_remote_login_service_is_active(edge_runs):
+    run, _ = edge_runs['many_accounts_zero_mode']
 
     item = run.items[ItemId('U-01')]
     assert item.verdict is Verdict.UNKNOWN
@@ -1720,12 +1730,31 @@ def test_u01_does_not_pass_when_a_template_remote_login_service_is_active(edge_r
 
 
 def test_u01_does_not_claim_absence_while_an_ssh_service_is_active(tmp_path: Path):
+    host = dataclasses.replace(_absent(BASE_DEBIAN), active_units='sshd.service')
+
+    run, _ = _parsed(tmp_path, host)
+
+    item = run.items[ItemId('U-01')]
+    assert item.verdict is Verdict.UNKNOWN
+    assert item.facts['reason'] == 'tool-missing'
+
+
+def test_service_items_do_not_claim_absence_while_their_units_are_loaded(
+    tmp_path: Path,
+):
+    host = dataclasses.replace(_absent(BASE_DEBIAN), loaded_units=LOADED)
+
+    run, _ = _parsed(tmp_path, host)
+
+    for item_id in ('U-34', 'U-35', 'U-48'):
+        assert run.items[ItemId(item_id)].verdict is Verdict.PASS
+    assert run.items[ItemId('U-65')].verdict is Verdict.FAIL
+
+
+def test_exim_mail_items_follow_the_live_config_over_its_template(tmp_path: Path):
     host = dataclasses.replace(
-        BASE_DEBIAN,
-        installed='',
-        sshd_exit=127,
-        active_units='sshd.service',
-        loaded_units=LOADED + ' exim4.service',
+        _absent(BASE_DEBIAN),
+        loaded_units='exim4.service',
         files=(
             (
                 '/etc/exim4/exim4.conf.template',
@@ -1737,13 +1766,11 @@ def test_u01_does_not_claim_absence_while_an_ssh_service_is_active(tmp_path: Pat
             ),
         ),
     )
+
     run, _ = _parsed(tmp_path, host)
 
-    assert run.items[ItemId('U-01')].verdict is Verdict.UNKNOWN
-    for item_id in ('U-34', 'U-35', 'U-48'):
-        assert run.items[ItemId(item_id)].verdict is Verdict.PASS
-    for item_id in ('U-47', 'U-65'):
-        assert run.items[ItemId(item_id)].verdict is Verdict.FAIL
+    assert run.items[ItemId('U-47')].verdict is Verdict.FAIL
+    assert run.items[ItemId('U-48')].verdict is Verdict.PASS
 
 
 def test_invalid_service_metadata_is_unknown_and_timeout_accepts_inline_comments(
@@ -1782,15 +1809,19 @@ def test_invalid_service_metadata_is_unknown_and_timeout_accepts_inline_comments
     assert result.stderr == ''
 
 
-def _network_rules_host(socket_active: bool) -> Host:
+def _network_rules_host(
+    *,
+    echo_socket: bool,
+    postfix: str | None,
+    export_client: str,
+    snmpd: str,
+    bind_config: str | None,
+) -> Host:
     acl = 'version "Authorized use only";\nallow-transfer { 192.0.2.1; any; };\nallow-update {\n192.0.2.1;\nany;\n};\n'
-    scoped = 'options { allow-transfer { none; }; allow-update { none; }; };\nzone "safe" { type master; file "safe.db"; allow-transfer { none; }; };\nzone "open" { type master; file "open.db"; allow-transfer { any; }; allow-update { any; }; };\n'
-    postfix = 'mynetworks = 0.0.0.0/0\nsmtpd_recipient_restrictions = permit_mynetworks,\n reject_unauth_destination\ndisable_vrfy_command = yes\nsmtpd_banner = Authorized use only\n'
-    address = '0.0.0.0/0.0.0.0' if socket_active else 'default'
     return dataclasses.replace(
         BASE_DEBIAN,
         active_units='sshd.service chronyd.service'
-        + (' echo.socket' if socket_active else ''),
+        + (' echo.socket' if echo_socket else ''),
         passwd=BASE_DEBIAN.passwd + 'ftp:x:50:50:FTP:/srv/ftp:\n',
         installed=BASE_DEBIAN.installed + ' proftpd-core sendmail-bin',
         shadow_stat='400 daemon root',
@@ -1799,20 +1830,15 @@ def _network_rules_host(socket_active: bool) -> Host:
             (
                 '/etc/xinetd.d/custom-services',
                 'service echo\n{\ndisable = '
-                + ('yes' if socket_active else 'no')
+                + ('yes' if echo_socket else 'no')
                 + '\n}\nservice discard { disable = yes }\n',
             ),
             (
                 '/etc/vsftpd/vsftpd.conf',
                 'anonymous_enable=NO\nftpd_banner=Authorized use only\nuserlist_enable=NO\n',
             ),
-            ('/etc/postfix/main.cf', postfix if socket_active else None),
-            (
-                '/etc/exports',
-                '/srv/share '
-                + ('0.0.0.0/0' if socket_active else '192.0.2.0/24')
-                + '(ro)\n',
-            ),
+            ('/etc/postfix/main.cf', postfix),
+            ('/etc/exports', f'/srv/share {export_client}(ro)\n'),
             (
                 '/etc/mail/sendmail.cf',
                 'O PrivacyOptions=restrictqrun,noexpn,novrfy\nO SmtpGreetingMessage=Authorized use only\n',
@@ -1821,14 +1847,9 @@ def _network_rules_host(socket_active: bool) -> Host:
             ('/etc/exim4/exim4.conf', 'acl_smtp_vrfy = deny\nacl_smtp_expn = deny\n'),
             ('/etc/named.conf', acl),
             ('/etc/bind/named.conf.options', acl),
-            (
-                '/etc/snmp/snmpd.conf',
-                ('rocommunity "Abc def12!" ' + address + '\n')
-                if socket_active
-                else 'rouser monitor authPriv\nrocommunity6 public default\n',
-            ),
+            ('/etc/snmp/snmpd.conf', snmpd),
         ),
-        bind_config=None if socket_active else scoped,
+        bind_config=bind_config,
         stats=(('/usr/sbin/postsuper', 'invalid root root'),),
     )
 
@@ -1844,41 +1865,78 @@ def network_runs(tmp_path_factory):
     return _parsed_cases(
         tmp_path_factory,
         {
-            'network-rules-False': _network_rules_host(False),
-            'network-rules-True': _network_rules_host(True),
+            'xinetd-echo': _network_rules_host(
+                echo_socket=False,
+                postfix=None,
+                export_client='192.0.2.0/24',
+                snmpd='rouser monitor authPriv\nrocommunity6 public default\n',
+                bind_config='options { allow-transfer { none; }; allow-update { none; }; };\nzone "safe" { type master; file "safe.db"; allow-transfer { none; }; };\nzone "open" { type master; file "open.db"; allow-transfer { any; }; allow-update { any; }; };\n',
+            ),
+            'socket-echo': _network_rules_host(
+                echo_socket=True,
+                postfix='mynetworks = 0.0.0.0/0\nsmtpd_recipient_restrictions = permit_mynetworks,\n reject_unauth_destination\ndisable_vrfy_command = yes\nsmtpd_banner = Authorized use only\n',
+                export_client='0.0.0.0/0',
+                snmpd='rocommunity "Abc def12!" 0.0.0.0/0.0.0.0\n',
+                bind_config=None,
+            ),
             'bind-acl-none': _bind_acl_host('none'),
             'bind-acl-any': _bind_acl_host('any'),
         },
     )
 
 
-@pytest.mark.parametrize('socket_active', [False, True])
-def test_global_network_rules_and_hidden_services_cannot_pass(
-    network_runs, socket_active: bool
-):
-    run, result = network_runs[f'network-rules-{socket_active}']
+@pytest.mark.parametrize('case', ['xinetd-echo', 'socket-echo'])
+def test_global_network_rules_and_hidden_services_cannot_pass(network_runs, case: str):
+    run, result = network_runs[case]
 
-    for item_id in ('U-18', 'U-38', 'U-50', 'U-51', 'U-55', 'U-61'):
+    for item_id in ('U-18', 'U-38', 'U-50', 'U-51', 'U-55', 'U-59', 'U-61'):
         assert run.items[ItemId(item_id)].verdict is Verdict.FAIL
     for item_id in ('U-35', 'U-53', 'U-57'):
         assert run.items[ItemId(item_id)].verdict is Verdict.UNKNOWN
-    assert run.items[ItemId('U-47')].verdict is (
-        Verdict.FAIL if socket_active else Verdict.UNKNOWN
-    )
-    assert run.items[ItemId('U-48')].verdict is (
-        Verdict.PASS if socket_active else Verdict.UNKNOWN
-    )
-    assert run.items[ItemId('U-40')].verdict is (
-        Verdict.FAIL if socket_active else Verdict.PASS
-    )
     assert run.items[ItemId('U-46')].verdict is Verdict.UNKNOWN
     assert run.items[ItemId('U-46')].facts['reason'] == 'incomplete'
-    assert run.items[ItemId('U-59')].verdict is Verdict.FAIL
-    assert run.items[ItemId('U-60')].verdict is (
-        Verdict.PASS if socket_active else Verdict.FAIL
-    )
     assert 'Abc def12!' not in result.stdout + result.stderr
     assert result.stderr == ''
+
+
+@pytest.mark.parametrize(
+    ('case', 'verdict'),
+    [('xinetd-echo', Verdict.PASS), ('socket-echo', Verdict.FAIL)],
+)
+def test_u40_fails_only_an_export_open_to_every_host(
+    network_runs, case: str, verdict: Verdict
+):
+    run, _ = network_runs[case]
+
+    assert run.items[ItemId('U-40')].verdict is verdict
+
+
+def test_postfix_mail_items_are_unknown_without_its_main_config(network_runs):
+    run, _ = network_runs['xinetd-echo']
+
+    assert run.items[ItemId('U-47')].verdict is Verdict.UNKNOWN
+    assert run.items[ItemId('U-48')].verdict is Verdict.UNKNOWN
+
+
+def test_postfix_open_mynetworks_fails_relay_while_disabled_vrfy_passes(
+    network_runs,
+):
+    run, _ = network_runs['socket-echo']
+
+    assert run.items[ItemId('U-47')].verdict is Verdict.FAIL
+    assert run.items[ItemId('U-48')].verdict is Verdict.PASS
+
+
+@pytest.mark.parametrize(
+    ('case', 'verdict'),
+    [('socket-echo', Verdict.PASS), ('xinetd-echo', Verdict.FAIL)],
+)
+def test_u60_passes_a_strong_community_and_fails_public(
+    network_runs, case: str, verdict: Verdict
+):
+    run, _ = network_runs[case]
+
+    assert run.items[ItemId('U-60')].verdict is verdict
 
 
 FAILURE_SECRET = 'failure-secret-marker'
@@ -1906,7 +1964,7 @@ def _mail_relay_host(implementation: str) -> Host:
         '/etc/postfix/main.cf' if implementation == 'postfix' else '/etc/exim/exim.conf'
     )
     config = (
-        'smtpd_recipient_restrictions = permit, reject_unauth_destination\n'
+        'smtpd_relay_restrictions = permit\nsmtpd_recipient_restrictions = permit, reject_unauth_destination\n'
         if implementation == 'postfix'
         else 'hostlist relay_from_hosts = 127.0.0.1\n'
     )
@@ -2041,6 +2099,7 @@ def test_ftp_deny_list_without_root_is_a_violation_under_dash(tmp_path: Path):
         files=(
             ('/etc/vsftpd.conf', 'userlist_enable=YES\nuserlist_deny=YES\n'),
             ('/etc/vsftpd.user_list', 'nobody\n'),
+            ('/etc/ftpusers', 'nobody\n'),
         ),
     )
     run, _ = _parsed(tmp_path, host, 'dash')
@@ -2470,3 +2529,646 @@ def test_smtp_login_banners_use_effective_postfix_and_exim_settings(
     run, _ = _parsed(tmp_path, host)
 
     assert run.items[ItemId('U-62')].verdict is expected
+
+
+def _debian(**overrides) -> Host:
+    return dataclasses.replace(BASE_DEBIAN, **overrides)
+
+
+PROFTPD_INSTALLED = DEBIAN_INSTALLED + ' proftpd-core'
+VSFTPD_BASE = 'anonymous_enable=NO\nftpd_banner=Authorized use only\n'
+
+
+@pytest.fixture(scope='module')
+def config_semantics_runs(tmp_path_factory):
+    hosts = {
+        'nfs-world-options': _debian(files=(('/etc/exports', '/srv (rw)\n'),)),
+        'nfs-no-client': _debian(files=(('/etc/exports', '/srv\n'),)),
+        'proftpd-default-ident': _debian(
+            installed=PROFTPD_INSTALLED,
+            files=(('/etc/proftpd/proftpd.conf', 'ServerIdent on\n'),),
+        ),
+        'proftpd-included': _debian(
+            installed=PROFTPD_INSTALLED,
+            files=(
+                (
+                    '/etc/proftpd/proftpd.conf',
+                    'ServerIdent on "Authorized use only"\nRootLogin off\nInclude /etc/proftpd/conf.d/\n',
+                ),
+                ('/etc/proftpd/conf.d/anonymous', '<Anonymous ~ftp>\n</Anonymous>\n'),
+            ),
+        ),
+        'proftpd-without-ftpusers': _debian(
+            installed=PROFTPD_INSTALLED,
+            files=(
+                ('/etc/proftpd/proftpd.conf', 'ServerIdent off\nUseFtpUsers off\n'),
+            ),
+        ),
+        'sendmail': _debian(installed=DEBIAN_INSTALLED + ' sendmail-bin'),
+        'sendmail-default-greeting': _debian(
+            installed=DEBIAN_INSTALLED + ' sendmail-bin',
+            files=(
+                (
+                    '/etc/mail/sendmail.cf',
+                    'O PrivacyOptions=goaway,restrictqrun\nO SmtpGreetingMessage=$j Sendmail $v/$Z; $b\n',
+                ),
+            ),
+        ),
+        'held-telnetd': _debian(
+            installed=DEBIAN_INSTALLED.replace('telnetd ', ''), held='telnetd'
+        ),
+        'vsftpd-deny-only': _debian(
+            files=(('/etc/vsftpd.conf', VSFTPD_BASE + 'userlist_deny=YES\n'),)
+        ),
+        'vsftpd-allowlist': _debian(
+            files=(
+                (
+                    '/etc/vsftpd.conf',
+                    VSFTPD_BASE + 'userlist_enable=YES\nuserlist_deny=NO\n',
+                ),
+                ('/etc/vsftpd.user_list', 'alice\n'),
+            )
+        ),
+        'samba-commented-guest': _debian(
+            files=(('/etc/samba/smb.conf', '[share]\n;   guest ok = yes\n'),)
+        ),
+        'samba-public': _debian(
+            files=(('/etc/samba/smb.conf', '[share]\npublic = yes\n'),)
+        ),
+        'chrony-sourcedir': _debian(
+            files=(
+                ('/etc/chrony/chrony.conf', 'sourcedir /etc/chrony/sources.d\n'),
+                (
+                    '/etc/chrony/sources.d/pool.sources',
+                    'pool pool.example.test iburst\n',
+                ),
+            )
+        ),
+        'ntpsec': _debian(
+            installed=DEBIAN_INSTALLED.replace('chrony', 'ntpsec'),
+            active_units='sshd.service ntpsec.service',
+            files=(
+                ('/etc/chrony/chrony.conf', None),
+                ('/etc/ntpsec/ntp.conf', 'server time.example.test iburst\n'),
+            ),
+        ),
+        'time-unit-error': _debian(
+            active_units='sshd.service', systemctl_error='chronyd.service'
+        ),
+        'postfix-default-relay': _debian(
+            files=(
+                (
+                    '/etc/postfix/main.cf',
+                    'disable_vrfy_command = yes\nsmtpd_banner = Authorized use only\n',
+                ),
+            )
+        ),
+        'faillock-default-deny': dataclasses.replace(
+            BASE_RHEL,
+            files=(
+                (
+                    '/etc/pam.d/system-auth',
+                    'auth required pam_faillock.so preauth\nauth [default=die] pam_faillock.so authfail\naccount required pam_faillock.so\npassword requisite pam_pwquality.so enforce_for_root\npassword required pam_pwhistory.so remember=4\npassword required pam_unix.so\n',
+                ),
+            ),
+        ),
+        'pam-tab-arguments': _debian(
+            files=(
+                ('/etc/security/pwquality.conf', None),
+                (
+                    '/etc/pam.d/common-password',
+                    'password requisite pam_pwquality.so minlen=8\tdcredit=-1\tucredit=-1\tlcredit=-1\tocredit=-1\tenforce_for_root\npassword required pam_pwhistory.so remember=4\npassword required pam_unix.so\n',
+                ),
+            )
+        ),
+        'pwquality-drop-in': _debian(
+            files=(
+                (
+                    '/etc/security/pwquality.conf',
+                    'minlen=8\nucredit=-1\nlcredit=-1\nocredit=-1\nenforce_for_root\n',
+                ),
+                (
+                    '/etc/security/pwquality.conf.d/50-local.conf',
+                    'minlen=7\ndcredit=-1\n',
+                ),
+            )
+        ),
+        'rhosts-fifo': _debian(
+            active_units='sshd.service chronyd.service rsh.socket',
+            fifos=('/home/alice/.rhosts',),
+        ),
+        'forged-walk-record': _debian(
+            walk=(
+                'd\t755\talice\talice\t1000\t1000\t{R}/tmp/x\n'
+                'f\t600\troot\troot\t0\t0\t{R}/var/log/auth.log\n'
+                'f\t666\troot\troot\t0\t0\t{R}/var/log/auth.log\n'
+            )
+        ),
+        'nfs-default-options-only': _debian(files=(('/etc/exports', '/srv -rw\n'),)),
+        'nfs-quoted-path-no-client': _debian(
+            files=(('/etc/exports', '"/srv/my share"\n'),)
+        ),
+        'proftpd-boolean-no': _debian(
+            installed=PROFTPD_INSTALLED,
+            files=(
+                (
+                    '/etc/proftpd/proftpd.conf',
+                    'ServerIdent off\nUseFtpUsers no\nRootLogin on\n',
+                ),
+            ),
+        ),
+        'proftpd-included-root-login': _debian(
+            installed=PROFTPD_INSTALLED,
+            files=(
+                (
+                    '/etc/proftpd/proftpd.conf',
+                    'ServerIdent off\nInclude /etc/proftpd/conf.d/\n',
+                ),
+                ('/etc/proftpd/conf.d/root', 'RootLogin on\n'),
+            ),
+        ),
+        'proftpd-virtual-host-root-login': _debian(
+            installed=PROFTPD_INSTALLED,
+            files=(
+                (
+                    '/etc/proftpd/proftpd.conf',
+                    'ServerIdent off\n<VirtualHost 192.0.2.1>\nRootLogin on\n</VirtualHost>\nRootLogin off\n',
+                ),
+            ),
+        ),
+        'proftpd-missing-include': _debian(
+            installed=PROFTPD_INSTALLED,
+            files=(
+                (
+                    '/etc/proftpd/proftpd.conf',
+                    'ServerIdent off\nInclude /etc/proftpd/absent.conf\n',
+                ),
+            ),
+        ),
+        'proftpd-ident-variable': _debian(
+            installed=PROFTPD_INSTALLED,
+            files=(('/etc/proftpd/proftpd.conf', 'ServerIdent on "%L ready"\n'),),
+        ),
+        'proftpd-ident-reenabled': _debian(
+            installed=PROFTPD_INSTALLED,
+            files=(('/etc/proftpd/proftpd.conf', 'ServerIdent off\nServerIdent on\n'),),
+        ),
+        'proftpd-included-login-banner': _debian(
+            installed=PROFTPD_INSTALLED,
+            files=(
+                (
+                    '/etc/proftpd/proftpd.conf',
+                    'ServerIdent off\nInclude /etc/proftpd/conf.d/\n',
+                ),
+                (
+                    '/etc/proftpd/conf.d/banner',
+                    'DisplayLogin /etc/proftpd/welcome.msg\n',
+                ),
+                ('/etc/proftpd/welcome.msg', 'Authorized use only\n'),
+            ),
+        ),
+        'samba-guest-on': _debian(
+            files=(('/etc/samba/smb.conf', '[share]\nguest ok = on\n'),)
+        ),
+        'samba-public-one': _debian(
+            files=(('/etc/samba/smb.conf', '[share]\npublic = 1\n'),)
+        ),
+        'sendmail-version-macro': _debian(
+            installed=DEBIAN_INSTALLED + ' sendmail-bin',
+            files=(
+                (
+                    '/etc/mail/sendmail.cf',
+                    'O PrivacyOptions=goaway,restrictqrun\nO SmtpGreetingMessage=$j $Z ready\n',
+                ),
+            ),
+        ),
+        'postfix-relay-gate-closes-open-recipient': _debian(
+            files=(
+                (
+                    '/etc/postfix/main.cf',
+                    'smtpd_relay_restrictions = permit\nsmtpd_recipient_restrictions = reject_unauth_destination\ndisable_vrfy_command = yes\nsmtpd_banner = Authorized use only\n',
+                ),
+            )
+        ),
+        'postfix-submission-rejects-the-rest': _debian(
+            files=(
+                (
+                    '/etc/postfix/main.cf',
+                    'disable_vrfy_command = yes\nsmtpd_banner = Authorized use only\n',
+                ),
+                (
+                    '/etc/postfix/master.cf',
+                    'submission inet n - y - - smtpd\n  -o smtpd_relay_restrictions=permit_sasl_authenticated,reject\n',
+                ),
+            )
+        ),
+        'chrony-unreadable-source': _debian(
+            files=(
+                ('/etc/chrony/chrony.conf', 'sourcedir /etc/chrony/sources.d\n'),
+                (
+                    '/etc/chrony/sources.d/pool.sources',
+                    'pool pool.example.test iburst\n',
+                ),
+            ),
+            unreadable=('/etc/chrony/sources.d/pool.sources',),
+        ),
+        'chrony-second-confdir': _debian(
+            files=(
+                ('/etc/chrony/chrony.conf', 'confdir /etc/chrony/a /etc/chrony/b\n'),
+                ('/etc/chrony/b/pool.conf', 'pool pool.example.test iburst\n'),
+            )
+        ),
+        'vsftpd-boolean-words': _debian(
+            files=(
+                (
+                    '/etc/vsftpd.conf',
+                    VSFTPD_BASE + 'userlist_enable=TRUE\nuserlist_deny=0\n',
+                ),
+                ('/etc/vsftpd.user_list', 'alice\n'),
+            )
+        ),
+        'hosts-equiv-fifo': _debian(
+            active_units='sshd.service chronyd.service rsh.socket',
+            fifos=('/etc/hosts.equiv',),
+        ),
+        'rhosts-symlink': _debian(
+            active_units='sshd.service chronyd.service rsh.socket',
+            files=(('/real/rhosts', 'trusted.example.test\n'),),
+            links=(('/home/alice/.rhosts', '/real/rhosts'),),
+            stats=(('/real/rhosts', '600 alice alice'),),
+        ),
+        'postfix-warn-only-relay': _debian(
+            files=(
+                (
+                    '/etc/postfix/main.cf',
+                    'smtpd_relay_restrictions = warn_if_reject reject_unauth_destination\nsmtpd_recipient_restrictions = permit_mynetworks\ndisable_vrfy_command = yes\nsmtpd_banner = Authorized use only\n',
+                ),
+            )
+        ),
+        'postfix-reject-then-permit': _debian(
+            files=(
+                (
+                    '/etc/postfix/main.cf',
+                    'smtpd_relay_restrictions = reject_unauth_destination, permit\ndisable_vrfy_command = yes\nsmtpd_banner = Authorized use only\n',
+                ),
+            )
+        ),
+        'postfix-stock-banner': _debian(
+            files=(
+                (
+                    '/etc/postfix/main.cf',
+                    'disable_vrfy_command = yes\nsmtpd_banner = $myhostname ESMTP $mail_name (Ubuntu)\n',
+                ),
+            )
+        ),
+        'nfs-expanded-ipv6-world': _debian(
+            files=(('/etc/exports', '/srv 0:0:0:0:0:0:0:0/0(ro)\n'),)
+        ),
+        'nfs-commented-anonuid': _debian(
+            files=(('/etc/exports', '/srv 192.0.2.0/24(ro) # anonuid=65534\n'),)
+        ),
+        'pwhistory-only-root': _debian(
+            files=(
+                (
+                    '/etc/security/pwquality.conf',
+                    'minlen=8\ndcredit=-1\nucredit=-1\nlcredit=-1\nocredit=-1\n',
+                ),
+                ('/etc/security/pwhistory.conf', 'remember=4\n'),
+                (
+                    '/etc/pam.d/common-password',
+                    'password requisite pam_pwquality.so\npassword required pam_pwhistory.so remember=4 enforce_for_root\npassword required pam_unix.so\n',
+                ),
+            )
+        ),
+        'faillock-without-authfail': _debian(
+            files=(
+                ('/etc/pam.d/common-auth', 'auth required pam_faillock.so deny=3\n'),
+            )
+        ),
+        'faillock-split-deny': _debian(
+            files=(
+                ('/etc/security/faillock.conf', 'deny = 20\n'),
+                (
+                    '/etc/pam.d/common-auth',
+                    'auth required pam_faillock.so preauth\nauth [default=die] pam_faillock.so authfail deny=5\n',
+                ),
+            )
+        ),
+        'su-empty-shell-account': _debian(
+            passwd='root:x:0:0:root:/root:/bin/bash\nbob:x:1001:1001::/home/bob:\n',
+            files=(('/etc/pam.d/su', 'auth sufficient pam_rootok.so\n'),),
+            stats=(('/usr/bin/su', '4755 root root'),),
+        ),
+        'su-requisite-wheel': _debian(
+            files=(('/etc/pam.d/su', 'auth requisite pam_wheel.so group=wheel\n'),),
+            stats=(('/usr/bin/su', '4755 root root'),),
+        ),
+        'vsftpd-anonymous-default-debian': _debian(
+            files=(('/etc/vsftpd.conf', 'ftpd_banner=Authorized use only\n'),)
+        ),
+        'vsftpd-anonymous-default-rhel': dataclasses.replace(
+            BASE_RHEL,
+            files=(('/etc/vsftpd.conf', 'ftpd_banner=Authorized use only\n'),),
+        ),
+        'vsftpd-user-list-without-root': _debian(
+            files=(
+                ('/etc/vsftpd.conf', VSFTPD_BASE + 'userlist_enable=YES\n'),
+                ('/etc/vsftpd.user_list', 'alice\n'),
+            )
+        ),
+        'xinetd-running-without-small-services': _debian(
+            active_units='sshd.service chronyd.service xinetd.service'
+        ),
+        'bind-negated-any': _debian(
+            files=(
+                (
+                    '/etc/bind/named.conf.options',
+                    'version "Authorized use only";\nallow-transfer { !any; };\nallow-update { ! any; };\n',
+                ),
+            )
+        ),
+        'proftpd-rhel-path': dataclasses.replace(
+            BASE_RHEL,
+            installed=RHEL_INSTALLED + ' proftpd',
+            files=(('/etc/proftpd.conf', 'ServerIdent off\n'),),
+        ),
+        'snmp-vacm': _debian(
+            files=(
+                (
+                    '/etc/snmp/snmpd.conf',
+                    'group admins usm monitor\nview all included .1\naccess admins "" usm auth exact all none none\n',
+                ),
+            )
+        ),
+        'chrony-nested-include': _debian(
+            files=(
+                ('/etc/chrony/chrony.conf', 'include /etc/chrony/a.conf\n'),
+                ('/etc/chrony/a.conf', 'include /etc/chrony/b.conf\n'),
+                ('/etc/chrony/b.conf', 'server time.example.test iburst\n'),
+            )
+        ),
+        'ssh-match-equals': _debian(
+            files=(
+                (
+                    '/etc/ssh/sshd_config',
+                    'PermitRootLogin no\nMatch User root\n  PermitRootLogin=yes\n',
+                ),
+            )
+        ),
+        'ssh-match-banner-equals': _debian(
+            files=(
+                (
+                    '/etc/ssh/sshd_config',
+                    'PermitRootLogin no\nBanner /etc/issue.net\nMatch User alice\n  Banner=none\n',
+                ),
+            )
+        ),
+        'faillock-custom-conf': _debian(
+            files=(
+                ('/etc/security/site-faillock.conf', 'deny = 20\n'),
+                (
+                    '/etc/pam.d/common-auth',
+                    'auth required pam_faillock.so preauth conf=/etc/security/site-faillock.conf\nauth [default=die] pam_faillock.so authfail conf=/etc/security/site-faillock.conf\n',
+                ),
+            )
+        ),
+        'faillock-authsucc': _debian(
+            files=(
+                (
+                    '/etc/pam.d/common-auth',
+                    'auth required pam_faillock.so preauth deny=5\nauth [default=die] pam_faillock.so authfail deny=5\nauth sufficient pam_faillock.so authsucc deny=5\n',
+                ),
+                ('/etc/pam.d/common-account', 'account required pam_unix.so\n'),
+            )
+        ),
+        'su-wheel-deny': _debian(
+            files=(('/etc/pam.d/su', 'auth required pam_wheel.so deny group=wheel\n'),),
+            stats=(('/usr/bin/su', '4755 root root'),),
+        ),
+        'vsftpd-pam-without-listfile': _debian(
+            files=(('/etc/pam.d/vsftpd', 'auth required pam_unix.so\n'),)
+        ),
+        'home-setgid': _debian(stats=(('/home/alice', '2755 alice alice'),)),
+        'nfs-ipv6-colon-mask': _debian(files=(('/etc/exports', '/srv ::/::(rw)\n'),)),
+        'bind-negated-any-first': _debian(
+            files=(
+                (
+                    '/etc/bind/named.conf.options',
+                    'version "Authorized use only";\nallow-transfer { !any; any; };\nallow-update { none; };\n',
+                ),
+            )
+        ),
+        'snmp-authcommunity': _debian(
+            files=(
+                (
+                    '/etc/snmp/snmpd.conf',
+                    'rouser monitor authPriv\nauthcommunity read Strong12345!\n',
+                ),
+            )
+        ),
+        'snmp-createuser-engine': _debian(
+            files=(
+                (
+                    '/var/lib/snmp/snmpd.conf',
+                    'createUser -e 0x80001f88 monitor SHA "Abcdef12!" AES\n',
+                ),
+            )
+        ),
+        'ntpsec-includefile': _debian(
+            installed=DEBIAN_INSTALLED.replace('chrony', 'ntpsec'),
+            active_units='sshd.service ntpsec.service',
+            files=(
+                ('/etc/chrony/chrony.conf', None),
+                ('/etc/ntpsec/ntp.conf', 'includefile /etc/ntpsec/servers.conf\n'),
+                ('/etc/ntpsec/servers.conf', 'server time.example.test iburst\n'),
+            ),
+        ),
+        'chrony-peer-selected': _debian(time_source='=* peer.example.test\n'),
+        'ssh-include-equals': _debian(
+            files=(
+                (
+                    '/etc/ssh/sshd_config',
+                    'PermitRootLogin no\nInclude=/etc/ssh/root.conf\n',
+                ),
+                ('/etc/ssh/root.conf', 'Match User root\n  PermitRootLogin yes\n'),
+            )
+        ),
+        'faillock-deny-zero': _debian(
+            files=(
+                ('/etc/security/faillock.conf', 'deny = 5\n'),
+                (
+                    '/etc/pam.d/common-auth',
+                    'auth required pam_faillock.so preauth deny=0\nauth [default=die] pam_faillock.so authfail deny=0\n',
+                ),
+            )
+        ),
+        'xinetd-backup-file': _debian(
+            active_units='sshd.service chronyd.service xinetd.service',
+            files=(
+                ('/etc/xinetd.conf', 'defaults { }\nincludedir /etc/xinetd.d\n'),
+                ('/etc/xinetd.d/echo.dpkg-old', 'service echo\n{\ndisable = no\n}\n'),
+            ),
+        ),
+        'exim-heavy': _debian(
+            installed='openssh-server exim4-daemon-heavy',
+            active_units='sshd.service',
+            loaded_units='sshd.service',
+            files=(('/etc/exim4/exim4.conf', 'acl_smtp_vrfy = deny\n'),),
+        ),
+        'nfs-quoted-world': _debian(files=(('/etc/exports', '/srv "*"(ro)\n'),)),
+        'nfs-hash-in-quoted-path': _debian(
+            files=(('/etc/exports', '"/srv/a#b" 10.0.0.0/8(ro)\n'),)
+        ),
+        'chrony-second-sourcedir': _debian(
+            files=(
+                (
+                    '/etc/chrony/chrony.conf',
+                    'sourcedir /etc/chrony/empty /etc/chrony/sources.d\n',
+                ),
+                (
+                    '/etc/chrony/sources.d/pool.sources',
+                    'pool pool.example.test iburst\n',
+                ),
+            )
+        ),
+        'pwquality-not-enforcing': _debian(
+            files=(
+                (
+                    '/etc/security/pwquality.conf',
+                    'minlen=8\ndcredit=-1\nucredit=-1\nlcredit=-1\nocredit=-1\nenforce_for_root\nenforcing=0\n',
+                ),
+            )
+        ),
+        'crontab-user-group': _debian(stats=(('/usr/bin/crontab', '750 root alice'),)),
+        'crontab-memberless-group': _debian(
+            group=BASE_DEBIAN.group + 'crontab:x:107:\n',
+            stats=(('/usr/bin/crontab', '750 root crontab'),),
+        ),
+    }
+    return _parsed_cases(tmp_path_factory, hosts)
+
+
+@pytest.mark.parametrize(
+    ('case', 'item_id'),
+    [
+        ('nfs-world-options', 'U-40'),
+        ('nfs-no-client', 'U-40'),
+        ('nfs-default-options-only', 'U-40'),
+        ('nfs-quoted-path-no-client', 'U-40'),
+        ('proftpd-default-ident', 'U-53'),
+        ('proftpd-ident-variable', 'U-53'),
+        ('proftpd-ident-reenabled', 'U-53'),
+        ('proftpd-included', 'U-35'),
+        ('proftpd-boolean-no', 'U-57'),
+        ('proftpd-included-root-login', 'U-57'),
+        ('proftpd-virtual-host-root-login', 'U-57'),
+        ('samba-public', 'U-35'),
+        ('samba-guest-on', 'U-35'),
+        ('samba-public-one', 'U-35'),
+        ('sendmail-default-greeting', 'U-62'),
+        ('sendmail-version-macro', 'U-62'),
+        ('forged-walk-record', 'U-67'),
+        ('postfix-warn-only-relay', 'U-47'),
+        ('postfix-stock-banner', 'U-62'),
+        ('nfs-expanded-ipv6-world', 'U-40'),
+        ('pwhistory-only-root', 'U-02'),
+        ('faillock-without-authfail', 'U-03'),
+        ('faillock-split-deny', 'U-03'),
+        ('su-empty-shell-account', 'U-06'),
+        ('vsftpd-anonymous-default-rhel', 'U-35'),
+        ('ssh-match-equals', 'U-01'),
+        ('ssh-match-banner-equals', 'U-62'),
+        ('su-wheel-deny', 'U-06'),
+        ('vsftpd-pam-without-listfile', 'U-57'),
+        ('nfs-ipv6-colon-mask', 'U-40'),
+        ('snmp-authcommunity', 'U-59'),
+        ('snmp-authcommunity', 'U-61'),
+        ('ssh-include-equals', 'U-01'),
+        ('faillock-deny-zero', 'U-03'),
+        ('nfs-quoted-world', 'U-40'),
+        ('pwquality-not-enforcing', 'U-02'),
+        ('crontab-user-group', 'U-37'),
+        ('exim-heavy', 'U-62'),
+    ],
+)
+def test_settings_that_expose_a_service_are_violations(
+    config_semantics_runs, case, item_id
+):
+    run, _ = config_semantics_runs[case]
+
+    assert run.items[ItemId(item_id)].verdict is Verdict.FAIL
+
+
+@pytest.mark.parametrize(
+    ('case', 'item_id'),
+    [
+        ('proftpd-included', 'U-53'),
+        ('proftpd-included', 'U-57'),
+        ('proftpd-without-ftpusers', 'U-57'),
+        ('proftpd-included-login-banner', 'U-62'),
+        ('vsftpd-deny-only', 'U-57'),
+        ('vsftpd-allowlist', 'U-57'),
+        ('vsftpd-boolean-words', 'U-57'),
+        ('samba-commented-guest', 'U-35'),
+        ('sendmail', 'U-62'),
+        ('held-telnetd', 'U-52'),
+        ('chrony-sourcedir', 'U-65'),
+        ('chrony-second-confdir', 'U-65'),
+        ('ntpsec', 'U-65'),
+        ('postfix-default-relay', 'U-47'),
+        ('postfix-relay-gate-closes-open-recipient', 'U-47'),
+        ('postfix-submission-rejects-the-rest', 'U-47'),
+        ('faillock-default-deny', 'U-03'),
+        ('pam-tab-arguments', 'U-02'),
+        ('pwquality-drop-in', 'U-02'),
+        ('postfix-reject-then-permit', 'U-47'),
+        ('nfs-commented-anonuid', 'U-35'),
+        ('su-requisite-wheel', 'U-06'),
+        ('vsftpd-anonymous-default-debian', 'U-35'),
+        ('vsftpd-user-list-without-root', 'U-57'),
+        ('xinetd-running-without-small-services', 'U-38'),
+        ('bind-negated-any', 'U-50'),
+        ('bind-negated-any', 'U-51'),
+        ('proftpd-rhel-path', 'U-53'),
+        ('snmp-vacm', 'U-59'),
+        ('snmp-vacm', 'U-61'),
+        ('chrony-nested-include', 'U-65'),
+        ('faillock-authsucc', 'U-03'),
+        ('home-setgid', 'U-31'),
+        ('bind-negated-any-first', 'U-50'),
+        ('snmp-createuser-engine', 'U-60'),
+        ('ntpsec-includefile', 'U-65'),
+        ('chrony-peer-selected', 'U-65'),
+        ('xinetd-backup-file', 'U-38'),
+        ('nfs-hash-in-quoted-path', 'U-40'),
+        ('chrony-second-sourcedir', 'U-65'),
+        ('crontab-memberless-group', 'U-37'),
+    ],
+)
+def test_documented_defaults_and_alternate_syntax_pass_a_secured_setting(
+    config_semantics_runs, case, item_id
+):
+    run, _ = config_semantics_runs[case]
+
+    assert run.items[ItemId(item_id)].verdict is Verdict.PASS
+
+
+@pytest.mark.parametrize(
+    ('case', 'item_id', 'reason'),
+    [
+        ('time-unit-error', 'U-65', 'incomplete'),
+        ('chrony-unreadable-source', 'U-65', 'access-denied'),
+        ('proftpd-missing-include', 'U-57', 'incomplete'),
+        ('rhosts-fifo', 'U-27', 'incomplete'),
+        ('hosts-equiv-fifo', 'U-27', 'incomplete'),
+        ('rhosts-symlink', 'U-27', 'incomplete'),
+        ('faillock-custom-conf', 'U-03', 'incomplete'),
+    ],
+)
+def test_unobservable_state_is_unknown_rather_than_judged(
+    config_semantics_runs, case, item_id, reason
+):
+    run, _ = config_semantics_runs[case]
+
+    item = run.items[ItemId(item_id)]
+    assert (item.verdict, item.facts['reason']) == (Verdict.UNKNOWN, reason)

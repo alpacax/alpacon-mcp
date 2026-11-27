@@ -135,12 +135,21 @@ The script judges 51 of the 67 items. 13 need a person, 3 belong to another skil
 ### Interpretations
 
 - `U-01`: Only `PermitRootLogin no` satisfies the SSH part of the criterion. Any value that still permits direct root authentication fails.
+- `U-02`: The check judges the policy that applies when a password is set, in `login.defs`, `pwquality` and PAM, as the guide's criterion does. Ages already stored for existing accounts in `/etc/shadow` are outside it. `enforcing=0` turns the `pwquality` checks into warnings, so it fails.
+- `U-03`: Only a `pam_faillock.so authfail` call records failed logins, so a `pam_faillock` stack without one fails. A `deny` on a PAM line overrides `faillock.conf` for that line, and the highest `deny` among the lockout lines is the threshold. `deny=0` on a `preauth` or `authfail` line turns the lockout off, so it fails.
 - `U-13`: yescrypt (`$y$`) passes because the guide requires SHA-2 or stronger and lists yescrypt as an accepted Debian `ENCRYPT_METHOD` value on PDF p. 38.
 - `U-14`: The check runs root's login shell, which executes root's startup files exactly as a root login does.
 - `U-18`: Debian and Ubuntu's `640 root:shadow` default fails the guide's `root` and 400-or-less requirement. The report marks it `note=distro-default` because tightening it may affect programs that authenticate through `unix_chkpwd`.
 - `U-31`: The guide refers to each user's home directory (PDF p. 65). The check includes only accounts with a shell listed in `/etc/shells`, since system account homes such as `/bin` are root-owned by design.
 - `U-32`: The guide refers to each user's home directory (PDF p. 66). The check includes only accounts with a shell listed in `/etc/shells`, since system account homes such as `/nonexistent` are absent by design.
+- `U-37`: Ordinary users run a 750 `crontab` or `at` through its group, so that group must be `root` or have no members.
 - `U-40`: With zero exports in `/etc/exports` and `/etc/exports.d/*.exports`, no share lacks access control (PDF p. 89). The export configuration files must still be root-owned with no permission bit beyond 644.
+- `U-40`: An export line with no client, with only default options such as `/srv -rw`, or with whitespace between the path and its options as in `/srv (rw)`, shares the path with every host, as `exportfs` reports it for `<world>`, so it counts as unrestricted.
+- `U-53`: ProFTPD's default `ServerIdent on` banner names the product even where it omits the version, so only `ServerIdent off` or a custom string without product, version or `%` variables passes.
+- `U-57`: ProFTPD refuses root unless `RootLogin` is on, so its part fails only where some `RootLogin` turns root login on, in any context.
+- `U-57`: vsftpd blocks root when either its active `user_list` does or a deny-sense `pam_listfile` file in its PAM service lists root.
+- `U-62`: Sendmail's stock `SmtpGreetingMessage`, which carries the `$v` or `$Z` version macro, counts as no warning message.
+- `U-62`: Postfix's stock `smtpd_banner`, which carries `$mail_name`, counts as no warning message.
 - `U-63`: The guide's pass line names mode 640 and its fail line says beyond 640, so a stricter mode such as the 440 that Ubuntu and Rocky Linux ship passes.
 
 ## Needs a person
