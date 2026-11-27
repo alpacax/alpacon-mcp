@@ -229,6 +229,15 @@ class TestUnwrapHttpResultGate:
         assert 'env' in out['message']
         assert 'audit log' in out['message']
 
+    def test_removed_home_purge_gets_actionable_hint(self):
+        out = _unwrap_error(
+            self._envelope('home_purge_removed'), default_message='failed'
+        )
+
+        assert out['error_code'] == 'home_purge_removed'
+        assert 'Omit the purge option' in out['message']
+        assert 'archive_home=true' in out['message']
+
     def test_hint_starts_its_own_sentence_after_a_default_message(self):
         envelope = {
             'error': 'HTTP Error',

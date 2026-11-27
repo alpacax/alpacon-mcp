@@ -940,12 +940,19 @@ Update an existing user profile.
 **Note:** Only provided fields will be updated. Omitted fields remain unchanged. Group membership is changed through `add_iam_member`/`remove_iam_member`, not here.
 
 #### `delete_iam_user`
-Delete IAM user from workspace.
+Delete an IAM user from the workspace. Alpacon 2.50.0 requires a signed-in session for deletion, with or without `archive_home`. MCP credentials and personal API tokens receive HTTP 403 (`auth_session_principal_required`). Sign in to the Alpacon web console to delete the user.
+
+Alpacon 2.50.0 with Alpamon 2.9.2 or later keeps the home directory by default for an authorized deletion.
 
 **Parameters:**
 - `user_id` (string): User ID to delete
 - `workspace` (string): Workspace name
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
+- `archive_home` (boolean, optional): Request an archive under `/home/deleted_users/` when true. Defaults to false. Passing false and omitting the argument both omit the query parameter. Older servers or agents may still archive the home directory in either case.
+
+Archiving requires Debian- and RHEL-family Linux with `openat2`. If the kernel lacks it, Alpamon can skip archiving and leave the home in place after deleting an eligible host account. Archiving can disrupt apps or services that use files in the home directory.
+
+**Returns:** Success when the server accepts the workspace deletion (HTTP 204 with an empty body). The response does not confirm host cleanup or archive completion. On Debian- and RHEL-family Linux, Alpamon returns `system_home_conflict` on later account creation if its home directory scan finds another home owned by the requested UID.
 
 **⚠️ Warning:** This action is irreversible and will remove all user permissions and group memberships.
 

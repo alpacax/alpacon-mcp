@@ -3,7 +3,7 @@
 import re
 from typing import Annotated
 
-from pydantic import Field
+from pydantic import Field, StrictBool
 
 from utils.api_call import http_call_response
 from utils.common import build_list_params, error_response, exclude_none
@@ -190,17 +190,40 @@ async def update_iam_user(
 
 
 @mcp_tool_handler(
-    description='Permanently delete an IAM user account from the workspace. This action cannot be undone. Use update_iam_user to deactivate a user instead if you want to preserve the account.',
+    description=(
+        'Permanently delete an IAM user account from the workspace. This action cannot be undone. '
+        'Alpacon 2.50.0 requires a signed-in web console session to delete a user, '
+        'with or without archive_home. MCP credentials and personal API tokens receive HTTP 403. '
+        'Sign in to the Alpacon web console to delete the user. '
+        'Alpacon 2.50.0 with Alpamon 2.9.2 or later keeps the home directory by default. '
+        'For an authorized deletion, archive_home=true requests an archive under /home/deleted_users/. '
+        'Archiving requires Debian- and RHEL-family Linux with openat2 '
+        'and can disrupt services using the home. '
+        'Without openat2, Alpamon can delete an eligible host account and leave the home in place. '
+        'Passing archive_home=false and omitting it both omit the query parameter. '
+        'Older servers or agents may archive the home in either case. '
+        'Success confirms the workspace deletion and does not confirm host cleanup or archiving. '
+        'Use update_iam_user to deactivate a user instead if you want to preserve the account.'
+    ),
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'iam user delete remove'},
 )
 async def delete_iam_user(
-    user_id: str, workspace: str, region: str = '', **kwargs: str
+    user_id: str,
+    workspace: str,
+    region: str = '',
+    archive_home: StrictBool = False,
+    **kwargs: str,
 ) -> ToolResponse:
     """Delete an IAM user."""
     err = uuid_field_error('user_id', user_id)
     if err:
         return err
+    unvalidated_archive_home: object = archive_home
+    if not isinstance(unvalidated_archive_home, bool):
+        return format_validation_error(
+            'archive_home', unvalidated_archive_home, 'Boolean (true or false).'
+        )
 
     token = kwargs.get('token')
 
@@ -211,6 +234,7 @@ async def delete_iam_user(
         endpoint=f'/api/iam/users/{user_id}/',
         token=token,
         default_message='Failed to delete IAM user',
+        params={'archive_home': 'true'} if archive_home else None,
         user_id=user_id,
     )
 
