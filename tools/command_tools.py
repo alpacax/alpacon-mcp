@@ -16,6 +16,8 @@ from utils.common import (
     FILE_EXEC_INLINE_CREDENTIAL_HINT,
     FILE_EXEC_REFUSAL_HINTS,
     INLINE_CREDENTIAL_HINT,
+    PAUSE_DENIAL_CODES,
+    WORK_SESSION_PAUSED_NEXT_ACTION,
     WORK_SESSION_PURPOSE_APPROVAL_HINT,
     UnexpectedResponseShapeError,
     build_list_params,
@@ -28,7 +30,7 @@ from utils.common import (
     unwrap_http_result,
     validate_response,
 )
-from utils.decorators import mcp_tool_handler
+from utils.decorators import mcp_tool_handler, validate_path_identifier
 from utils.error_handler import MfaStepUpRequired, validate_file_path
 from utils.host_transfer import (
     CommandHidden,
@@ -186,6 +188,13 @@ _FILE_CONTENT_DESCRIPTION = (
     'be non-empty.'
 )
 
+_GROUPNAME_DESCRIPTION = (
+    "Group to run as. Omit it to run as the account's primary group on the "
+    'server (requires an Alpacon server release that resolves it; an older '
+    'server uses `alpacon`); pass it only to name a different group the '
+    'account may use.'
+)
+
 _FILE_USERNAME_DESCRIPTION = (
     'Pass it whenever ownership matters; omitted, the writing account is the '
     "server's WebFTP default."
@@ -244,7 +253,7 @@ _SUDO_DENIAL_HINTS: dict[str, str] = {
         'it is not a session-authorized sudo policy and a command runs '
         'non-interactively, so it can never supply MFA. A human must set '
         'session_authorized on that policy in the Alpacon web console '
-        '(enterprise plan; the policy must be tied to a usable Work Session). '
+        '(the policy must be tied to a usable Work Session). '
         'Re-run once it is set.'
     ),
     'SUDO_INTENT_DEVIATION': (
@@ -640,7 +649,7 @@ def _rerun_coordinates(result: _CommandRecord) -> dict[str, str]:
     candidates = (
         ('server_id', server.get('id') if isinstance(server, dict) else server),
         ('username', result.get('username')),
-        ('groupname', groupname if groupname != 'alpacon' else None),
+        ('groupname', groupname),
         (
             'work_session_id',
             work_session.get('id') if isinstance(work_session, dict) else work_session,
@@ -737,7 +746,7 @@ async def _submit_command(
     workspace: str,
     shell: str = 'system',
     username: str | None = None,
-    groupname: str = 'alpacon',
+    groupname: str | None = None,
     env: dict[str, str] | None = None,
     run_after: list[str] | None = None,
     scheduled_at: str | None = None,
@@ -753,8 +762,9 @@ async def _submit_command(
         'server': server_id,
         'shell': shell,
         'line': command,
-        'groupname': groupname,
     }
+    if groupname:
+        command_data['groupname'] = groupname
 
     if env:
         command_data['env'] = env
@@ -789,7 +799,7 @@ async def _submit_file_execution(
     args: list[str] | None = None,
     reuse_days: int | None = None,
     username: str | None = None,
-    groupname: str = 'alpacon',
+    groupname: str | None = None,
     run_after: list[str] | None = None,
     scheduled_at: str | None = None,
     work_session_id: str | None = None,
@@ -810,9 +820,10 @@ async def _submit_file_execution(
     }
     command_data: dict[str, object] = {
         'server': server_id,
-        'groupname': groupname,
         'file': file_spec,
     }
+    if groupname:
+        command_data['groupname'] = groupname
     command_data.update(
         _requester_fields(
             username=username,
@@ -968,12 +979,21 @@ async def list_commands(
     # execute_command_multi_server only submits, so a fleet command's sudo
     # denial is observable nowhere else.
     entries = result.get('results') if isinstance(result, dict) else None
+    sessions: dict[str, JsonValue] = {}
     for entry in entries if isinstance(entries, list) else ():
         if isinstance(entry, dict):
             _attach_sudo_denial(entry)
             _attach_file_phase_hint(entry)
             _attach_use_file_execution(entry)
             attach_rejection(entry)
+            await _attach_work_session_pause(
+                entry,
+                entry,
+                region=region,
+                workspace=workspace,
+                token=token,
+                sessions=sessions,
+            )
 
     return success_response(
         data=result,
@@ -998,7 +1018,7 @@ async def execute_command(
     workspace: str,
     shell: str = 'system',
     username: str | None = None,
-    groupname: str = 'alpacon',
+    groupname: Annotated[str | None, Field(description=_GROUPNAME_DESCRIPTION)] = None,
     env: dict[str, str] | None = None,
     run_after: list[str] | None = None,
     scheduled_at: str | None = None,
@@ -1063,7 +1083,7 @@ async def execute_command(
         arguments = suggested['arguments']
         if username is not None:
             arguments['username'] = username
-        if groupname != 'alpacon':
+        if groupname:
             arguments['groupname'] = groupname
         if work_session_id is not None:
             arguments['work_session_id'] = work_session_id
@@ -1100,7 +1120,7 @@ def _submission_error(
     return response
 
 
-def _submitted_response(
+async def _submitted_response(
     submitted: JsonValue,
     *,
     command_id: str,
@@ -1110,25 +1130,27 @@ def _submitted_response(
     workspace: str,
     region: str,
     stdin_fed: bool,
+    token: str | None,
 ) -> ToolResponse:
     """A refusal stamped at creation (an ACL denial), else the handle to read it with."""
     echo = _echo(server_id, command, shell)
     if (
         isinstance(submitted, dict)
         and (
-            settled := _settled_response(
+            settled := await _settled_response(
                 submitted,
                 command_id=command_id,
                 region=region,
                 workspace=workspace,
                 echo=echo,
                 stdin_fed=stdin_fed,
+                token=token,
             )
         )
         is not None
     ):
         return settled
-    return success_response(
+    response = success_response(
         message=(
             'Submitted without waiting. Call check_command_status with command_id '
             f'to read the result. {DO_NOT_RESUBMIT}: a resubmission runs it again.'
@@ -1140,13 +1162,34 @@ def _submitted_response(
         workspace=workspace,
         **echo,
     )
+    if isinstance(submitted, dict):
+        await _attach_work_session_pause(
+            response, submitted, region=region, workspace=workspace, token=token
+        )
+    return response
 
 
-def _submitted_entry(result: JsonValue) -> dict[str, JsonValue]:
+async def _submitted_entry(
+    result: JsonValue,
+    *,
+    region: str,
+    workspace: str,
+    token: str | None,
+    sessions: dict[str, JsonValue],
+) -> dict[str, JsonValue]:
     entry: dict[str, JsonValue] = {'status': 'success', 'data': result}
     row = result[0] if isinstance(result, list) and result else result
     if isinstance(row, dict) and isinstance(command_id := row.get('id'), str):
         entry['command_id'] = command_id
+    if isinstance(row, dict):
+        await _attach_work_session_pause(
+            entry,
+            row,
+            region=region,
+            workspace=workspace,
+            token=token,
+            sessions=sessions,
+        )
     return entry
 
 
@@ -1209,7 +1252,7 @@ async def _settle_submission(
             stdin_fed=stdin_fed,
         )
     else:
-        response = _submitted_response(
+        response = await _submitted_response(
             submitted,
             command_id=command_id,
             server_id=server_id,
@@ -1218,6 +1261,7 @@ async def _settle_submission(
             workspace=workspace,
             region=region,
             stdin_fed=stdin_fed,
+            token=token,
         )
     if _purpose_was_truncated(purpose):
         response['purpose_truncated'] = True
@@ -1431,7 +1475,7 @@ async def _write_file_to_host(
     content: str,
     workspace: str,
     username: str | None,
-    groupname: str,
+    groupname: str | None,
     overwrite: bool,
     work_session_id: str | None,
     region: str,
@@ -1447,9 +1491,8 @@ async def _write_file_to_host(
     }
     if username:
         upload_data['username'] = username
-    # The default stays off the upload so a new file takes the writing
-    # account's own group; the server would otherwise hand it to 'alpacon'.
-    if groupname != 'alpacon':
+    # Left off when unnamed so a new file takes the writing account's own group.
+    if groupname:
         upload_data['groupname'] = groupname
     if ws_id := resolve_work_session_id(work_session_id):
         upload_data['work_session'] = ws_id
@@ -1551,7 +1594,7 @@ def _file_exec_refusal(code: str, **kwargs: object) -> ToolErrorResponse:
 
 
 @mcp_tool_handler(
-    description='Run a script on a server as a verified file, writing it there first in the same call when write_file is true, or reading its bytes from there when read_from_server is true: the reviewer and the assessor judge the exact bytes you submit, and the agent executes the file only if the bytes on the host\'s disk hash to the same digest. Prefer this over execute_command for anything longer than a one-off line—a script, a heredoc, a "bash /tmp/deploy.sh" line. Why: once an approver marks a verified file standing, an unchanged re-run of it (same bytes, same server, same account, same args) is admitted without paging a human; a "bash /path" shell line never can be, because nothing about the path proves what runs. What approving means: it authorizes exactly these bytes, on this server, as this account, with these arguments—not "this file is safe". One changed byte re-queues human review. The environment, libraries, interpreter version, and anything the script fetches or executes at runtime are not verified and stay the executor\'s responsibility; only this first entrypoint is. How to use: for any script or heredoc, pass write_file=true with the script as content—the one-step form. This call then writes content to path on the host through WebFTP and submits those same bytes for review only once the host reports the file written. An existing file at path is refused (error_code file_write_failed, saying the file already exists) unless you also pass overwrite=true; to re-run a script already on the host, use read_from_server instead of writing it again. overwrite requires write_file (error_code file_exec_invalid_options otherwise). A new file is owned by username and that account\'s own group, or by groupname when you pass one other than the default; an existing file replaced with overwrite keeps its owner and mode, and must be writable by username. The account also needs write access to the directory for a new file. No execute bit is needed, because the interpreter runs the file. The write happens before the run is reviewed, as a webftp_upload_content call would, so a run that is later denied leaves the new file in place. Waiting for the write (up to about a minute) comes before, and on top of, timeout. If the write fails, nothing is submitted: error_code file_write_failed (fix the cause, such as the path or the account\'s permissions, and re-run; a server refusal that names its own code, such as a Work Session gate, keeps that code instead) or file_write_timeout (the host did not report the file written within about a minute; re-run once the host is reachable). For a script that already exists on the host—the usual "bash /opt/deploy.sh"—pass read_from_server=true and omit content: the call downloads the file at path as username through WebFTP and submits those exact bytes, so you never copy the script by hand. read_from_server cannot be combined with write_file or content (error_code file_exec_invalid_options). If the read fails, nothing is submitted: error_code file_read_failed (the file is missing, the account cannot read it, or it is not UTF-8 text; a server refusal that names its own code keeps that code) or file_read_timeout; an empty file is refused with file_exec_empty_content and one over 64 KB with file_exec_content_too_large. Waiting for the read (up to about a minute) also comes before timeout. The agent still hashes the on-disk file at execution, so a file changed after the read fails closed. write_file and read_from_server both default to false: then the file must already exist at path on the target host, and content is what the reviewer judges; it is never shipped to the host. Put composition inside the script: pipes, redirection, &&, and environment variables are reviewed there. Free-text composition around a verified file (a pipe into it, an env prefix, extra shell) is not possible on this lane, by design—a one-off composition belongs on execute_command. Refusals to act on rather than retry, each returned as error_code: file_exec_unsupported_agent (the agent on that server did not report support for this lane: if it runs alpamon older than 2.8.3, upgrade it to 2.8.3 or newer or use execute_command; if it already runs 2.8.3 or newer, its build has no file lane on that platform, such as Windows, so upgrading does not help—use execute_command), file_exec_assessor_disabled (this deployment has the command assessor off, so the lane is unavailable—use execute_command), file_exec_invalid_path (path or interpreter is not absolute), file_exec_content_too_large, file_exec_empty_content, file_exec_line_too_long (interpreter + path + args exceed the command line ceiling—shorten args), file_exec_invalid_reuse_days (reuse_days is outside 1 to 366—fix it or omit it), file_exec_reuse_exceeds_max (reuse_days is above the workspace\'s ceiling—resubmit with a shorter duration or none). None of these has a request waiting behind it, so do not wait on them. Otherwise the run follows the same rules as execute_command: a sudo inside the script is denied at once and reported in sudo_denial or sudo_hint, so follow the next_action of a sudo_denial, which says when to rerun (when it carries held, follow its wait_hint, which waits with check_command_status on this command_id until data.sudo_grant_status reads authorized, stops on rejected, asks the user on null or used, and on expired, or once held.expires_at has passed even if it reads authorized, asks the user whether to re-submit; approval does not resume the run, and when next_action says another sudo call was denied outright, sudo_hint names that denial), a status of pending_approval with category COMMAND_AWAITING_APPROVAL means a human decides out-of-band and the script then runs on its own, purpose_required is answered with state_command_purpose, and the result carries stdout, stderr, and exit code. When to use: deploy or maintenance scripts, anything you would otherwise run as "bash file" or feed through a heredoc, a script already on the host whose "bash /path" line was held for approval, and any script you expect to run again unchanged. Related: execute_command (one-off shell line), webftp_upload_content (put a file on the host without running it), state_command_purpose, list_commands.',
+    description='Run a script on a server as a verified file, writing it there first in the same call when write_file is true, or reading its bytes from there when read_from_server is true: the reviewer and the assessor judge the exact bytes you submit, and the agent executes the file only if the bytes on the host\'s disk hash to the same digest. Prefer this over execute_command for anything longer than a one-off line—a script, a heredoc, a "bash /tmp/deploy.sh" line. Why: once an approver marks a verified file standing, an unchanged re-run of it (same bytes, same server, same account, same args) is admitted without paging a human; a "bash /path" shell line never can be, because nothing about the path proves what runs. What approving means: it authorizes exactly these bytes, on this server, as this account, with these arguments—not "this file is safe". One changed byte re-queues human review. The environment, libraries, interpreter version, and anything the script fetches or executes at runtime are not verified and stay the executor\'s responsibility; only this first entrypoint is. How to use: for any script or heredoc, pass write_file=true with the script as content—the one-step form. This call then writes content to path on the host through WebFTP and submits those same bytes for review only once the host reports the file written. An existing file at path is refused (error_code file_write_failed, saying the file already exists) unless you also pass overwrite=true; to re-run a script already on the host, use read_from_server instead of writing it again. overwrite requires write_file (error_code file_exec_invalid_options otherwise). A new file is owned by username and that account\'s own group, or by groupname when you pass one; an existing file replaced with overwrite keeps its owner and mode, and must be writable by username. The account also needs write access to the directory for a new file. No execute bit is needed, because the interpreter runs the file. The write happens before the run is reviewed, as a webftp_upload_content call would, so a run that is later denied leaves the new file in place. Waiting for the write (up to about a minute) comes before, and on top of, timeout. If the write fails, nothing is submitted: error_code file_write_failed (fix the cause, such as the path or the account\'s permissions, and re-run; a server refusal that names its own code, such as a Work Session gate, keeps that code instead) or file_write_timeout (the host did not report the file written within about a minute; re-run once the host is reachable). For a script that already exists on the host—the usual "bash /opt/deploy.sh"—pass read_from_server=true and omit content: the call downloads the file at path as username through WebFTP and submits those exact bytes, so you never copy the script by hand. read_from_server cannot be combined with write_file or content (error_code file_exec_invalid_options). If the read fails, nothing is submitted: error_code file_read_failed (the file is missing, the account cannot read it, or it is not UTF-8 text; a server refusal that names its own code keeps that code) or file_read_timeout; an empty file is refused with file_exec_empty_content and one over 64 KB with file_exec_content_too_large. Waiting for the read (up to about a minute) also comes before timeout. The agent still hashes the on-disk file at execution, so a file changed after the read fails closed. write_file and read_from_server both default to false: then the file must already exist at path on the target host, and content is what the reviewer judges; it is never shipped to the host. Put composition inside the script: pipes, redirection, &&, and environment variables are reviewed there. Free-text composition around a verified file (a pipe into it, an env prefix, extra shell) is not possible on this lane, by design—a one-off composition belongs on execute_command. Refusals to act on rather than retry, each returned as error_code: file_exec_unsupported_agent (the agent on that server did not report support for this lane: if it runs alpamon older than 2.8.3, upgrade it to 2.8.3 or newer or use execute_command; if it already runs 2.8.3 or newer, its build has no file lane on that platform, such as Windows, so upgrading does not help—use execute_command), file_exec_assessor_disabled (this deployment has the command assessor off, so the lane is unavailable—use execute_command), file_exec_invalid_path (path or interpreter is not absolute), file_exec_content_too_large, file_exec_empty_content, file_exec_line_too_long (interpreter + path + args exceed the command line ceiling—shorten args), file_exec_invalid_reuse_days (reuse_days is outside 1 to 366—fix it or omit it), file_exec_reuse_exceeds_max (reuse_days is above the workspace\'s ceiling—resubmit with a shorter duration or none). None of these has a request waiting behind it, so do not wait on them. Otherwise the run follows the same rules as execute_command: a sudo inside the script is denied at once and reported in sudo_denial or sudo_hint, so follow the next_action of a sudo_denial, which says when to rerun (when it carries held, follow its wait_hint, which waits with check_command_status on this command_id until data.sudo_grant_status reads authorized, stops on rejected, asks the user on null or used, and on expired, or once held.expires_at has passed even if it reads authorized, asks the user whether to re-submit; approval does not resume the run, and when next_action says another sudo call was denied outright, sudo_hint names that denial), a status of pending_approval with category COMMAND_AWAITING_APPROVAL means a human decides out-of-band and the script then runs on its own, purpose_required is answered with state_command_purpose, and the result carries stdout, stderr, and exit code. When to use: deploy or maintenance scripts, anything you would otherwise run as "bash file" or feed through a heredoc, a script already on the host whose "bash /path" line was held for approval, and any script you expect to run again unchanged. Related: execute_command (one-off shell line), webftp_upload_content (put a file on the host without running it), state_command_purpose, list_commands.',
     annotations=ADDITIVE,
     meta={
         'anthropic/alwaysLoad': True,
@@ -1576,7 +1619,7 @@ async def execute_file(
     username: Annotated[
         str | None, Field(description=_FILE_USERNAME_DESCRIPTION)
     ] = None,
-    groupname: str = 'alpacon',
+    groupname: Annotated[str | None, Field(description=_GROUPNAME_DESCRIPTION)] = None,
     run_after: list[str] | None = None,
     scheduled_at: str | None = None,
     timeout: Annotated[int, Field(description=_FILE_TIMEOUT_DESCRIPTION)] = 300,
@@ -1877,7 +1920,168 @@ _COMMAND_IN_PROGRESS = frozenset(
 _COMMAND_REFUSED = frozenset({'denied', 'rejected'})
 
 
-def _settled_response(
+async def _current_work_session(
+    session_id: object,
+    *,
+    region: str,
+    workspace: str,
+    token: str | None,
+    sessions: dict[str, JsonValue] | None,
+) -> JsonValue:
+    if not isinstance(session_id, str) or validate_path_identifier(
+        'session_id', session_id
+    ):
+        return None
+    if sessions is not None and session_id in sessions:
+        return sessions[session_id]
+    session = await http_client.get(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/work-sessions/sessions/{session_id}/',
+        token=token,
+    )
+    if sessions is not None:
+        sessions[session_id] = session
+    return session
+
+
+def _work_session_status(session: JsonValue) -> str | None:
+    status = (
+        session.get('status')
+        if isinstance(session, dict) and 'error' not in session
+        else None
+    )
+    return (
+        status
+        if isinstance(status, str)
+        and status
+        in (
+            'paused',
+            'active',
+            'completed',
+            'revoked',
+            'expired',
+            'rejected',
+            'cancelled',
+            'pending',
+            'approved',
+        )
+        else None
+    )
+
+
+async def _attach_work_session_pause(
+    response: MutableMapping[str, JsonValue],
+    result: _CommandRecord,
+    *,
+    region: str,
+    workspace: str,
+    token: str | None,
+    sessions: dict[str, JsonValue] | None = None,
+) -> None:
+    """Keep pause history separate from the visible current Work Session state."""
+    marked = result.get('work_session_paused') is True
+    code = result.get('denial_code')
+    pause_code = code if isinstance(code, str) and code in PAUSE_DENIAL_CODES else None
+    if not (marked or pause_code):
+        return
+    if marked:
+        response['work_session_paused'] = True
+    if pause_code:
+        response['denial_code'] = pause_code
+    session = result.get('work_session')
+    session_id = result.get('work_session_id')
+    if isinstance(session, dict):
+        session_id = session.get('id') or session_id
+    if _work_session_status(session) is None:
+        session = await _current_work_session(
+            session_id,
+            region=region,
+            workspace=workspace,
+            token=token,
+            sessions=sessions,
+        )
+    if isinstance(session_id, str) and session_id:
+        response['work_session_id'] = session_id
+    status = _work_session_status(session)
+    response['work_session_status'] = status
+    if status != 'paused':
+        if status in ('completed', 'revoked', 'expired', 'rejected', 'cancelled'):
+            response['message'] = f'The Work Session is {status}; it cannot resume.'
+            response['next_action'] = (
+                'The Work Session has ended. Stop polling and tell the user; '
+                'do not resubmit a command against this session.'
+            )
+            response.pop('requires_human_approval', None)
+            if response.get('status') == 'pending_approval':
+                response['status'] = 'success'
+                response['data'] = dict(result)
+                response.pop('category', None)
+        elif status is None:
+            response['next_action'] = (
+                'This command records a past Work Session pause. Check work_session_get '
+                'for its current status before proceeding; continue only if active, '
+                'wait for a person if paused, and stop if completed, revoked or expired.'
+            )
+            if result.get('status') == 'awaiting_approval':
+                response['message'] = (
+                    'The current Work Session status could not be verified. Any '
+                    'pending command approval or confirmation may still be decided; '
+                    'if the session is paused, that decision is recorded but '
+                    'delivery also waits for Resume.'
+                )
+        return
+    response['requires_human_approval'] = True
+    if isinstance(session, dict) and isinstance(
+        paused_at := session.get('paused_at'), str
+    ):
+        response['work_session_paused_at'] = paused_at
+    response['next_action'] = WORK_SESSION_PAUSED_NEXT_ACTION
+    if response.get('status') == 'error':
+        if isinstance(message := response.get('message'), str):
+            response['message'] = message + ' The Work Session is paused.'
+    elif (
+        result.get('status') == 'awaiting_approval'
+        or result.get('status') in _COMMAND_IN_PROGRESS
+    ):
+        response['message'] = (
+            'The Work Session is paused. Any pending command approval can still be '
+            'decided. Approval recorded while paused does not release the command; '
+            'delivery waits for both approval and Resume.'
+        )
+        response['next_action'] = WORK_SESSION_PAUSED_NEXT_ACTION + (
+            ' Any pending command approval must also be decided. Resume does not '
+            'approve a held command or replay a refused command.'
+        )
+
+
+async def _settled_response(
+    result: _CommandRecord,
+    *,
+    command_id: str,
+    region: str,
+    workspace: str,
+    echo: Mapping[str, str],
+    stdin_fed: bool,
+    token: str | None,
+) -> ToolResponse | None:
+    """The tool answer for a command row, or None while it has nothing to report yet."""
+    response = _settled_row_response(
+        result,
+        command_id=command_id,
+        region=region,
+        workspace=workspace,
+        echo=echo,
+        stdin_fed=stdin_fed,
+    )
+    if response is not None:
+        await _attach_work_session_pause(
+            response, result, region=region, workspace=workspace, token=token
+        )
+    return response
+
+
+def _settled_row_response(
     result: _CommandRecord,
     *,
     command_id: str,
@@ -1886,7 +2090,6 @@ def _settled_response(
     echo: Mapping[str, str],
     stdin_fed: bool,
 ) -> ToolResponse | None:
-    """The tool answer for a command row, or None while it has nothing to report yet."""
     status = result.get('status', '')
 
     if (
@@ -2059,16 +2262,34 @@ async def _poll_command_result(
 
         if isinstance(result, dict):
             if (
-                settled := _settled_response(
+                settled := await _settled_response(
                     result,
                     command_id=command_id,
                     region=region,
                     workspace=workspace,
                     echo=echo,
                     stdin_fed=stdin_fed,
+                    token=token,
                 )
             ) is not None:
                 return settled
+
+            if result.get('work_session_paused') is True or (
+                isinstance(pause_code := result.get('denial_code'), str)
+                and pause_code in PAUSE_DENIAL_CODES
+            ):
+                paused = success_response(
+                    data=result,
+                    command_id=command_id,
+                    region=region,
+                    workspace=workspace,
+                    **echo,
+                )
+                await _attach_work_session_pause(
+                    paused, result, region=region, workspace=workspace, token=token
+                )
+                if 'next_action' in paused:
+                    return paused
 
             # Still advancing—reset deadline (within hard cap) so a slow AI
             # verification or delayed delivery does not time out a command
@@ -2201,13 +2422,14 @@ async def check_command_status(
     # The caller knows neither the server nor the line, and cannot say whether
     # it fed stdin, so this reads the row as state_command_purpose does.
     if (
-        settled := _settled_response(
+        settled := await _settled_response(
             result,
             command_id=command_id,
             region=region,
             workspace=workspace,
             echo={},
             stdin_fed=False,
+            token=token,
         )
     ) is not None:
         return settled
@@ -2226,7 +2448,7 @@ async def check_command_status(
             f'Command status {status!r} is not one this tool recognizes, and the '
             'command has reported no result yet; check again shortly.'
         )
-    return success_response(
+    response = success_response(
         message=message,
         data=result,
         next_action=_CHECK_AGAIN,
@@ -2234,6 +2456,10 @@ async def check_command_status(
         region=region,
         workspace=workspace,
     )
+    await _attach_work_session_pause(
+        response, result, region=region, workspace=workspace, token=token
+    )
+    return response
 
 
 @mcp_tool_handler(
@@ -2247,7 +2473,7 @@ async def execute_command_multi_server(
     workspace: str,
     shell: str = 'system',
     username: str | None = None,
-    groupname: str = 'alpacon',
+    groupname: Annotated[str | None, Field(description=_GROUPNAME_DESCRIPTION)] = None,
     env: dict[str, str] | None = None,
     region: str = '',
     parallel: Annotated[bool, Field(description=_PARALLEL_DESCRIPTION)] = True,
@@ -2287,6 +2513,7 @@ async def execute_command_multi_server(
     successful_count = 0
     failed_count = 0
     purpose_truncated = _purpose_was_truncated(purpose)
+    sessions: dict[str, JsonValue] = {}
 
     if parallel:
         results = await asyncio.gather(
@@ -2304,7 +2531,13 @@ async def execute_command_multi_server(
                 deploy_results[sid] = err
                 failed_count += 1
             else:
-                deploy_results[sid] = _submitted_entry(result)
+                deploy_results[sid] = await _submitted_entry(
+                    result,
+                    region=region,
+                    workspace=workspace,
+                    token=token,
+                    sessions=sessions,
+                )
                 successful_count += 1
     else:
         for sid in server_ids:
@@ -2316,7 +2549,13 @@ async def execute_command_multi_server(
                     deploy_results[sid] = err
                     failed_count += 1
                 else:
-                    deploy_results[sid] = _submitted_entry(result)
+                    deploy_results[sid] = await _submitted_entry(
+                        result,
+                        region=region,
+                        workspace=workspace,
+                        token=token,
+                        sessions=sessions,
+                    )
                     successful_count += 1
             except Exception as e:
                 deploy_results[sid] = _failed_entry(e)

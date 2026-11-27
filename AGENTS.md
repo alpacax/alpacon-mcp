@@ -47,8 +47,8 @@ Published client guidance, including tool descriptions, examples and plugin refe
 must distinguish a server release requirement from enforcement added by this client.
 The Alpacon server enforces personal-token Work Session admission; this MCP server
 adds no local authorization check.
-Regenerate the evaluation catalog after integrating base-branch changes that add
-mocked tools; a clean text merge can leave their shared parameter descriptions stale.
+Skill evals are kept locally under `plugins/alpacon/evals/` and are not committed;
+pin a skill's behavior that must hold with an ordinary pytest test instead.
 
 The legacy Auth0 environment variable names still work as fallbacks and will be removed in a later release; see `docs/configuration.md` for the mapping.
 
@@ -159,12 +159,28 @@ Things the code will not tell you at a glance:
   container or launched over SSH attempts delivery on that host, not on the
   user's desktop. Never enable `stdio_transport()` outside that run; a
   remote equivalent belongs in a client-side hook.
+- **Pause guidance covers command rows as well as tool envelopes.** A
+  pause denial code is historical; `work_session_paused` names the latest
+  triggering command and can remain true after Resume.
+  Prefer the visible nested `work_session.status`: history omits the flat pause
+  marker and session id. Read the session only when its current state is absent;
+  only a currently paused session gets `requires_human_approval` for the pause.
+  Keep lookups local to the call. An unverified trigger still gets one event-only
+  alert; remember its command id when later linking it to a known pause episode.
+  Compact nested sessions omit `paused_at`: share one current pause identity
+  across command ids, and retire it after observing a non-paused command result
+  or `work_session_get`. The first timestamp links to that identity without an alert.
+  A distinct marked trigger identifies another pause even without an active read;
+  keep the current trigger with its pause identity when command history is evicted.
+  Approval during pause is recorded but delivery still needs Resume.
 - **Transport settings live at the entry point, not on the constructor.** SDK 2.x
   takes `host`, `json_response` and `stateless_http` on
   `mcp.streamable_http_app()`, so `create_streamable_http_app(host=...)` carries
   them. `host` decides DNS rebinding protection—the SDK enables it for loopback
   addresses only—and must be the address uvicorn actually binds, or a deployment
   on `0.0.0.0` rejects its own public Host header with a 421.
+  `ALPACON_MCP_ALLOWED_HOSTS` turns the protection on for a non-loopback bind
+  and replaces the loopback defaults.
 - **`server.run()` refuses streamable-http.** It serves stdio only;
   `main_http.py` composes that transport itself, wrapping
   `create_streamable_http_app()` in `UpstreamAuthErrorMiddleware`. An app built

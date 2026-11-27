@@ -39,6 +39,7 @@ from tools.command_tools import (
     _CommandRecord,
     _file_phase_hint,
     _get_capped,
+    _rerun_coordinates,
     _submit_command,
     _submit_file_execution,
     _sudo_denial_codes,
@@ -240,6 +241,28 @@ class TestSudoDenialHint:
 
 class TestSubmitCommand:
     @pytest.mark.asyncio
+    async def test_groupname_sent_only_when_named(self, mock_http_client):
+        mock_http_client.post.return_value = {'id': 'cmd-124'}
+
+        async def submit(groupname: str | None = None) -> dict[str, object]:
+            await _submit_command(
+                server_id=VALID_SERVER_ID,
+                command='id',
+                workspace='testworkspace',
+                region='ap1',
+                token='test-token',
+                groupname=groupname,
+            )
+            sent: dict[str, object] = mock_http_client.post.call_args.kwargs['data']
+            return sent
+
+        assert 'groupname' not in await submit()
+        assert 'groupname' not in await submit('')
+        assert (await submit('ops'))['groupname'] == 'ops'
+        # An explicit 'alpacon' is the caller's choice and goes out as given.
+        assert (await submit('alpacon'))['groupname'] == 'alpacon'
+
+    @pytest.mark.asyncio
     async def test_submit_basic(self, mock_http_client):
         mock_http_client.post.return_value = {'id': 'cmd-123', 'status': 'running'}
 
@@ -262,7 +285,6 @@ class TestSubmitCommand:
                 'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'ls -la',
-                'groupname': 'alpacon',
             },
         )
 
@@ -292,7 +314,6 @@ class TestSubmitCommand:
                 'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'echo done',
-                'groupname': 'alpacon',
                 'env': {'PATH': '/usr/bin'},
                 'data': 'stdin input',
                 'username': 'testuser',
@@ -321,7 +342,6 @@ class TestSubmitCommand:
                 'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'ls',
-                'groupname': 'alpacon',
             },
         )
 
@@ -349,7 +369,6 @@ class TestSubmitCommand:
                 'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'ls',
-                'groupname': 'alpacon',
                 'work_session': 'ws-from-env',
             },
         )
@@ -379,7 +398,6 @@ class TestSubmitCommand:
                 'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'ls',
-                'groupname': 'alpacon',
                 'work_session': 'explicit-ws',
             },
         )
@@ -1165,7 +1183,6 @@ class TestSubmitCommandWithSession:
                 'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'ls',
-                'groupname': 'alpacon',
                 'work_session': 'ws-uuid-abcd',
             },
         )
@@ -1191,7 +1208,6 @@ class TestSubmitCommandWithSession:
                 'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'ls',
-                'groupname': 'alpacon',
             },
         )
 
@@ -1225,7 +1241,6 @@ class TestExecuteCommandWithSession:
                 'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'ls',
-                'groupname': 'alpacon',
                 'work_session': 'ws-uuid-abcd',
                 'purpose_demand_supported': True,
             },
@@ -1256,7 +1271,6 @@ class TestExecuteCommandMultiServerWithSession:
                 'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'ls',
-                'groupname': 'alpacon',
                 'work_session': 'ws-uuid-abcd',
             },
         )
@@ -1625,7 +1639,6 @@ class TestPurposeDemand:
                 'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'systemctl restart chronyd',
-                'groupname': 'alpacon',
                 'purpose': (
                     'The host clock is 40s ahead, so the cert reads as not-yet-valid.'
                 ),
@@ -1659,7 +1672,6 @@ class TestPurposeDemand:
                 'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'true',
-                'groupname': 'alpacon',
                 'purpose': 'x' * PURPOSE_MAX_LENGTH,
             },
         )
@@ -1690,7 +1702,6 @@ class TestPurposeDemand:
                 'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'true',
-                'groupname': 'alpacon',
                 'purpose_demand_supported': True,
             },
         )
@@ -2364,6 +2375,21 @@ class TestSubmitFileExecution:
         )
 
     @pytest.mark.asyncio
+    async def test_groupname_absent_when_unnamed(self, mock_http_client):
+        mock_http_client.post.return_value = {'id': 'cmd-702'}
+
+        await _submit_file_execution(
+            server_id=VALID_SERVER_ID,
+            path='/opt/deploy.sh',
+            content=_FILE_SCRIPT,
+            workspace='testworkspace',
+            region='ap1',
+            token='test-token',
+        )
+
+        assert 'groupname' not in mock_http_client.post.call_args.kwargs['data']
+
+    @pytest.mark.asyncio
     async def test_content_travels_byte_for_byte(self, mock_http_client):
         # Trailing newline, CRLF, tabs, trailing spaces, non-ASCII: every one
         # of these is bytes the on-disk file carries and the agent hashes.
@@ -2386,7 +2412,6 @@ class TestSubmitFileExecution:
             token='test-token',
             data={
                 'server': VALID_SERVER_ID,
-                'groupname': 'alpacon',
                 'file': {
                     'path': '/opt/deploy.sh',
                     'interpreter': '/bin/bash',
@@ -2418,7 +2443,6 @@ class TestSubmitFileExecution:
             token='test-token',
             data={
                 'server': VALID_SERVER_ID,
-                'groupname': 'alpacon',
                 'file': {
                     'path': '/opt/deploy.sh',
                     'interpreter': '/bin/bash',
@@ -2457,7 +2481,6 @@ class TestSubmitFileExecution:
             token='test-token',
             data={
                 'server': VALID_SERVER_ID,
-                'groupname': 'alpacon',
                 'file': {
                     'path': '/opt/deploy.sh',
                     'interpreter': '/bin/bash',
@@ -2495,7 +2518,6 @@ class TestSubmitFileExecution:
             token='test-token',
             data={
                 'server': VALID_SERVER_ID,
-                'groupname': 'alpacon',
                 'file': {
                     'path': '/opt/deploy.sh',
                     'interpreter': '/bin/bash',
@@ -2526,7 +2548,6 @@ class TestSubmitFileExecution:
             token='test-token',
             data={
                 'server': VALID_SERVER_ID,
-                'groupname': 'alpacon',
                 'file': {
                     'path': '/opt/deploy.sh',
                     'interpreter': '/bin/bash',
@@ -3372,7 +3393,7 @@ class TestExecuteFileWriteFile:
 
         assert 'groupname' not in mock_http_client.post.call_args.kwargs['data']
         # The run itself still carries the group it executes as.
-        assert mock_submit.call_args.kwargs['groupname'] == 'alpacon'
+        assert mock_submit.call_args.kwargs['groupname'] is None
 
     @pytest.mark.asyncio
     async def test_existing_file_refusal_names_both_ways_out(
@@ -4060,7 +4081,7 @@ class TestHeldCommandSuggestsTheFileLane:
         row_extra: dict[str, JsonValue],
         *,
         username: str | None = None,
-        groupname: str = 'alpacon',
+        groupname: str | None = None,
         work_session_id: str | None = None,
         data: str | None = None,
     ) -> ToolResponse:
@@ -4294,6 +4315,21 @@ class TestHeldCommandSuggestsTheFileLane:
         assert arguments['username'] == 'deploy'
         assert arguments['groupname'] == 'ops'
         assert arguments['work_session_id'] == work_session_id
+
+    @pytest.mark.parametrize(
+        ('recorded', 'expected'),
+        [
+            ('alpacon', 'alpacon'),
+            ('ops', 'ops'),
+            ('', None),
+            (None, None),
+        ],
+    )
+    def test_rerun_carries_the_recorded_group_unchanged(self, recorded, expected):
+        row = {'server': {'id': 'srv-1'}, 'groupname': recorded}
+        coordinates = _rerun_coordinates(row)
+        assert coordinates.get('groupname') == expected
+        assert ('groupname' in coordinates) is (expected is not None)
 
     @pytest.mark.asyncio
     async def test_after_a_stated_purpose_the_call_comes_off_the_row(
@@ -6420,3 +6456,429 @@ class TestHeldSudoApproval:
 
         assert result['status'] == 'success'
         assert result['data']['results'][0]['sudo_denial'] == _TODAYS_SUDO_DENIAL
+
+
+class TestWorkSessionPause:
+    """A command row that paused its Work Session, or that the pause refused."""
+
+    _PAUSED = 'The Work Session is paused. Stop: do not retry'
+    session: dict[str, JsonValue]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('status', ['active', 'paused', 'completed'])
+    async def test_history_uses_visible_nested_session_without_another_request(
+        self, status, mock_http_client, mock_token_manager
+    ):
+        session = {
+            'id': '8e063801-18ab-4c8a-a23e-b06d81bc6df8',
+            'title': 'Maintenance',
+            'description': 'Check service status',
+            'status': status,
+            'assignee': None,
+        }
+        mock_http_client.get.return_value = {
+            'count': 1,
+            'results': [
+                {
+                    'id': 'cmd-history',
+                    'status': 'rejected',
+                    'denial_code': 'superseded_by_pause',
+                    'work_session': session,
+                }
+            ],
+        }
+
+        result = await list_commands(workspace='testworkspace', region='ap1')
+
+        entry = result['data']['results'][0]
+        assert entry['work_session'] == session
+        assert entry['work_session_id'] == session['id']
+        assert entry['work_session_status'] == status
+        assert entry['denial_code'] == 'superseded_by_pause'
+        assert 'work_session_paused' not in entry
+        if status == 'paused':
+            assert entry['requires_human_approval'] is True
+            assert entry['next_action'].startswith(self._PAUSED)
+        elif status == 'active':
+            assert 'requires_human_approval' not in entry
+            assert 'next_action' not in entry
+        else:
+            assert 'stop polling' in entry['next_action'].lower()
+        mock_http_client.get.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_trigger_uses_nested_current_state_before_a_forbidden_lookup(
+        self, mock_http_client, mock_token_manager
+    ):
+        self.session = {'error': 'Forbidden', 'status_code': 403}
+        session = {
+            'id': 'ws-1',
+            'title': 'Maintenance',
+            'description': 'Check service status',
+            'status': 'paused',
+            'assignee': None,
+        }
+
+        result = await self._check(
+            status='awaiting_approval', work_session_paused=True, work_session=session
+        )
+
+        assert result['work_session_status'] == 'paused'
+        assert result['requires_human_approval'] is True
+        assert self._PAUSED in result['next_action']
+        mock_http_client.get.assert_not_awaited()
+
+    @pytest.fixture(autouse=True)
+    def current_session(self, mock_http_client):
+        self.session = {
+            'status': 'paused',
+            'paused_at': '2026-11-20T07:00:00Z',
+        }
+
+        async def get(*, endpoint, **kwargs):
+            if endpoint.startswith('/api/work-sessions/sessions/'):
+                return self.session
+            return mock_http_client.get.return_value
+
+        mock_http_client.get.side_effect = get
+
+    @staticmethod
+    async def _check(**fields: object) -> ToolResponse:
+        row = {
+            'id': 'cmd-p1',
+            'handled_at': None,
+            'work_session_id': 'ws-1',
+            **fields,
+        }
+        with patch('tools.command_tools._get_command_result', return_value=row):
+            return await check_command_status(
+                command_id='cmd-p1', workspace='testworkspace', region='ap1'
+            )
+
+    @pytest.mark.asyncio
+    async def test_the_denial_that_paused_the_session_says_so(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await self._check(
+            status='rejected', work_session_paused=True, work_session_id='ws-1'
+        )
+
+        assert result['status'] == 'error'
+        assert result['work_session_paused'] is True
+        assert result['work_session_id'] == 'ws-1'
+        assert result['next_action'].startswith(self._PAUSED)
+        assert 'paused' in result['message']
+
+    @pytest.mark.asyncio
+    async def test_the_hold_that_paused_the_session_says_so(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await self._check(
+            status='awaiting_approval', work_session_paused=True, work_session_id='ws-1'
+        )
+
+        assert result['status'] == 'pending_approval'
+        assert result['work_session_paused'] is True
+        assert result['work_session_id'] == 'ws-1'
+        assert self._PAUSED in result['next_action']
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('code', ['session_paused', 'superseded_by_pause'])
+    async def test_a_pause_denial_code_is_kept_with_the_stop_guidance(
+        self, code, mock_http_client, mock_token_manager
+    ):
+        result = await self._check(
+            status='rejected', denial_code=code, work_session_id='ws-1'
+        )
+
+        assert result['status'] == 'error'
+        assert result['denial_code'] == code
+        assert result['work_session_id'] == 'ws-1'
+        assert result['next_action'].startswith(self._PAUSED)
+        assert 'work_session_paused' not in result
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('status', ['rejected', 'awaiting_approval'])
+    async def test_an_unmarked_row_keeps_todays_result(
+        self, status, mock_http_client, mock_token_manager
+    ):
+        baseline = await self._check(status=status)
+
+        result = await self._check(status=status, work_session_paused=False)
+
+        assert {k: v for k, v in result.items() if k != 'details'} == {
+            k: v for k, v in baseline.items() if k != 'details'
+        }
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'fields',
+        [
+            {'work_session_paused': True},
+            {'denial_code': 'session_paused'},
+            {'denial_code': 'superseded_by_pause'},
+        ],
+    )
+    async def test_pause_errors_require_human_approval(
+        self, fields, mock_http_client, mock_token_manager
+    ):
+        result = await self._check(status='rejected', **fields)
+
+        assert result['status'] == 'error'
+        assert result['requires_human_approval'] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('parallel', [True, False])
+    @pytest.mark.parametrize('as_list', [True, False])
+    @pytest.mark.parametrize(
+        'fields',
+        [
+            {'work_session_paused': True},
+            {'denial_code': 'session_paused'},
+            {'denial_code': 'superseded_by_pause'},
+        ],
+    )
+    async def test_multi_server_pause_rows_carry_stop_guidance(
+        self, fields, parallel, as_list, mock_http_client, mock_token_manager
+    ):
+        row = {
+            'id': 'cmd-p1',
+            'status': 'rejected',
+            'work_session_id': 'ws-1',
+            **fields,
+        }
+        submitted = [row] if as_list else row
+        mock_http_client.post.return_value = submitted
+
+        result = await execute_command_multi_server(
+            server_ids=[VALID_SERVER_ID],
+            command='ls',
+            workspace='testworkspace',
+            region='ap1',
+            parallel=parallel,
+        )
+
+        entry = result['deploy_shell_results'][VALID_SERVER_ID]
+        assert entry['command_id'] == 'cmd-p1'
+        assert entry['data'] == submitted
+        assert entry['work_session_id'] == 'ws-1'
+        assert entry['requires_human_approval'] is True
+        assert entry['next_action'].startswith(self._PAUSED)
+        for key, value in fields.items():
+            assert entry[key] == value
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'fields',
+        [
+            {'work_session_paused': True},
+            {'denial_code': 'session_paused'},
+            {'denial_code': 'superseded_by_pause'},
+        ],
+    )
+    async def test_history_pause_rows_carry_stop_guidance(
+        self, fields, mock_http_client, mock_token_manager
+    ):
+        ordinary = {'id': 'cmd-ordinary', 'status': 'rejected'}
+        mock_http_client.get.return_value = {
+            'count': 2,
+            'results': [
+                {
+                    'id': 'cmd-p1',
+                    'status': 'rejected',
+                    'work_session_id': 'ws-1',
+                    **fields,
+                },
+                ordinary.copy(),
+            ],
+        }
+
+        result = await list_commands(workspace='testworkspace', region='ap1')
+
+        entry, unchanged = result['data']['results']
+        assert entry['status'] == 'rejected'
+        assert entry['work_session_id'] == 'ws-1'
+        assert entry['requires_human_approval'] is True
+        assert entry['next_action'].startswith(self._PAUSED)
+        assert unchanged['id'] == ordinary['id']
+        assert unchanged['status'] == ordinary['status']
+        assert unchanged['rejection_hint']
+        assert {
+            'work_session_paused',
+            'denial_code',
+            'work_session_id',
+            'requires_human_approval',
+            'next_action',
+        }.isdisjoint(unchanged)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'fields',
+        [{'work_session_paused': True}, {'denial_code': 'superseded_by_pause'}],
+    )
+    async def test_resumed_command_keeps_history_without_pause_guidance(
+        self, fields, mock_http_client, mock_token_manager
+    ):
+        self.session['status'] = 'active'
+
+        result = await self._check(status='rejected', **fields)
+
+        assert result['work_session_status'] == 'active'
+        for key, value in fields.items():
+            assert result[key] == value
+        assert 'requires_human_approval' not in result
+        assert 'next_action' not in result
+        assert 'is paused' not in result['message']
+
+    @pytest.mark.asyncio
+    async def test_resumed_history_preserves_pause_evidence(
+        self, mock_http_client, mock_token_manager
+    ):
+        self.session['status'] = 'active'
+        mock_http_client.get.return_value = {
+            'results': [
+                {
+                    'id': 'cmd-p1',
+                    'status': 'rejected',
+                    'work_session_id': 'ws-1',
+                    'work_session_paused': True,
+                    'denial_code': 'superseded_by_pause',
+                }
+            ]
+        }
+
+        result = await list_commands(workspace='testworkspace', region='ap1')
+
+        entry = result['data']['results'][0]
+        assert entry['work_session_paused'] is True
+        assert entry['denial_code'] == 'superseded_by_pause'
+        assert entry['work_session_status'] == 'active'
+        assert 'requires_human_approval' not in entry
+        assert 'next_action' not in entry
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('status', ['awaiting_approval', 'queued'])
+    async def test_paused_delivery_requires_approval_and_resume(
+        self, status, mock_http_client, mock_token_manager
+    ):
+        result = await self._check(status=status, work_session_paused=True)
+
+        assert result['work_session_status'] == 'paused'
+        assert result['requires_human_approval'] is True
+        assert (
+            'Approval recorded while paused does not release the command'
+            in result['message']
+        )
+        assert 'Resume does not approve' in result['next_action']
+        assert 'runs automatically' not in result['message']
+
+    @pytest.mark.asyncio
+    async def test_unknown_session_status_does_not_claim_a_current_pause(
+        self, mock_http_client, mock_token_manager
+    ):
+        self.session = {'error': 'Forbidden', 'status_code': 403}
+
+        result = await self._check(status='rejected', work_session_paused=True)
+
+        assert result['work_session_paused'] is True
+        assert result['work_session_status'] is None
+        assert 'requires_human_approval' not in result
+        assert 'Check work_session_get' in result['next_action']
+        assert 'is paused' not in result['message']
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('wait', [True, False])
+    async def test_approved_command_waits_for_resume_without_resubmitting(
+        self, wait, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {'id': 'cmd-p1'}
+        row = {
+            'id': 'cmd-p1',
+            'status': 'queued',
+            'work_session_paused': True,
+            'work_session_id': 'ws-1',
+        }
+        mock_http_client.get.return_value = row
+        if not wait:
+            mock_http_client.post.return_value = row
+
+        result = await execute_command(
+            server_id=VALID_SERVER_ID,
+            command='ls',
+            workspace='testworkspace',
+            region='ap1',
+            wait=wait,
+        )
+
+        assert result['work_session_status'] == 'paused'
+        assert result['requires_human_approval'] is True
+        assert 'delivery waits for both approval and Resume' in result['message']
+        assert mock_http_client.post.call_count == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('session_status', ['completed', 'revoked', 'expired'])
+    @pytest.mark.parametrize('command_status', ['awaiting_approval', 'queued'])
+    async def test_terminal_session_stops_command_polling(
+        self, session_status, command_status, mock_http_client, mock_token_manager
+    ):
+        self.session['status'] = session_status
+
+        result = await self._check(status=command_status, work_session_paused=True)
+
+        assert result['work_session_status'] == session_status
+        assert 'stop polling' in result['next_action'].lower()
+        assert session_status in result['message']
+        assert 'requires_human_approval' not in result
+        assert 'runs automatically' not in result['message']
+        assert result['status'] == 'success'
+        assert result['data']['status'] == command_status
+        assert 'category' not in result
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('lane', [None, 'assignee'])
+    async def test_unverified_session_does_not_promise_approval_releases_a_hold(
+        self, lane, mock_http_client, mock_token_manager
+    ):
+        self.session = {'error': 'Forbidden'}
+
+        result = await self._check(
+            status='awaiting_approval', work_session_paused=True, approval_lane=lane
+        )
+
+        assert result['work_session_status'] is None
+        assert 'could not be verified' in result['message']
+        assert 'delivery also waits for Resume' in result['message']
+        assert 'runs automatically' not in result['message']
+        assert 'Check work_session_get' in result['next_action']
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('session_status', ['expired', None])
+    async def test_wait_returns_terminal_or_unknown_session_guidance(
+        self, session_status, mock_http_client, mock_token_manager
+    ):
+        self.session = (
+            {'status': session_status} if session_status else {'error': 'Forbidden'}
+        )
+        mock_http_client.post.return_value = {'id': 'cmd-p1'}
+        mock_http_client.get.return_value = {
+            'id': 'cmd-p1',
+            'status': 'queued',
+            'work_session_id': 'ws-1',
+            'work_session_paused': True,
+        }
+
+        result = await execute_command(
+            server_id=VALID_SERVER_ID,
+            command='ls',
+            workspace='testworkspace',
+            region='ap1',
+            timeout=1,
+        )
+
+        assert result['work_session_status'] == session_status
+        if session_status:
+            assert 'stop polling' in result['next_action'].lower()
+        else:
+            assert 'Check work_session_get' in result['next_action']
+        assert mock_http_client.get.call_count == 2
+        assert mock_http_client.post.call_count == 1

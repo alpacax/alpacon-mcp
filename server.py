@@ -1,5 +1,7 @@
 import importlib
+import ipaddress
 import os
+import re
 import signal
 import sys
 from collections.abc import AsyncIterator
@@ -10,6 +12,7 @@ from urllib.parse import urlparse
 
 from mcp.server import MCPServer
 from mcp.server.apps import Apps
+from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -40,6 +43,16 @@ ServedTransport = Literal['stdio']
 
 DEFAULT_HOST = '127.0.0.1'
 DEFAULT_PORT = 8237  # MCAR - MCP Alpacon Remote
+
+_PORT = r'(?::([0-9]{1,5}|\*))?'
+_AUTHORITY = re.compile(r'(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9._-]+)' + _PORT)
+# ASCII a browser keeps in an Origin host; `*` stays out so it never reads as a wildcard
+_ORIGIN_AUTHORITY = re.compile(
+    r'(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9._~!$&\'()+;=`{}"-]+)' + _PORT
+)
+# WHATWG parses a host whose last label looks like this as IPv4
+_IPV4_LAST_LABEL = re.compile(r'[0-9]+|0x[0-9a-f]*')
+_DEFAULT_PORTS: dict[str, str] = {'http': '80', 'https': '443'}
 
 # 1 MiB above the SDK default so a >3 MiB upload reaches webftp_upload_content's
 # own check instead of failing as a bare HTTP 413 (see #144).
@@ -146,6 +159,85 @@ def resolve_host() -> str:
 
 def resolve_port() -> int:
     return int(os.getenv('ALPACON_MCP_PORT', str(DEFAULT_PORT)))
+
+
+def _split_authority(
+    authority: str, pattern: re.Pattern[str] = _AUTHORITY
+) -> tuple[str, str | None] | None:
+    """Split host[:port|:*] into host and port; None when it is not one."""
+    match = pattern.fullmatch(authority)
+    if not match:
+        return None
+    host, port = match.groups()
+    if port not in (None, '*') and int(port) > 65535:
+        return None
+    if host.startswith('['):
+        try:
+            ipaddress.IPv6Address(host[1:-1])
+        except ValueError:
+            return None
+    return host, port
+
+
+def _canonical_ip(host: str) -> str | None:
+    """Host as a browser serializes it; a numeric last label makes it IPv4 (WHATWG)."""
+    if host.startswith('['):
+        address = ipaddress.IPv6Address(host[1:-1])
+        if address.ipv4_mapped:  # Python prints these dotted, browsers in hex
+            high, low = divmod(int(address.ipv4_mapped), 0x10000)
+            return f'[::ffff:{high:x}:{low:x}]'
+        return f'[{address}]'
+    last_label = host.rstrip('.').rsplit('.', 1)[-1]
+    if _IPV4_LAST_LABEL.fullmatch(last_label):
+        try:
+            return str(ipaddress.IPv4Address(host))
+        except ValueError:
+            return None
+    return host
+
+
+def _is_browser_origin(origin: str) -> bool:
+    """True for a browser-serialized Origin or a trailing :* port pattern."""
+    scheme, separator, authority = origin.partition('://')
+    default_port = _DEFAULT_PORTS.get(scheme)
+    parts = _split_authority(authority, _ORIGIN_AUTHORITY) if separator else None
+    if default_port is None or parts is None:
+        return False
+    host, port = parts
+    return (
+        host == host.lower()
+        and _canonical_ip(host) == host
+        and port != default_port
+        and (port in (None, '*') or port == str(int(port)))
+    )
+
+
+def resolve_transport_security() -> TransportSecuritySettings | None:
+    allowed_hosts = [
+        host.strip()
+        for host in os.getenv('ALPACON_MCP_ALLOWED_HOSTS', '').split(',')
+        if host.strip()
+    ]
+    if not allowed_hosts:
+        return None
+    for host in allowed_hosts:
+        if _split_authority(host) is None:
+            raise ValueError(f'Invalid ALPACON_MCP_ALLOWED_HOSTS entry: {host!r}')
+
+    allowed_origins = [
+        origin.strip()
+        for origin in os.getenv('ALPACON_MCP_ALLOWED_ORIGINS', '').split(',')
+        if origin.strip()
+    ]
+    for origin in allowed_origins:
+        if not _is_browser_origin(origin):
+            raise ValueError(f'Invalid ALPACON_MCP_ALLOWED_ORIGINS entry: {origin!r}')
+
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=allowed_hosts,
+        allowed_origins=allowed_origins,
+    )
 
 
 def _create_mcp_server() -> MCPServer[None]:
@@ -293,8 +385,8 @@ def _modules_to_load(toolsets: str | None, remote_mode: bool) -> set[str]:
 
 
 def create_streamable_http_app(*, host: str) -> Starlette:
-    """Build the streamable-http ASGI app; host must be what the server binds, as it
-    decides DNS rebinding protection."""
+    """Build the streamable-http ASGI app with environment transport security;
+    host must match the bind address for the SDK's default protection."""
     if not is_auth_enabled() or mcp.settings.auth is None:
         raise RuntimeError(
             'The streamable-http app requires ALPACON_MCP_AUTH_ENABLED=true; '
@@ -302,6 +394,7 @@ def create_streamable_http_app(*, host: str) -> Starlette:
         )
     return mcp.streamable_http_app(
         host=host,
+        transport_security=resolve_transport_security(),
         json_response=True,
         stateless_http=True,
         max_request_body_size=MAX_REQUEST_BODY_SIZE,

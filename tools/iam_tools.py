@@ -3,7 +3,7 @@
 import re
 from typing import Annotated
 
-from pydantic import Field
+from pydantic import Field, StrictBool
 
 from utils.api_call import http_call_response
 from utils.common import build_list_params, error_response, exclude_none
@@ -192,12 +192,14 @@ async def update_iam_user(
 @mcp_tool_handler(
     description=(
         'Permanently delete an IAM user account from the workspace. This action cannot be undone. '
-        'On supported Alpacon deployments, the home directory is kept by default. '
-        'Set archive_home=true to move it under /home/deleted_users/. '
-        'Archiving can disrupt apps or services that use files in the home directory. '
-        'Passing archive_home=false and omitting the argument send the same request, with no archive_home query parameter. '
-        'On deployments running agents older than the version that keeps home directories by default, '
-        'both calls may still archive the home directory. '
+        'Alpacon 2.50.0 with Alpamon 2.9.2 or later keeps the home directory by default. '
+        'Set archive_home=true to request an archive under /home/deleted_users/. '
+        'Archiving requires Debian- and RHEL-family Linux with openat2 '
+        'and can disrupt services using the home. '
+        'Without openat2, Alpamon can delete an eligible host account and leave the home in place. '
+        'Passing archive_home=false and omitting it both omit the query parameter. '
+        'Older servers or agents may archive the home in either case. '
+        'Success confirms the workspace deletion and does not confirm host cleanup or archiving. '
         'Use update_iam_user to deactivate a user instead if you want to preserve the account.'
     ),
     annotations=DESTRUCTIVE,
@@ -207,14 +209,10 @@ async def delete_iam_user(
     user_id: str,
     workspace: str,
     region: str = '',
-    archive_home: bool = False,
+    archive_home: StrictBool = False,
     **kwargs: str,
 ) -> ToolResponse:
-    """Delete an IAM user.
-
-    On supported deployments, keep the home directory by default.
-    Set archive_home to move it under /home/deleted_users/.
-    """
+    """Delete an IAM user."""
     err = uuid_field_error('user_id', user_id)
     if err:
         return err

@@ -109,8 +109,8 @@ _NEXT_ACTION_BY_CATEGORY: dict[str, str] = {
         'policy, and a command runs non-interactively so it can never supply MFA. '
         'A human must set session_authorized on the covering Work Session sudo '
         'policy in the Alpacon web console '
-        '(enterprise plan, and the policy must be tied to a usable Work '
-        'Session), then retry. You cannot grant it yourself.'
+        '(the policy must be tied to a usable Work Session), then retry. '
+        'You cannot grant it yourself.'
     ),
     'SUDO_INTENT_DEVIATION': (
         'This command was judged off-purpose for the Work Session and an '
@@ -137,6 +137,22 @@ _NEXT_ACTION_BY_CATEGORY: dict[str, str] = {
     ),
 }
 _DEFAULT_NEXT_ACTION = _NEXT_ACTION_BY_CATEGORY['SUDO_APPROVAL_REQUIRED']
+
+PAUSE_DENIAL_CODES: frozenset[str] = frozenset(
+    {'session_paused', 'superseded_by_pause'}
+)
+
+# The stored status of a paused Work Session.
+WORK_SESSION_STATUS_PAUSED = 'paused'
+
+WORK_SESSION_PAUSED_NEXT_ACTION = (
+    'The Work Session is paused. Stop: do not retry, resubmit, or open another '
+    'Work Session to get around it. Only a person can resume or end it, in the '
+    'Alpacon web console. Tell the user, then wait: check work_session_get and '
+    'continue only once data.status is active again. If the session has ended '
+    '(completed, revoked, expired, rejected or cancelled), stop polling and tell '
+    'the user; that session cannot resume.'
+)
 
 # Mirrors alpacon-cli worksession_error.go.
 type WorkSessionGateCode = Literal[
@@ -370,10 +386,6 @@ _ERROR_CODE_HINT: dict[str, str] = {
     'home_purge_removed': (
         'Omit the purge option when deleting the user. To archive the home '
         'directory, set archive_home=true.'
-    ),
-    'system_home_conflict': (
-        'Ask a server administrator to resolve the existing home directory '
-        'ownership conflict before retrying.'
     ),
     **FILE_EXEC_REFUSAL_HINTS,
     **ALERT_RULE_PREVIEW_REFUSAL_HINTS,
@@ -891,6 +903,16 @@ def unwrap_http_result(
     message = result.get('message', default_message)
     server_reason = False
     if code in COMMAND_ENV_REFUSAL_HINTS and body is not None:
+        names = body.get('refused_keys')
+        if (
+            status_code == HTTPStatus.BAD_REQUEST
+            and isinstance(names, list)
+            and all(
+                isinstance(name, str) and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', name)
+                for name in names
+            )
+        ):
+            error_kwargs['refused_keys'] = names
         # These policy messages name keys and reasons, never submitted values.
         fields = body.get('field_errors')
         entries = fields.get('non_field_errors') if isinstance(fields, dict) else None
@@ -920,6 +942,13 @@ def unwrap_http_result(
     if hint is not None:
         separator = ' ' if message.endswith('.') else '. '
         message = f'{message}{separator}{hint}'
+    if code in PAUSE_DENIAL_CODES and body is not None:
+        # Only a person resumes a paused session; the console link stays with
+        # the local signal, as for every other refusal.
+        if isinstance(session_id := body.get('work_session_id'), str) and session_id:
+            error_kwargs['work_session_id'] = session_id
+        error_kwargs['requires_human_approval'] = True
+        error_kwargs['next_action'] = WORK_SESSION_PAUSED_NEXT_ACTION
 
     return remember_console_link(error_response(message, **error_kwargs), body)
 

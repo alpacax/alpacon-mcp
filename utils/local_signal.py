@@ -24,7 +24,11 @@ from xml.sax.saxutils import escape
 
 import httpx
 
-from utils.common import is_work_session_gate_code, resolve_work_session_id
+from utils.common import (
+    PAUSE_DENIAL_CODES,
+    is_work_session_gate_code,
+    resolve_work_session_id,
+)
 from utils.http_client import http_client
 from utils.logger import get_logger
 from utils.notification_context import ConsoleLinks
@@ -34,6 +38,8 @@ logger = get_logger('local_signal')
 type SignalKind = Literal['denied', 'approval_pending', 'paused']
 type SignalTarget = Literal['command', 'file_transfer', 'work_session', 'sudo_policy']
 type PendingKey = tuple[SignalKind, SignalTarget, str, str, str]
+type PauseKey = tuple[str, str, str, str]
+type WindowKey = tuple[str, SignalKind, str, str]
 
 _stdio: ContextVar[bool] = ContextVar('local_signal_stdio', default=False)
 _tasks: set[asyncio.Task[None]] = set()
@@ -94,6 +100,8 @@ _SESSION_ID = re.compile(r'[A-Za-z0-9_-]{1,64}')
 _WORD_SPACE = ' \t\n\r'
 _MAX_BODY = 256
 _PENDING_TTL = 10 * 60
+_PAUSE_COMMAND_PREFIX = 'command:'
+_PAUSE_SESSION_PREFIX = 'session:'
 # Cloud console links use the built-in domain, never an inferred API parent.
 _CLOUD_BASE_DOMAIN = 'alpacon.io'
 
@@ -253,6 +261,9 @@ class Signal:
     workspace_url: str = ''
     # `assignee` when the session's assignee confirms the held command (ADR 0114).
     lane: str = ''
+    pause_id: str = ''
+    pause_command_id: str = ''
+    pause_state: str = ''
 
     def __post_init__(self) -> None:
         if not _ACCOUNT.fullmatch(self.account):
@@ -275,8 +286,13 @@ class Signal:
             title = 'Alpacon: session paused'
             subject = f'Work Session {self.session}' if self.session else 'Work Session'
             body = (
-                f'{subject} is paused after a critical denial. '
-                'Open the web console for the available recovery actions.'
+                f'{subject} was paused. Its current status could not be verified. '
+                'Check the web console for its current status.'
+                if self.pause_state == 'event'
+                else (
+                    f'{subject} is paused after a critical denial. '
+                    'Open the web console for the available recovery actions.'
+                )
             )
         elif self.kind == 'approval_pending' and self.target in (
             'work_session',
@@ -337,10 +353,145 @@ class Signal:
 
 class RateLimiter:
     def __init__(self) -> None:
-        self._windows: OrderedDict[
-            tuple[str, SignalKind, str, str], tuple[float, int, set[PendingKey]]
-        ] = OrderedDict()
+        self._windows: OrderedDict[WindowKey, tuple[float, int, set[PendingKey]]] = (
+            OrderedDict()
+        )
         self._pending: OrderedDict[PendingKey, float] = OrderedDict()
+        self._pauses: OrderedDict[PauseKey, None] = OrderedDict()
+        self._pause_commands: OrderedDict[PauseKey, tuple[str | None, bool]] = (
+            OrderedDict()
+        )
+        self._pause_sessions: OrderedDict[WindowKey, tuple[str, str]] = OrderedDict()
+        self._pause_counter = 0
+
+    def observe_session(
+        self, session_id: str, status: object, workspace: str, region: str
+    ) -> None:
+        if status in (
+            'active',
+            'completed',
+            'revoked',
+            'expired',
+            'rejected',
+            'cancelled',
+            'pending',
+            'approved',
+        ):
+            self._pause_sessions.pop(
+                (session_id[:128], 'paused', workspace, region), None
+            )
+
+    def _pause_command_keys(self, key: WindowKey, episode: str) -> list[PauseKey]:
+        return [
+            command_key
+            for command_key, (known, _) in self._pause_commands.items()
+            if (command_key[0], command_key[2], command_key[3])
+            == (key[0], key[2], key[3])
+            and (
+                known == episode
+                or (
+                    known is None
+                    and episode == f'{_PAUSE_COMMAND_PREFIX}{command_key[1]}'
+                )
+            )
+        ]
+
+    def _shared_pause_identity(
+        self, key: WindowKey, pause_id: str, command_id: str, *, shared: bool
+    ) -> tuple[str, str, bool]:
+        previous, previous_trigger = (
+            self._pause_sessions.get(key, ('', '')) if key[0] else ('', '')
+        )
+        trigger_changed = bool(
+            command_id and previous_trigger and command_id != previous_trigger
+        )
+        fresh = trigger_changed or (shared and not previous)
+        if shared:
+            if not previous or trigger_changed:
+                self._pause_counter += 1
+                pause_id = f'{_PAUSE_SESSION_PREFIX}{self._pause_counter}'
+            else:
+                pause_id = previous
+        elif not pause_id and command_id:
+            pause_id = f'{_PAUSE_COMMAND_PREFIX}{command_id}'
+        alias = ''
+        if (
+            previous
+            and not trigger_changed
+            and previous.startswith((_PAUSE_COMMAND_PREFIX, _PAUSE_SESSION_PREFIX))
+            and pause_id
+            and not pause_id.startswith((_PAUSE_COMMAND_PREFIX, _PAUSE_SESSION_PREFIX))
+        ):
+            alias = previous
+            for command_key in self._pause_command_keys(key, previous):
+                _, announced = self._pause_commands[command_key]
+                self._pause_commands[command_key] = (pause_id, announced)
+        if key[0] and pause_id:
+            current_trigger = command_id or (
+                previous_trigger if pause_id == previous or alias == previous else ''
+            )
+            self._pause_sessions[key] = (pause_id, current_trigger)
+            if len(self._pause_sessions) > 256:
+                self._pause_sessions.popitem(last=False)
+        return pause_id, alias, fresh
+
+    def _remember_pause(
+        self,
+        pause_key: PauseKey | None,
+        command_key: PauseKey | None,
+        *,
+        announced: bool = True,
+    ) -> None:
+        if announced and pause_key is not None:
+            self._pauses[pause_key] = None
+            if len(self._pauses) > 256:
+                self._pauses.popitem(last=False)
+        known_episode = (
+            pause_key[1]
+            if pause_key and not pause_key[1].startswith(_PAUSE_COMMAND_PREFIX)
+            else None
+        )
+        if command_key is not None:
+            previous_episode, was_announced = self._pause_commands.get(
+                command_key, (None, False)
+            )
+            if known_episode is not None and previous_episode not in (
+                None,
+                known_episode,
+            ):
+                was_announced = False
+            self._pause_commands[command_key] = (
+                known_episode or previous_episode,
+                announced or was_announced,
+            )
+            if len(self._pause_commands) > 256:
+                self._pause_commands.popitem(last=False)
+
+    def _merge_pause_alias(
+        self,
+        key: WindowKey,
+        episode: PendingKey | None,
+        trigger: PendingKey | None,
+        *,
+        announced: bool,
+    ) -> None:
+        if episode is None or key not in self._windows:
+            return
+        started, folded, identities = self._windows[key]
+        if announced:
+            aliases = {episode}
+            if trigger is not None:
+                aliases.add(trigger)
+            duplicates = identities & aliases
+            identities.difference_update(duplicates)
+            folded -= len(duplicates)
+        elif trigger is not None and trigger != episode and trigger in identities:
+            identities.remove(trigger)
+            if episode in identities:
+                folded -= 1
+            else:
+                identities.add(episode)
+        self._windows[key] = (started, folded, identities)
 
     def take(
         self,
@@ -351,14 +502,105 @@ class RateLimiter:
         *,
         target: SignalTarget = 'command',
         pending_id: str = '',
+        pause_id: str = '',
+        pause_command_id: str = '',
     ) -> int | None:
         now = monotonic()
+        key = (session_id[:128], kind, workspace, region)
+        command_key = (
+            (session_id[:128], pause_command_id[:128], workspace, region)
+            if kind == 'paused' and pause_command_id
+            else None
+        )
+        known_episode, command_announced = (
+            self._pause_commands.get(command_key, (None, False))
+            if command_key
+            else (None, False)
+        )
+        if kind == 'paused' and not pause_id and command_announced:
+            return None
+        shared = pause_id.startswith(_PAUSE_SESSION_PREFIX)
+        remember_session = bool(pause_id) or command_key not in self._pause_commands
+        if known_episode is not None and (
+            not pause_id or pause_id.startswith(_PAUSE_COMMAND_PREFIX)
+        ):
+            pause_id = known_episode
+        shared_alias = ''
+        fresh_shared = False
+        if kind == 'paused' and remember_session:
+            pause_id, shared_alias, fresh_shared = self._shared_pause_identity(
+                key, pause_id, pause_command_id, shared=shared
+            )
+        elif kind == 'paused' and not pause_id and pause_command_id:
+            pause_id = f'{_PAUSE_COMMAND_PREFIX}{pause_command_id}'
+        pause_key = (
+            (session_id[:128], pause_id[:128], workspace, region)
+            if kind == 'paused' and pause_id
+            else None
+        )
+        identity = pause_id or (
+            f'{_PAUSE_COMMAND_PREFIX}{pause_command_id}' if pause_command_id else ''
+        )
+        episode: PendingKey | None = (
+            ('paused', target, f'{session_id[:128]}:{identity}', workspace, region)
+            if kind == 'paused' and identity
+            else None
+        )
+        trigger: PendingKey | None = (
+            (
+                'paused',
+                target,
+                f'{session_id[:128]}:{_PAUSE_COMMAND_PREFIX}{pause_command_id}',
+                workspace,
+                region,
+            )
+            if kind == 'paused' and pause_command_id
+            else None
+        )
+        alias_key = (
+            (session_id[:128], shared_alias, workspace, region)
+            if shared_alias
+            else None
+        )
+        alias_announced = alias_key is not None and alias_key in self._pauses
+        if shared_alias:
+            self._merge_pause_alias(
+                key,
+                episode,
+                (
+                    'paused',
+                    target,
+                    f'{session_id[:128]}:{shared_alias}',
+                    workspace,
+                    region,
+                ),
+                announced=alias_announced,
+            )
+        if (
+            alias_announced
+            or (pause_key is not None and pause_key in self._pauses)
+            or (
+                command_key is not None
+                and command_announced
+                and not fresh_shared
+                and (
+                    pause_key is None
+                    or known_episode is None
+                    or known_episode == pause_key[1]
+                )
+            )
+        ):
+            self._merge_pause_alias(key, episode, trigger, announced=True)
+            self._remember_pause(pause_key, command_key)
+            return None
         while (
             self._pending and now - next(iter(self._pending.values())) >= _PENDING_TTL
         ):
             self._pending.popitem(last=False)
-        pending_key = None
-        if kind in ('approval_pending', 'denied') and pending_id:
+        pending_key: PendingKey | None = None
+        if kind == 'paused' and (pause_id or pause_command_id):
+            pending_key = episode
+        elif kind in ('approval_pending', 'denied') and pending_id:
             pending_key = (kind, target, pending_id, workspace, region)
             if pending_key in self._pending:
                 return None
@@ -366,11 +608,17 @@ class RateLimiter:
             self._windows and now - next(iter(self._windows.values()))[0] > 24 * 60 * 60
         ):
             self._windows.popitem(last=False)
-        key = (session_id[:128], kind, workspace, region)
+        if kind == 'paused' and pause_id:
+            self._merge_pause_alias(key, episode, trigger, announced=False)
         previous = self._windows.get(key)
         if previous is not None:
             started, folded, folded_pending = previous
             if now - started < 60:
+                self._remember_pause(
+                    pause_key,
+                    command_key,
+                    announced=False,
+                )
                 if pending_key is not None:
                     if pending_key in folded_pending:
                         return None
@@ -383,10 +631,11 @@ class RateLimiter:
             folded = 0
         self._windows[key] = (now, 0, set())
         self._windows.move_to_end(key)
-        if pending_key is not None:
+        if pending_key is not None and kind != 'paused':
             self._pending[pending_key] = now
             if len(self._pending) > 256:
                 self._pending.popitem(last=False)
+        self._remember_pause(pause_key, command_key)
         return folded
 
 
@@ -550,13 +799,36 @@ def _from_result(
         value in ('presence', 'role', 'token_scope', 'auth')
         for value in missing_classes
     )
-    if status == 'error' and code == 'session_paused':
-        kind: SignalKind = 'paused'
-    elif status == 'pending_approval' or (
+    # The pause trigger, a pause refusal or a pause denial code; a plain read
+    # of a paused session's status is not a new pause.
+    approval_pending = status == 'pending_approval' or (
         tool_name in SUDO_PENDING_TOOLS
         and isinstance(sudo_denial, dict)
         and sudo_denial.get('status') == 'pending_approval'
+    )
+    pause_triggered = any(
+        source.get('work_session_paused') is True for source in (result, row)
+    )
+    pause_marked = pause_triggered or any(
+        _string(source, 'denial_code') in PAUSE_DENIAL_CODES for source in (result, row)
+    )
+    pause_event = False
+    if pause_marked and (
+        'work_session_status' in result or 'work_session_status' in row
     ):
+        current_status = result.get(
+            'work_session_status', row.get('work_session_status')
+        )
+        if current_status != 'paused':
+            if current_status is None and pause_triggered:
+                pause_event = True
+            elif current_status == 'active' and approval_pending:
+                pause_marked = False
+            else:
+                return None
+    if (status == 'error' and code in PAUSE_DENIAL_CODES) or pause_marked:
+        kind: SignalKind = 'paused'
+    elif approval_pending:
         kind = 'approval_pending'
     elif (
         tool_name in DENIAL_TOOLS
@@ -584,7 +856,7 @@ def _from_result(
         result, 'session_id'
     )
     work_session_wait = result.get('category') == 'WORK_SESSION_PENDING'
-    if work_session_wait:
+    if work_session_wait or kind == 'paused':
         session_id = session_id or _raw_string(row, 'work_session_id')
     session_id = session_id or _raw_string(arguments, 'work_session_id')
     session_id = session_id or _raw_string(row, 'work_session')
@@ -639,6 +911,20 @@ def _from_result(
         console_url=console_url,
         workspace_url=workspace_url,
         lane=_string(result, 'approval_lane'),
+        pause_id=(
+            _raw_string(result, 'work_session_paused_at')
+            or (
+                f'{_PAUSE_SESSION_PREFIX}{session_id}'
+                if session_id
+                else f'{_PAUSE_COMMAND_PREFIX}{pending_id}'
+                if pending_id
+                else ''
+            )
+            if kind == 'paused' and result.get('work_session_status') == 'paused'
+            else ''
+        ),
+        pause_command_id=pending_id if kind == 'paused' and pause_triggered else '',
+        pause_state='event' if pause_event else '',
     )
 
 
@@ -665,6 +951,22 @@ def signal_result(
     try:
         if not is_stdio() or not isinstance(result, dict):
             return
+        data = result.get('data')
+        session_id = _raw_string(result, 'work_session_id')
+        status = result.get('work_session_status')
+        if tool_name == 'work_session_get' and result.get('status') == 'success':
+            if isinstance(data, dict):
+                session_id = _raw_string(data, 'id') or _raw_string(
+                    arguments, 'session_id'
+                )
+                status = data.get('status')
+        if session_id:
+            _limiter.observe_session(
+                session_id,
+                status,
+                _string(arguments, 'workspace'),
+                _string(arguments, 'region'),
+            )
         link = console_links.get(id(result)) if console_links else None
         signal = _from_result(result, arguments, tool_name, link[1] if link else '')
         if signal is not None:
@@ -675,6 +977,8 @@ def signal_result(
                 _string(arguments, 'region'),
                 target=signal.target,
                 pending_id=signal.pending_id,
+                pause_id=signal.pause_id,
+                pause_command_id=signal.pause_command_id,
             )
             if folded is not None:
                 task = asyncio.create_task(_deliver(*signal.text(folded), signal))

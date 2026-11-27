@@ -8,7 +8,9 @@ from unittest.mock import patch
 
 import httpx
 import pytest
+from mcp.server.mcpserver.exceptions import ToolError
 
+from server import mcp
 from tools.command_tools import DO_NOT_RESUBMIT, execute_command
 from tools.events_tools import list_events
 from tools.iam_tools import (
@@ -32,6 +34,18 @@ pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 SERVER_ID = '550e8400-e29b-41d4-a716-446655440001'
 USER_ID = '550e8400-e29b-41d4-a716-446655440002'
 MISSING_SERVER_ID = '99999999-9999-9999-9999-999999999999'
+
+
+@pytest.fixture
+def iam_delete_250_response() -> httpx.Response:
+    """Alpacon 2.50.0 DELETE /api/iam/users/{id}/.
+
+    DeleteHomeQuerySerializer: "archive_home = serializers.BooleanField(default=False)".
+    Query parameter description: "Archive the home directory when deleting the user."
+    UserViewSet.destroy declares "responses={204: None, 400: HOME_PURGE_REMOVED_RESPONSE}".
+    The view calls "instance.delete(archive_home=archive_home)".
+    """
+    return httpx.Response(HTTPStatus.NO_CONTENT)
 
 
 class TestServerToolsEndToEnd:
@@ -223,12 +237,14 @@ class TestIAMToolsEndToEnd:
         mock_token_for_integration,
         arguments,
         expected_query,
+        iam_delete_250_response: httpx.Response,
     ):
         def handler(request: httpx.Request) -> httpx.Response:
             assert request.method == 'DELETE'
             assert request.url.path == f'/api/iam/users/{USER_ID}/'
             assert request.url.query == expected_query
-            return httpx.Response(HTTPStatus.NO_CONTENT)
+            assert request.content == b''
+            return iam_delete_250_response
 
         patched_http_client.set_handler(handler)
 
@@ -238,21 +254,35 @@ class TestIAMToolsEndToEnd:
 
         assert result['status'] == 'success'
 
-    @pytest.mark.parametrize('code', ['home_purge_removed', 'system_home_conflict'])
-    async def test_delete_iam_user_passes_through_error_code(
-        self, patched_http_client, mock_token_for_integration, code
+    async def test_delete_iam_user_describes_host_archive_limits(self):
+        tools = {tool.name: tool for tool in await mcp.list_tools()}
+        description = tools['delete_iam_user'].description
+        assert description is not None
+        assert 'Alpacon 2.50.0' in description
+        assert 'Alpamon 2.9.2' in description
+        assert 'Debian- and RHEL-family Linux with openat2' in description
+        assert 'leave the home in place' in description
+        assert 'does not confirm host cleanup' in description
+
+    @pytest.mark.parametrize('archive_home', [1, 'yes'])
+    async def test_delete_iam_user_rejects_non_boolean_archive_requests(
+        self, patched_http_client, mock_token_for_integration, archive_home
     ):
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(HTTPStatus.BAD_REQUEST, json={'code': code})
+            pytest.fail(f'Unexpected {request.method} to {request.url.path}')
 
         patched_http_client.set_handler(handler)
 
-        result = await delete_iam_user(
-            user_id=USER_ID, workspace='production', region='ap1'
-        )
-
-        assert result['status'] == 'error'
-        assert result['error_code'] == code
+        with pytest.raises(ToolError, match='archive_home'):
+            await mcp.call_tool(
+                'delete_iam_user',
+                {
+                    'user_id': USER_ID,
+                    'workspace': 'production',
+                    'region': 'ap1',
+                    'archive_home': archive_home,
+                },
+            )
 
 
 class TestEventsEndToEnd:

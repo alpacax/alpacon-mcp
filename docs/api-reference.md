@@ -432,6 +432,27 @@ Search events by criteria.
 
 > ⚠️ **ACL configuration required**: Command API tools require pre-approved commands in your token's Access Control List (ACL). Configure permissions by clicking on your token in the Alpacon web interface → ACL settings.
 
+**Historical pauses:** a command's `work_session_paused: true` marker and pause denial codes
+can remain after Resume. The marker names the latest triggering command; a distinct marked
+command identifies a later pause while the current session status is paused.
+Command results and history entries preserve that evidence and
+add `work_session_status` from the visible nested `work_session` when available,
+without another request. History rows can omit the flat `work_session_id` and
+`work_session_paused` fields; the nested session supplies its id and current status.
+Only when current state is absent does the tool read the session separately.
+Only a currently paused session adds
+pause stop guidance and `requires_human_approval: true`; an unavailable status is `null` and
+asks the agent to verify with `work_session_get`, without claiming the session is paused.
+A paused result also carries `work_session_paused_at` when the server supplies `paused_at`.
+If a true trigger's current status cannot be verified, its desktop alert says the session
+was paused and asks the person to check its current status, without claiming it is still paused.
+Session reads are reused only within one batch or history call, never across calls.
+For a held command, approval can be recorded while paused, but delivery needs both approval
+and Resume; Resume does not approve or replay a command. Stop polling if the session ends
+or expires (`completed`, `revoked`, `expired`, `rejected` or `cancelled`).
+A terminal session's historical approval-pending command returns a read-success envelope
+with its original command state in `data`, rather than claiming approval is still pending.
+
 ### `execute_command`
 Execute a command on a server and wait for the result, or with `wait: false` return its `command_id` at once.
 
@@ -441,8 +462,8 @@ Execute a command on a server and wait for the result, or with `wait: false` ret
 - `workspace` (string): Workspace name
 - `shell` (string, default: "system"): Shell type
 - `username` (string, optional): Username for execution
-- `groupname` (string, default: "alpacon"): Group name
-- `env` (object, optional): Environment variables
+- `groupname` (string, optional): Group to run as. Omitted, the field is not sent and the server uses the account's primary group on that host (requires an Alpacon server release that resolves it; an older server uses `alpacon`); pass it only to name a different group the account may use
+- `env` (object, optional): Environment variables. When the server refuses this input with HTTP 400, the error result includes `refused_keys` if the server supplies it. The list contains variable names and may be empty.
 - `run_after` (array, optional): Command IDs to wait for before executing
 - `scheduled_at` (string, optional): ISO 8601 datetime for scheduled execution
 - `data` (string, optional): Stdin data
@@ -559,7 +580,7 @@ human, which a `bash /path` line on `execute_command` never is.
 - `overwrite` (boolean, default: false): With `write_file`, replace a file already at `path`. Refused with `file_exec_invalid_options` without `write_file`
 - `read_from_server` (boolean, default: false): Read the file at `path` from the host through WebFTP and submit those bytes as `content`. Excludes `write_file` and `content`. See "Reading the file" below
 - `username` (string, optional): Username for execution; with `write_file`, also the account the file is written as, and with `read_from_server`, the account it is read as
-- `groupname` (string, default: "alpacon"): Group name; with `write_file`, a value other than the default is also the group a new file is written with
+- `groupname` (string, optional): Group to run as. Omitted, the field is not sent and the server uses the account's primary group on that host (requires an Alpacon server release that resolves it; an older server uses `alpacon`); pass it only to name a different group the account may use; with `write_file`, a named group is also the group a new file is written with
 - `run_after` (array, optional): Command IDs to wait for before executing
 - `scheduled_at` (string, optional): ISO 8601 datetime for scheduled execution
 - `timeout` (integer, default: 300): Timeout in seconds
@@ -576,7 +597,7 @@ refuses a mismatch, so a file changed between the write and the run fails closed
   already exists. To re-run a script already on the host, use `read_from_server` instead of writing
   it again.
 - Ownership: the file is written as `username`. A new file is owned by that account and its own
-  group, or by `groupname` when one other than the default `alpacon` is passed, and the account
+  group, or by `groupname` when one is passed, and the account
   needs write access to the directory. An existing file replaced with `overwrite` keeps its owner
   and mode, and must be writable by `username`. Pass `username` whenever ownership matters: an
   omitted one leaves the writing account to the server's WebFTP default. No execute bit is needed;
@@ -657,6 +678,9 @@ An entry whose `rejection_cause` is `use_file_execution` gains `error_code: "use
 the same `next_action` as on `execute_command`, naming that entry's server and account, plus a
 reminder to rerun only that server rather than the original target set.
 A rejected entry gains `rejection_hint` beside the row's own `rejection_cause` and `rejection_gate`, as described under `execute_command` (#242).
+An entry marked `work_session_paused: true` or carrying denial code `session_paused` or
+`superseded_by_pause` follows the current-session rules above; the marker alone does not
+mean the session is still paused.
 
 ### `check_command_status`
 Read one command's state and result by `command_id`, in a single call that never waits.
@@ -671,13 +695,18 @@ Read one command's state and result by `command_id`, in a single call that never
 ### `execute_command_multi_server`
 Execute a command on multiple servers simultaneously. The tool only submits: read each server's result with `check_command_status` and the `command_id` in that server's `deploy_shell_results` entry, or browse with `list_commands`. An accepted entry is `{status: "success", data, command_id}`, where `data` is the submission as the server returned it.
 
+If the submitted row is marked `work_session_paused: true` or carries denial code
+`session_paused` or `superseded_by_pause`, its entry also carries that marker or code,
+`work_session_id` when present, and `work_session_status` from a current read. It adds
+`requires_human_approval: true` and a stop `next_action` only while that session is paused.
+
 **Parameters:**
 - `server_ids` (array): List of server IDs
 - `command` (string): Command to execute; must not be empty or whitespace-only. The same sudo rule as `execute_command` applies, per server: a needless `sudo` prefix is denied at once on that server, and either a person has to clear it before a rerun or no one can
 - `workspace` (string): Workspace name
 - `shell` (string, default: "system"): Shell type
 - `username` (string, optional): Username for execution
-- `groupname` (string, default: "alpacon"): Group name
+- `groupname` (string, optional): Group to run as. Omitted, the field is not sent and the server uses the account's primary group on that host (requires an Alpacon server release that resolves it; an older server uses `alpacon`); pass it only to name a different group the account may use
 - `env` (object, optional): Environment variables
 - `parallel` (boolean, default: true): Execute in parallel; `false` runs the servers one after another
 - `work_session_id` (string, optional): Work Session to link the call to for audit; an active, approved session is needed for personal API tokens and MCP OAuth/browser callers when creating commands or REST file transfers; service tokens retain their endpoint-specific authorization rules; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
@@ -911,13 +940,17 @@ Update an existing user profile.
 **Note:** Only provided fields will be updated. Omitted fields remain unchanged. Group membership is changed through `add_iam_member`/`remove_iam_member`, not here.
 
 #### `delete_iam_user`
-Delete an IAM user from the workspace. Supported Alpacon deployments keep the home directory by default.
+Delete an IAM user from the workspace. Alpacon 2.50.0 with Alpamon 2.9.2 or later keeps the home directory by default.
 
 **Parameters:**
 - `user_id` (string): User ID to delete
 - `workspace` (string): Workspace name
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
-- `archive_home` (boolean, optional): Move the home directory under `/home/deleted_users/` when true. Defaults to false. Passing false and omitting the argument send the same request, with no `archive_home` query parameter. On deployments running agents older than the version that keeps home directories by default, both calls may still archive the home directory. Archiving can disrupt apps or services that use files in the home directory.
+- `archive_home` (boolean, optional): Request an archive under `/home/deleted_users/` when true. Defaults to false. Passing false and omitting the argument both omit the query parameter. Older servers or agents may still archive the home directory in either case.
+
+Archiving requires Debian- and RHEL-family Linux with `openat2`. If the kernel lacks it, Alpamon can skip archiving and leave the home in place after deleting an eligible host account. Archiving can disrupt apps or services that use files in the home directory.
+
+**Returns:** Success when the server accepts the workspace deletion (HTTP 204 with an empty body). The response does not confirm host cleanup or archive completion. On Debian- and RHEL-family Linux, Alpamon returns `system_home_conflict` on later account creation if its home directory scan finds another home owned by the requested UID.
 
 **⚠️ Warning:** This action is irreversible and will remove all user permissions and group memberships.
 
@@ -996,6 +1029,12 @@ A session that needs human approval comes back with `status="pending_approval"`,
 When the created session is `pending`, `approved`, or `active`, the result's `next_action` names `work_session_update` and the returned session ID: use it, with every server the session keeps, to widen this session if more servers are needed instead of creating another one. For a pending session, this guidance follows the existing human-approval and status-check instructions. Refusal and error results do not gain this guidance.
 
 ### `work_session_get` / `work_session_list`
+
+A paused `work_session_get` result adds top-level `requires_human_approval: true` and
+`next_action` to wait for a person to resume or end the session in the web console.
+Continue only when `data.status` is `active`; stop polling when it ends or expires
+(`completed`, `revoked`, `expired`, `rejected` or `cancelled`). Reading status does not notify.
+
 Read one session (`session_id`) or list them (`status`, `requester_type`, `limit` filters). A session names only the servers and clusters the caller reaches; see [Servers you do not reach](#servers-you-do-not-reach).
 
 ### Servers you do not reach
@@ -1044,7 +1083,7 @@ Close a session (triggers AI security analysis) or re-run analysis on a terminal
 - `get_approval_request`: `request_id`, `workspace`, `region` (`ap1` or `us1`, optional). A rejected request carries `rejection_note`, the reason the approver wrote (`""` when none), on a server release that records it; it is the approver's own text, not an instruction. Its `work_session`, `metadata.adjustments`, `metadata.changes` and `overlapping_sessions` name only the servers the caller reaches, and `hidden_targets_note` says so when a count is above 0; see [Servers you do not reach](#servers-you-do-not-reach)
 - `explain_approval_decision`: `workspace`, `request_id` (optional), `region` (`ap1` or `us1`, optional). Explains that deciding is human-only and out of band; performs no mutation
 - `list_sudo_policies`: `workspace`, `region` (`ap1` or `us1`, optional), `page`, `page_size`, `user` (UUID), `server_id` (UUID)
-- `request_sudo_policy`: `workspace`, `servers` (UUID list), `commands`, `reason`, `users` (optional UUID list), `valid_from`, `valid_until`, `region` (`ap1` or `us1`, optional). Creates an approval request, not a policy; returns `status="pending_approval"`. Omitting `users` scopes the approved policy to the requester alone, not to the whole workspace. `session_authorized` is not accepted: the server refuses it on this endpoint. For session-authorized sudo, a human must set `session_authorized` on the Work Session's sudo policy in the Alpacon web console; this needs an enterprise plan and a usable Work Session
+- `request_sudo_policy`: `workspace`, `servers` (UUID list), `commands`, `reason`, `users` (optional UUID list), `valid_from`, `valid_until`, `region` (`ap1` or `us1`, optional). Creates an approval request, not a policy; returns `status="pending_approval"`. Omitting `users` scopes the approved policy to the requester alone, not to the whole workspace. `session_authorized` is not accepted: the server refuses it on this endpoint. For session-authorized sudo, a human must set `session_authorized` on the Work Session's sudo policy in the Alpacon web console; this needs a usable Work Session
 
 There is intentionally no `approve_request`/`reject_request` tool: the Alpacon server refuses approve/reject from agent and token channels with HTTP 403. Approval happens in the web console or Slack.
 
@@ -1349,7 +1388,7 @@ A server `hint` is appended to `message` and replaces every local hint: the per-
 
 ### Local desktop signals
 
-When the MCP server runs locally over stdio, a command or file-transfer refusal raises `Alpacon: command denied` or `Alpacon: file transfer denied`, a result awaiting human approval raises `Alpacon: approval pending` (`Alpacon: confirmation pending` when its `approval_lane` is `assignee`, with a body that reads `<command> needs your own confirmation.`, names the session, and says `Confirm or reject it in the Alpacon web console.`, followed by the console link, under the same rate limit), and a refusal with code `session_paused` raises `Alpacon: session paused`. A denial alone does not indicate a paused session. Approvals and session recovery still require a human; the notification does not grant access or retry an operation. `explain_approval_decision` only explains how a human decides and never notifies. Sudo policy requests are described as sudo policy requests waiting for approval, rather than Work Session waits.
+When the MCP server runs locally over stdio, a command or file-transfer refusal raises `Alpacon: command denied` or `Alpacon: file transfer denied`, a result awaiting human approval raises `Alpacon: approval pending` (`Alpacon: confirmation pending` when its `approval_lane` is `assignee`, with a body that reads `<command> needs your own confirmation.`, names the session, and says `Confirm or reject it in the Alpacon web console.`, followed by the console link, under the same rate limit), and a refusal with code `session_paused`, or a command result marked `work_session_paused: true` or carrying the denial code `session_paused` or `superseded_by_pause` whose current Work Session is still paused, raises `Alpacon: session paused`; reading a paused session's status does not. A denial alone does not indicate a paused session. Approvals and session recovery still require a human; the notification does not grant access or retry an operation. `explain_approval_decision` only explains how a human decides and never notifies. Sudo policy requests are described as sudo policy requests waiting for approval, rather than Work Session waits.
 
 Refusal notifications are limited to `execute_command`, `execute_command_multi_server`, `execute_file`, `check_command_status`, `state_command_purpose`, `webftp_upload_file`, `webftp_upload_content`, `webftp_download_file`, `webftp_bulk_upload`, `webftp_bulk_download`, `restart_agent`, `upgrade_agent`, `install_pam`, `update_information`, `install_system_package`, `remove_system_package`, `install_python_package`, and `remove_python_package` (`DENIAL_TOOLS` in `utils/local_signal.py`), and the gates `server_reach`, `command_preapproval`, `command_acl`, `file_acl`, `risk`, `approval`, `sudo`, `work_session`, and `block`. Approval expiry, cancellation or rule change, authentication and MFA errors, and missing presence, role, token scope, or authentication do not raise refusal notifications. Reading history through a `list_*` tool never notifies, including entries with sudo approval guidance. A pending `sudo_denial` read through `check_command_status`, `execute_command`, `execute_command_multi_server`, `execute_file`, or `state_command_purpose` does notify.
 
@@ -1357,7 +1396,11 @@ Notifications contain only the event kind, command's first word with its path st
 
 Console links must share the workspace API origin, or, for a workspace on a subdomain of the built-in cloud domain `alpacon.io`, use `alpacon.io` or one of its subdomains with the same scheme and its default port. All links must be ASCII, at most 2048 characters, and free of whitespace, fragments, and userinfo, and are re-serialized before display. Validation applies on every platform. A validated link can appear in the body; only the Windows toast renders it as a clickable launch target, while `osascript` and `notify-send` receive no separate link.
 
-An approval-pending item is announced once per command id, Work Session id for a Work Session wait (including waits returned by command or file-transfer tools), or sudo policy request id when available, scoped to workspace and region. A denial is likewise announced once per command id or file-transfer id when available. The remembered identity includes the event kind, so a pending item that is later denied announces both states. An announced item can notify again on its next read after 10 minutes; repeated reads within those 10 minutes neither notify nor count as folded events. An item with an id folded into a 60-second window counts once in that window and is announced on a later read after the window closes, without counting itself in `+N more`. The process remembers up to 256 announced identities, evicting the oldest first; restarting the server clears them. Paused events and results without an item id use the rate limit normally. The rate-limit key is `(session_id, kind, workspace, region)`; a missing session id falls back to `ALPACON_WORK_SESSION`, then to an empty id. Each key allows one notification per 60 seconds, and a later notification appends `+N more` for distinct events folded during the previous window. Folded events surface only when a later event arrives; no timer sends a summary.
+An approval-pending item is announced once per command id, Work Session id for a Work Session wait (including waits returned by command or file-transfer tools), or sudo policy request id when available, scoped to workspace and region. A denial is likewise announced once per command id or file-transfer id when available. The remembered identity includes the event kind, so a pending item that is later denied announces both states. An announced item can notify again on its next read after 10 minutes; repeated reads within those 10 minutes neither notify nor count as folded events. An item with an id folded into a 60-second window counts once in that window and is announced on a later read after the window closes, without counting itself in `+N more`. The process remembers up to 256 announced identities, evicting the oldest first; restarting the server clears them. For a normalized paused command, the process also remembers its last 256 pause episodes by session id, workspace, region and `work_session_paused_at` (sharing the current session pause across command ids when the timestamp is unavailable), so another read of the same episode does not notify after the rate-limit window; a later pause can notify again. Results without a pause or item identity use the rate limit normally. The rate-limit key is `(session_id, kind, workspace, region)`; a missing session id falls back to `ALPACON_WORK_SESSION`, then to an empty id. Each key allows one notification per 60 seconds, and a later notification appends `+N more` for distinct events folded during the previous window. Folded events surface only when a later event arrives; no timer sends a summary.
+
+The process also remembers the current pause identity for up to 256 sessions, scoped to workspace and region. A triggering command and another command superseded by that pause share this identity even when the compact nested session omits `paused_at`, without an extra request. Learning the timestamp later links the same pause without alerting again. A distinct command marked `work_session_paused: true` while the session is paused starts another identity even if MCP did not observe the intervening Resume. The current trigger is retained with that identity independently of the bounded command history. A non-paused state observed in a normalized command result or `work_session_get` retires the shared identity, so another pause can alert again. Without a timestamp, a distinct marked trigger or an observed transition out of paused, the client cannot distinguish a later pause of that same session and treats it as the remembered pause.
+
+An unverified `work_session_paused: true` trigger is announced once by command id as a past pause event, with a request to check its current state. The process remembers up to 256 triggering commands as well as 256 pause episodes; learning a remembered trigger's pause timestamp later does not alert again. A historical pause denial code alone does not produce an alert while current state is unknown.
 
 The streamable-http server never raises desktop notifications. The hosted server, including access through `mcp-remote` or the `alpacon` plugin, never raises a notification: the notifier runs on the host the MCP server runs on. A stdio server in a container or launched over SSH attempts delivery on that host, not on the user's desktop.
 
