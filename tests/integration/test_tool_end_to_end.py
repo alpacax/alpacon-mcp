@@ -254,6 +254,58 @@ class TestIAMToolsEndToEnd:
 
         assert result['status'] == 'success'
 
+    @pytest.mark.parametrize(
+        ('arguments', 'refusal_hint'),
+        [
+            pytest.param({}, {}, id='without-archive'),
+            pytest.param(
+                {'archive_home': True},
+                {
+                    'hint': 'Only a person signed in can do this; an API or '
+                    'service token cannot. Sign in to the CLI or the web console, then retry.'
+                },
+                id='with-archive-and-upstream-hint',
+            ),
+        ],
+    )
+    async def test_delete_iam_user_requires_signed_in_session(
+        self, patched_http_client, mock_token_for_integration, arguments, refusal_hint
+    ):
+        """Alpacon 2.50.0 checks console access (iam/api/views.py:553) before
+        parsing the query (iam/api/views.py:594). The guard refuses
+        non-console credentials (iam/api/permissions.py:132).
+        """
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert request.method == 'DELETE'
+            assert request.url.path == f'/api/iam/users/{USER_ID}/'
+            return httpx.Response(
+                HTTPStatus.FORBIDDEN,
+                json={
+                    'code': 'auth_session_principal_required',
+                    'gate': 'presence',
+                    **refusal_hint,
+                },
+            )
+
+        patched_http_client.set_handler(handler)
+
+        result = await delete_iam_user(
+            user_id=USER_ID, workspace='production', region='ap1', **arguments
+        )
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == HTTPStatus.FORBIDDEN
+        assert result['error_code'] == 'auth_session_principal_required'
+        assert 'requires a signed-in session' in result['message']
+        assert 'Use the Alpacon web console' in result['message']
+        assert 'CLI' not in result['message']
+        assert bool(result.get('hint')) == bool(refusal_hint)
+        if 'hint' in result:
+            assert result['hint'] == (
+                'This action requires a signed-in session. Use the Alpacon web console.'
+            )
+
     async def test_delete_iam_user_describes_host_archive_limits(self):
         tools = {tool.name: tool for tool in await mcp.list_tools()}
         description = tools['delete_iam_user'].description
@@ -263,6 +315,26 @@ class TestIAMToolsEndToEnd:
         assert 'Debian- and RHEL-family Linux with openat2' in description
         assert 'leave the home in place' in description
         assert 'does not confirm host cleanup' in description
+
+    @pytest.mark.parametrize('archive_home', ['false', 'true', 1])
+    async def test_delete_iam_user_direct_call_rejects_non_boolean_archive_requests(
+        self, patched_http_client, mock_token_for_integration, archive_home
+    ):
+        def handler(request: httpx.Request) -> httpx.Response:
+            pytest.fail(f'Unexpected {request.method} to {request.url.path}')
+
+        patched_http_client.set_handler(handler)
+
+        result = await delete_iam_user(
+            user_id=USER_ID,
+            workspace='production',
+            region='ap1',
+            archive_home=archive_home,
+        )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'validation'
+        assert result['field'] == 'archive_home'
 
     @pytest.mark.parametrize('archive_home', [1, 'yes'])
     async def test_delete_iam_user_rejects_non_boolean_archive_requests(

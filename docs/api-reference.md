@@ -940,7 +940,9 @@ Update an existing user profile.
 **Note:** Only provided fields will be updated. Omitted fields remain unchanged. Group membership is changed through `add_iam_member`/`remove_iam_member`, not here.
 
 #### `delete_iam_user`
-Delete an IAM user from the workspace. Alpacon 2.50.0 with Alpamon 2.9.2 or later keeps the home directory by default.
+Delete an IAM user from the workspace. Alpacon 2.50.0 requires a signed-in session for deletion, with or without `archive_home`. MCP credentials and personal API tokens receive HTTP 403 (`auth_session_principal_required`). Sign in to the Alpacon web console to delete the user.
+
+Alpacon 2.50.0 with Alpamon 2.9.2 or later keeps the home directory by default for an authorized deletion.
 
 **Parameters:**
 - `user_id` (string): User ID to delete

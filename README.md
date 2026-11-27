@@ -552,7 +552,7 @@ These tools need a JWT/OAuth session (hosted server), a browser session, or a lo
 - **get_iam_user**: Get detailed user information
 - **create_iam_user**: Create a new IAM user
 - **update_iam_user**: Update a user's email, name, or active status
-- **delete_iam_user**: Remove a user from the workspace. Alpacon 2.50.0 with Alpamon 2.9.2 or later keeps the home directory by default. Set `archive_home=true` to request an archive on Debian- and RHEL-family Linux with `openat2`. Older servers or agents may archive homes by default.
+- **delete_iam_user**: Remove a user from the workspace. Alpacon 2.50.0 requires a signed-in session for deletion, with or without `archive_home`. MCP credentials and personal API tokens receive HTTP 403. Sign in to the Alpacon web console to delete the user. Alpacon 2.50.0 with Alpamon 2.9.2 or later keeps the home directory by default. An authorized deletion can request an archive on Debian- and RHEL-family Linux with `openat2`. Older servers or agents may archive homes by default.
 - **invite_workspace_user**: Send an email invitation to join the workspace
 
 **Group and membership management**:

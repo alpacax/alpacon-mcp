@@ -192,8 +192,11 @@ async def update_iam_user(
 @mcp_tool_handler(
     description=(
         'Permanently delete an IAM user account from the workspace. This action cannot be undone. '
+        'Alpacon 2.50.0 requires a signed-in web console session to delete a user, '
+        'with or without archive_home. MCP credentials and personal API tokens receive HTTP 403. '
+        'Sign in to the Alpacon web console to delete the user. '
         'Alpacon 2.50.0 with Alpamon 2.9.2 or later keeps the home directory by default. '
-        'Set archive_home=true to request an archive under /home/deleted_users/. '
+        'For an authorized deletion, archive_home=true requests an archive under /home/deleted_users/. '
         'Archiving requires Debian- and RHEL-family Linux with openat2 '
         'and can disrupt services using the home. '
         'Without openat2, Alpamon can delete an eligible host account and leave the home in place. '
@@ -216,6 +219,11 @@ async def delete_iam_user(
     err = uuid_field_error('user_id', user_id)
     if err:
         return err
+    unvalidated_archive_home: object = archive_home
+    if not isinstance(unvalidated_archive_home, bool):
+        return format_validation_error(
+            'archive_home', unvalidated_archive_home, 'Boolean (true or false).'
+        )
 
     token = kwargs.get('token')
 

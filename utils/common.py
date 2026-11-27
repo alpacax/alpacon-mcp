@@ -380,6 +380,9 @@ COMMAND_ENV_REFUSAL_HINTS: dict[str, str] = {
 
 _ERROR_CODE_HINT: dict[str, str] = {
     **COMMAND_ENV_REFUSAL_HINTS,
+    'auth_session_principal_required': (
+        'This action requires a signed-in session. Use the Alpacon web console.'
+    ),
     'auth_verification_unavailable': AUTH_VERIFICATION_UNAVAILABLE_HINT,
     'command_acl_moved': COMMAND_ACL_MOVED_HINT,
     'command_inline_credential': INLINE_CREDENTIAL_HINT,
@@ -835,7 +838,8 @@ def unwrap_http_result(
 ) -> ToolErrorResponse | None:
     """Return an error result for an http_client 4xx/5xx envelope, else None.
     Gate codes and 402 plan limits get dedicated results; other codes set error_code.
-    The body's gate, missing, next and hint ride every result; a server hint wins."""
+    The body's gate, missing, next and hint ride every result. The session
+    principal refusal uses console guidance for MCP callers."""
     if not (isinstance(result, dict) and 'error' in result):
         return None
 
@@ -847,9 +851,11 @@ def unwrap_http_result(
         error_kwargs['outcome_unknown'] = True
     body = _parse_error_body(result)
     refusal = _refusal_fields(body)
+    code = http_error_code(result)
+    if code == 'auth_session_principal_required' and 'hint' in refusal:
+        refusal['hint'] = _ERROR_CODE_HINT[code]
     error_kwargs.update(refusal)
 
-    code = http_error_code(result)
     if code is not None and is_work_session_gate_code(code):
         response = work_session_gate_response(code, **error_kwargs)
         if code == 'work_session_required' and body is not None:
