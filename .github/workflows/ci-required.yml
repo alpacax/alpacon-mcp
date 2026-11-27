@@ -68,7 +68,7 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
   workflow_run:
-    workflows: [Test, Hardening check VM]
+    workflows: [Test]
     types: [requested, in_progress, completed]
 
 permissions:
