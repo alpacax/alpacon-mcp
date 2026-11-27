@@ -184,7 +184,7 @@ def _collect(
     script = _script()
     replaced, count = re.subn(r'^R=$', f"R='{root}'", script, count=1, flags=re.M)
     assert count == 1
-    script_path = tmp_path / f'collector-{shell}.sh'
+    script_path = tmp_path / f'check-script-{shell}.sh'
     script_path.write_text(replaced)
     fake_dir = tmp_path / f'fake-{shell}'
     real_dir = tmp_path / f'real-{shell}'
@@ -450,7 +450,7 @@ def test_the_script_writes_no_file(shell: str):
     )
 
 
-def test_only_one_file_holds_the_collector(shell: str):
+def test_only_one_file_holds_the_check_script(shell: str):
     owners = []
     for path in (SKILLS.parents[2] / 'plugins').rglob('*.md'):
         for block in re.findall(r'```sh\n(.*?)```', path.read_text(), re.S):
@@ -460,15 +460,15 @@ def test_only_one_file_holds_the_collector(shell: str):
     assert owners == [COLLECT]
 
 
-def test_app_scripts_share_the_collectors_escape_byte_for_byte(shell: str):
-    collector_lib = re.search(r"^LIB='\n(.*?)\n'\n", _script(), re.M | re.S)
-    assert collector_lib
+def test_app_scripts_share_the_check_scripts_escape_byte_for_byte(shell: str):
+    check_lib = re.search(r"^LIB='\n(.*?)\n'\n", _script(), re.M | re.S)
+    assert check_lib
 
     for path in sorted((COLLECT.parent / 'apps').glob('*.md')):
         block = doc_blocks(str(path.relative_to(SKILLS)), 'sh')[0]
         app_lib = re.search(r"^LIB='\n(.*?)\n'\n", block, re.M | re.S)
         assert app_lib
-        assert app_lib.group(0) == collector_lib.group(0)
+        assert app_lib.group(0) == check_lib.group(0)
 
 
 def test_zimbra_app_script_emits_accounts_without_credentials(
@@ -985,9 +985,7 @@ def test_a_home_that_cannot_be_searched_is_unknown_not_empty(
     )
 
 
-def test_an_unsearchable_home_reports_each_owned_collector_kind(
-    tmp_path: Path, shell: str
-):
+def test_an_unsearchable_home_reports_each_owned_check_kind(tmp_path: Path, shell: str):
     if os.geteuid() == 0:
         pytest.skip('root can search a mode-000 home fixture')
     root = _host_tree(tmp_path)
@@ -1646,7 +1644,7 @@ def test_a_missing_webroot_is_unknown(tmp_path: Path, shell: str):
         ),
     ],
 )
-def test_an_unlistable_collector_directory_is_unknown(
+def test_an_unlistable_scanned_directory_is_unknown(
     tmp_path: Path,
     shell: str,
     kind: str,
@@ -1780,9 +1778,7 @@ def test_a_glob_secret_lists_each_match_and_an_unmatched_glob_is_exists_no(
     assert sum(row['exists'] == 'no' for row in records) == 1
 
 
-def test_a_secret_overlap_is_not_opened_by_another_collector(
-    tmp_path: Path, shell: str
-):
+def test_a_secret_overlap_is_not_opened_by_another_check(tmp_path: Path, shell: str):
     root = _host_tree(tmp_path)
     _write(root, 'var/www/html/secret.php', '<?php echo getenv("PASSWORD"); ?>\n')
 
@@ -2132,7 +2128,7 @@ def test_a_complete_run_ends_with_status_complete_and_counts(
     assert int(end['unknowns']) == len(result.records('unknown'))
 
 
-def test_each_collector_emits_exactly_one_coverage_record(tmp_path: Path, shell: str):
+def test_each_check_kind_emits_exactly_one_coverage_record(tmp_path: Path, shell: str):
     root = _host_tree(tmp_path)
 
     result = _collect(tmp_path, shell, root, f'since={SINCE}')
@@ -3077,7 +3073,7 @@ def test_package_verification_runs_beside_a_unit_masked_with_a_dev_null_link(
     assert '--verify' in log.read_text()
 
 
-def test_the_documented_collector_size_and_hash_match_the_block(shell: str):
+def test_the_documented_check_script_size_and_hash_match_the_block(shell: str):
     if shell == 'bash':
         pytest.skip('the documents do not depend on the shell')
     body = _script().encode()
@@ -3093,7 +3089,7 @@ def test_the_documented_collector_size_and_hash_match_the_block(shell: str):
     assert f'every one of its {lines} lines' in skill
 
 
-def test_the_collector_has_no_whitespace_that_a_copy_can_drop(shell: str):
+def test_the_check_script_has_no_whitespace_that_a_copy_can_drop(shell: str):
     if shell == 'bash':
         pytest.skip('the block does not depend on the shell')
     body = _script()
