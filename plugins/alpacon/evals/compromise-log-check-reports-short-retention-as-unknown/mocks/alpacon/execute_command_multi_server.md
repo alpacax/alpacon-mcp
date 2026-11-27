@@ -1,1 +1,0 @@
-{"status": "success", "deploy_shell_results": {"7c9e6679-7425-40de-944b-e07fc1f90ae7": {"status": "success", "data": {"id": "4b7d9e21-3c5a-4f68-9d0e-8a1b2c3d4e5f"}, "command_id": "4b7d9e21-3c5a-4f68-9d0e-8a1b2c3d4e5f"}}, "command": "{{input.command}}", "total_servers": 1, "successful_count": 1, "failed_count": 0, "execution_type": "parallel", "region": "ap1", "workspace": "acme"}

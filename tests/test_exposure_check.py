@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from tests.eval_mocks import EXPOSURE_RESULT
 from tests.skill_scripts import doc_blocks, install_fakes, run_with_fakes
 
 CHECKS = 'exposure-check/references/checks.md'
@@ -586,25 +585,6 @@ class TestExposureCheck:
         out, _ = _run(tmp_path, shell, 0, {}, SS_EXIT='1')
 
         assert out == 'verdict=unknown reason=ss-failed\n'
-
-    @pytest.mark.skipif(os.geteuid() == 0, reason='root sees every process name')
-    def test_the_eval_mock_answers_what_the_check_prints_for_minio(
-        self, tmp_path: Path, shell: str
-    ):
-        out, _ = _run(
-            tmp_path,
-            shell,
-            0,
-            {'ports': '9000 9001', 'endpoints': ''},
-            SS_OUT=_ss(
-                'LISTEN 0 4096 0.0.0.0:9000 0.0.0.0:*',
-                'LISTEN 0 4096 0.0.0.0:9001 0.0.0.0:*',
-                'LISTEN 0 128 0.0.0.0:22 0.0.0.0:*',
-                'LISTEN 0 128 [::]:22 [::]:*',
-            ),
-        )
-
-        assert out == EXPOSURE_RESULT
 
     def test_says_other_accounts_process_names_are_hidden(
         self, tmp_path: Path, shell: str

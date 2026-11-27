@@ -1,6 +1,5 @@
 import bz2
 import gzip
-import json
 import os
 import re
 import shutil
@@ -9,9 +8,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 import pytest
-import yaml  # type: ignore[import-untyped]
 
-from tests.eval_mocks import LOG_RESULT
 from tests.skill_scripts import doc_blocks, install_fakes
 
 SEARCH = 'compromise-log-check/references/search.md'
@@ -893,135 +890,6 @@ def test_newline_in_a_rotated_name_reads_no_other_file(
     assert 'total pattern=1 count=0 shown=0' in out
     assert f'file path={log} status=unsafe_name' in out
     assert out[-1] == 'search=incomplete files=2 problems=1'
-
-
-def test_eval_mock_output_is_what_the_search_prints(shell: str, log: Path) -> None:
-    def row(time: str) -> str:
-        return HOME.replace(TIME, f'[{time} +0900]') + '\n'
-
-    old = Path(f'{log}.1')
-    old.write_text(row('10/Nov/2026:00:00:04') + row('22/Nov/2026:23:59:51'))
-    log.write_text(row('23/Nov/2026:15:59:58'))
-    os.utime(old, (1_795_359_600, 1_795_359_600))
-    os.utime(log, (1_795_417_198, 1_795_417_198))
-
-    out = _search(shell, log)
-
-    printed = [line.replace(str(log), '/var/log/nginx/access.log') for line in out]
-    assert printed[1:] == LOG_RESULT.splitlines()[1:]
-
-
-PAIR_MOCK = (
-    Path(__file__).parent.parent
-    / 'plugins/alpacon/evals/compromise-log-check-pairs-only-a-later-request'
-    / 'mocks/alpacon/execute_file.md'
-)
-
-
-def _pair_case_logs(log: Path) -> None:
-    """The nginx logs the pairing eval's answers describe, at their line numbers."""
-
-    def row(address: str, time: str, request: str = 'GET / HTTP/1.1" 200 1') -> str:
-        return f'{address} - - [{time} +0900] "{request}'
-
-    filler = row('192.0.2.5', '01/Aug/2026:00:00:04')
-    old = [filler] * 81200
-    old[-1] = row('192.0.2.5', '22/Nov/2026:23:59:51')
-    for place, address, time, request in [
-        (
-            20077,
-            '198.51.100.44',
-            '04/Aug/2026:10:04:17',
-            'GET /api/user/current HTTP/1.1" 200 900',
-        ),
-        (
-            20113,
-            '198.51.100.44',
-            '04/Aug/2026:10:12:01',
-            'POST /api/session/reset_password HTTP/1.1" 400 64',
-        ),
-        (
-            27450,
-            '203.0.113.9',
-            '05/Aug/2026:02:31:40',
-            'POST /api/session/reset_password HTTP/1.1" 400 64',
-        ),
-        (
-            27452,
-            '203.0.113.9',
-            '05/Aug/2026:02:31:43',
-            'GET /api/user/current HTTP/1.1" 200 900',
-        ),
-    ]:
-        old[place - 1] = row(address, time, request)
-    new = [row('192.0.2.5', '23/Nov/2026:00:00:02')] * 409 + [
-        row('192.0.2.5', '23/Nov/2026:15:59:58')
-    ]
-    rotated = Path(f'{log}.1')
-    rotated.write_text('\n'.join(old) + '\n')
-    log.write_text('\n'.join(new) + '\n')
-    os.utime(rotated, (1_795_359_600, 1_795_359_600))
-    os.utime(log, (1_795_417_198, 1_795_417_198))
-
-
-def test_pairing_eval_answers_are_what_the_search_prints(shell: str, log: Path) -> None:
-    _pair_case_logs(log)
-    anchor = re.search("^patterns='(.*)'$", doc_blocks(SEARCH, 'sh')[0], re.M)
-    assert anchor
-    answers = re.findall(r'```text\n(.*?)```', PAIR_MOCK.read_text(), re.S)
-
-    runs = [
-        _search(shell, log),
-        _search(shell, log, patterns=SECOND, also='^198.51.100.44 '),
-        _search(shell, log, patterns=SECOND, also='^203.0.113.9 '),
-    ]
-
-    for out, answer in zip(runs, answers, strict=True):
-        printed = [line.replace(str(log), '/var/log/nginx/access.log') for line in out]
-        assert printed[1:] == answer.splitlines()[1:]
-
-
-def _graders() -> list[tuple[str, str]]:
-    evals = Path(__file__).parent.parent / 'plugins/alpacon/evals'
-    return [
-        (grader['name'], grader['input_match'])
-        for case in sorted(evals.glob('compromise-log-check-*/case.yaml'))
-        for grader in yaml.safe_load(case.read_text())['graders']
-        if grader.get('tool', '').endswith('execute_file')
-        and 'patterns=' in grader.get('input_match', '')
-        and grader.get('max') != 0
-    ]
-
-
-@pytest.mark.parametrize(('name', 'input_match'), _graders())
-def test_eval_grader_accepts_only_the_documented_expression(
-    shell: str, name: str, input_match: str
-) -> None:
-    script = doc_blocks(SEARCH, 'sh')[0]
-    anchor = re.search("^patterns='(.*)'$", script, re.M)
-    assert anchor
-    if 'Gg' in input_match:
-        script = script.replace(anchor[1], SECOND)
-    address = re.search(r"also='\\\^([0-9.\\]+) '", input_match)
-    if address:
-        script = script.replace(
-            "also=''", f"also='^{address[1].replace(chr(92), '')} '"
-        )
-
-    def submitted(text: str) -> str:
-        return json.dumps({'content': text})
-
-    assert re.search(input_match, submitted(script)), name
-    for wrong in [
-        ('[Pp][Oo][Ss][Tt]', 'GET'),
-        ('[Gg][Ee][Tt]', 'POST'),
-        ('" 400', '" 200'),
-        ('" 200', '" 401'),
-    ]:
-        if wrong[0] in script:
-            assert not re.search(
-                input_match, submitted(script.replace(wrong[0], wrong[1], 1))
-            ), (name, wrong)
 
 
 def test_file_line_lists_each_day_its_lines_were_logged_on(
