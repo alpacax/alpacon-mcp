@@ -6,11 +6,20 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from tests.hardening import SCRIPT, Group, ItemId, Verdict, load_registry, parse_run
+from tests.hardening import (
+    PERSON_KEYS,
+    SCRIPT,
+    Group,
+    ItemId,
+    Verdict,
+    load_registry,
+    parse_run,
+)
 
 if TYPE_CHECKING:
     from tests.lima.conftest import LimaVM
 
+# weakened.sh builds on the packages secured.sh installs, so the order matters.
 STATES = ('absent', 'secured', 'weakened')
 PROVISION = Path(__file__).with_name('provision')
 P, F, N = Verdict.PASS, Verdict.FAIL, Verdict.NA
@@ -91,22 +100,6 @@ EXPECTED = {
     for family, overrides in FAMILY_OVERRIDES.items()
 }
 
-PERSON_KEYS = {
-    ItemId('U-07'): {'login_accounts', 'names', 'more'},
-    ItemId('U-08'): {'admin_accounts', 'names', 'more'},
-    ItemId('U-09'): {'orphan_groups', 'names', 'more'},
-    ItemId('U-11'): {'login_shell_accounts', 'names', 'more'},
-    ItemId('U-23'): {'privileged_files', 'paths', 'more'},
-    ItemId('U-25'): {'world_writable', 'paths', 'more'},
-    ItemId('U-26'): {'non_device_files', 'paths', 'more'},
-    ItemId('U-28'): {'firewall', 'tcp_wrappers', 'listeners'},
-    ItemId('U-33'): {'hidden_paths', 'paths', 'more'},
-    ItemId('U-39'): {'nfs_installed', 'nfs_active'},
-    ItemId('U-56'): {'ftp_access_control', 'rules'},
-    ItemId('U-58'): {'snmp_installed', 'snmp_active'},
-    ItemId('U-66'): {'logging', 'destinations', 'remote'},
-}
-
 
 @pytest.mark.lima
 @pytest.mark.parametrize('family', ['debian', 'rhel'])
@@ -120,13 +113,13 @@ def test_published_script_reports_each_provisioned_state(
     mismatches = []
 
     with vm.staging_directory() as directory:
+        vm.copy(SCRIPT, f'{directory}/{SCRIPT.name}')
         for state in STATES:
             expected = EXPECTED[family][state]
             assert expected.keys() == script_ids, state
             provision = PROVISION / family / f'{state}.sh'
             vm.copy(provision, f'{directory}/{provision.name}')
             vm.shell('sudo', '/bin/sh', f'{directory}/{provision.name}')
-            vm.copy(SCRIPT, f'{directory}/{SCRIPT.name}')
             stdout = vm.shell('sudo', '/bin/sh', f'{directory}/{SCRIPT.name}')
 
             run = parse_run(stdout, registry, expected_sha256=sha256)

@@ -48,9 +48,11 @@ class LimaVM:
 def vm(family: str) -> LimaVM:
     variable = f'HARDENING_VM_{family.upper()}'
     name = os.environ.get(variable, '').strip()
-    if not name:
-        pytest.skip(f'Set {variable} to a running disposable Lima VM')
+    required = os.environ.get('HARDENING_VM_REQUIRED') == family
     executable = shutil.which('limactl')
-    if executable is None:
-        pytest.skip('Install limactl to run the Lima hardening checks')
+    if not name or executable is None:
+        reason = f'Set {variable} to a running disposable Lima VM and install limactl'
+        if required:
+            pytest.fail(reason)
+        pytest.skip(reason)
     return LimaVM(executable, name)

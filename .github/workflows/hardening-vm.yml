@@ -6,6 +6,9 @@ on:
       - 'plugins/alpacon/skills/hardening-check/**'
       - 'tests/lima/**'
       - 'tests/hardening.py'
+      - 'pytest.ini'
+      - 'pyproject.toml'
+      - 'uv.lock'
       - '.github/workflows/hardening-vm.yml'
   push:
     branches: [main]
@@ -13,6 +16,9 @@ on:
       - 'plugins/alpacon/skills/hardening-check/**'
       - 'tests/lima/**'
       - 'tests/hardening.py'
+      - 'pytest.ini'
+      - 'pyproject.toml'
+      - 'uv.lock'
       - '.github/workflows/hardening-vm.yml'
 
 permissions:
@@ -59,7 +65,7 @@ jobs:
 
       - name: Run hardening checks
         env:
-          FAMILY: ${{ matrix.family }}
           HARDENING_VM_DEBIAN: ${{ matrix.family == 'debian' && 'hardening' || '' }}
           HARDENING_VM_RHEL: ${{ matrix.family == 'rhel' && 'hardening' || '' }}
-        run: uv run --no-sync pytest -m lima tests/lima -k "$FAMILY"
+          HARDENING_VM_REQUIRED: ${{ matrix.family }}
+        run: uv run --no-sync pytest -m lima tests/lima
