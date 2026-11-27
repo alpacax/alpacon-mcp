@@ -21,7 +21,7 @@ The person only agrees; the skill makes every other choice itself and says what 
 
 1. Call `list_servers` and keep every server in scope in the report. Offline is `unknown` (`offline`). A `platform` or `os` other than Linux is `unknown` (`unsupported-os`); never send it the check script.
 2. Ask for one agreement. Show [the check script](references/collect.md#the-script)'s location, size and sha256 (print it in full only on request), the arguments, `/root/alpacon-compromise-host-check.sh`, the `root` account, the `command` and `webftp` scopes, and the step 3 description. Say that the file stays on the server and that names, paths, hashes, times and addresses enter this conversation and Alpacon's command history.
-3. Reuse a Work Session only when the person or a calling skill supplied it and it covers the servers, scopes and `root`; never one found with `work_session_list`, since its approver agreed to other work. Otherwise request those scopes, expiring in one hour, described as "read accounts, keys, scheduled jobs, sockets, package hashes and file times; writes one script and changes nothing else". A follow-up run requests a new session. Close only sessions this skill opened, after every command has a final result.
+3. Reuse a Work Session only when the person or a calling skill supplied it and it covers the servers, scopes and `root`; never one found with `work_session_list`, since its approver agreed to other work. Otherwise request those scopes with `target_account_username: root`, expiring in one hour, described as "read accounts, keys, scheduled jobs, sockets, package hashes and file times; writes one script and changes nothing else". A follow-up run requests a new session. Close only sessions this skill opened, after every command has a final result.
 4. Per server, call `execute_file` once: the check script's bytes unchanged as `content` (every one of its 923 lines and the final newline), `write_file: true`, `overwrite: true`, `interpreter: /bin/sh`, `username: root`, the arguments, `timeout: 900`, the fixed path, the session id and a purpose naming the read-only collection and the file left behind. Never resubmit a timeout (read it with `check_command_status`), a `pending_approval` or an `outcome_unknown`. Unsupported agent or a failed call is `unknown`; never fall back to `execute_command`. If root is declined, get agreement for the ordinary account and a home-directory path, and expect `unknown`.
 5. Parse `data.result` with [the record grammar](references/collect.md#records). A malformed line, a missing last `end`, `status=refused`, or a `run` sha256 that differs from the check script's makes the server `unknown`; the pending result carries no hash, so never ask the person to compare one. After a sha256 mismatch, offer one rerun with the exact bytes under the same agreement. `status=incomplete` rules out `none_found`; artifacts in well-formed records still stand.
 6. When the person names Zimbra, Nacos or MySQL, or the records show one, use its file under [references/apps](references/apps/) with its own agreement, Work Session for that application account and `execute_file` call.
@@ -42,7 +42,7 @@ Interpret records only through [attack-mapping.md](references/attack-mapping.md)
 ## Verdicts
 
 - `artifact_found`: a record meets its `Artifact when` condition, even if other checks are unknown; list both.
-- `none_found`: `end status=complete`, every requested check `complete`, no `unknown` record or `Unknown when` condition, and no artifact.
+- `none_found`: `end status=complete`, every requested check `complete` (a `not_requested` check, such as `webroot_file` with no web root given, is neither complete nor unknown), no `unknown` record or `Unknown when` condition, and no artifact.
 - `unknown`: everything else. Never fold it into `none_found`. `none_found` means this check found nothing left now, not that the host was never compromised.
 
 ## Unknown reasons
@@ -55,21 +55,26 @@ Give each unknown item and server a reason that says what would resolve it:
 
 ## Report
 
-Write in the person's language, one block per server, with these headings only, short sentences and tables, and no raw records.
+Write in the person's language with these headings only, short sentences and tables, and no raw records. Each section holds only what it names; say nothing twice.
 
-1. **Summary**: one row per server with verdict, artifact count and unknown items. Then one sentence: an artifact has the shape of an intruder's leftover and needs the person's confirmation; it is not proof of intrusion, and an ATT&CK ID shows consistency, not use.
-2. **Questions to answer**: artifacts grouped by the question that settles them, numbered. Each group has a table of kind, item (encoded), why flagged (the condition in plain words), `mtime`/`ctime` and ATT&CK ID, then the question, such as whether the team added that sudo rule on that date, and who or what can answer it. Put every unit link whose target is packaged, such as a `.wants` link a package's install enabled, under one question about those enabled vendor units. Never tie items into an attack story, name a technique the records do not show, or say the host is compromised. Translate hit numbers back to the person's patterns without quoting content. When `wtmp` begins after `since`, say the host's own setup may explain early changes.
-3. **Not judged**: unknown items with reason and fix.
-4. **Context**: listening sockets, connections that are not artifacts, unrelated logins, package-modified configs, directory secrets. `wtmp` holds interactive logins only. T1571 alone is context.
-5. **Not covered**: the mapping's `Not covered` areas, unnamed web roots, unpackaged binaries, rootkit-hidden items, reads that bypass atime.
-6. **Left on the server**: the script path; nothing removed, locked or isolated.
-7. **Next steps**: preserve the files in the handoff table, answer the questions, the closer look for what no one can explain, the handoff for what stays unexplained.
+### Summary
 
-## Response handoff
+- A table with one row per server: name, verdict, artifact count, count of items not judged.
+- One sentence: an artifact has the shape of an intruder's leftover and needs confirmation; it is not proof of intrusion.
+- Per server, two or three sentences on its state: what explains the artifacts if anything does (such as `wtmp` beginning after `since`, so the host's own setup may explain them), and the notable absences, such as no outside connection or an unread secret.
+- What to do now, numbered, at most three: answer the questions below, preserve the handoff files before changing anything, and resolve an item not judged when one exists.
 
-For every `artifact_found` server, end with this table so a responder can preserve evidence before changing it. Rows of one kind with the same time may be grouped. A kind with no hash, such as `sudoers` or `authkey`, gets `—`.
+### One section per server
+
+1. **Questions to answer**: artifacts grouped by the question that settles them, numbered. Each group is a table of item (encoded), why flagged (the condition in plain words) and `mtime`/`ctime`, then the question and who or what can answer it. Put every unit link whose target is a unit recorded with `packaged=yes`, such as a `.wants` link a package's install enabled (on a host where `/lib` links to `/usr/lib`, read a `/lib/...` target as `/usr/lib/...`), under one question about enabled vendor units. Never tie items into an attack story, name a technique the records do not show, or say the host is compromised. Translate hit numbers back to the person's patterns without quoting content. When no one can answer a question, offer the closer look in step 7.
+2. **Not judged**: each unknown item with its reason and what would resolve it. Omit the section when there is none.
+3. **Context**: only what a reader could mistake for an artifact: listening sockets, connections that are not artifacts, package-modified configs, directory secrets. `wtmp` holds interactive logins only. T1571 alone is context.
+
+### Appendix
+
+1. **Not covered**: the mapping's `Not covered` areas, unnamed web roots, unpackaged binaries, rootkit-hidden items, reads that bypass atime.
+2. **Left on the server**: the script path; nothing removed, locked or isolated.
+3. **Response handoff**: for every `artifact_found` server, this table, so a responder can preserve evidence before changing it. Rows of one kind with the same time may be grouped; a kind with no hash, such as `sudoers` or `authkey`, gets `—`. When `compromise-response` is installed, hand it each `artifact_found` server with this table.
 
 | Server UUID | Kind | Identifier | mtime/ctime | SHA-256 | ATT&CK |
 |---|---|---|---|---|---|
-
-Tell the person to copy the named files and their metadata before remediation. When `compromise-response` is installed, hand it each `artifact_found` server with this table.
