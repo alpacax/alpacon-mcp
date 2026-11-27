@@ -2351,6 +2351,51 @@ def test_a_secret_under_an_unsearchable_directory_is_unknown_not_missing(
     )
 
 
+def test_a_secret_directory_sent_with_its_glob_records_each_file_inside(
+    tmp_path: Path, shell: str
+):
+    root = _host_tree(tmp_path)
+    _write(root, 'etc/ssl/private/site.key', 'KEY\n')
+    _write(root, 'etc/ssl/private/api.key', 'KEY\n')
+
+    result = _collect(
+        tmp_path,
+        shell,
+        root,
+        f'since={SINCE}',
+        'protect=/etc/ssl/private',
+        'protect=/etc/ssl/private/*',
+    )
+
+    rows = {row['path']: row['type'] for row in result.records('secret')}
+    assert rows == {
+        '/etc/ssl/private': 'directory',
+        '/etc/ssl/private/api.key': 'file',
+        '/etc/ssl/private/site.key': 'file',
+    }
+    assert result.lines[-1].startswith('end status=complete')
+
+
+def test_a_secret_file_sent_with_its_glob_records_the_glob_as_missing(
+    tmp_path: Path, shell: str
+):
+    root = _host_tree(tmp_path)
+    _write(root, 'app/.env', 'TOKEN=fixture\n')
+
+    result = _collect(
+        tmp_path,
+        shell,
+        root,
+        f'since={SINCE}',
+        'protect=/app/.env',
+        'protect=/app/.env/*',
+    )
+
+    rows = {row['path']: row['exists'] for row in result.records('secret')}
+    assert rows == {'/app/.env': 'yes', '/app/.env/%2A': 'no'}
+    assert all(row['kind'] != 'secret' for row in result.records('unknown'))
+
+
 def test_a_symlinked_secret_takes_the_mount_of_its_target(tmp_path: Path, shell: str):
     root = _host_tree(tmp_path)
     target = _write(root, 'app/.env', 'TOKEN=fixture\n')

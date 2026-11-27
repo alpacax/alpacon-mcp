@@ -4,7 +4,7 @@ The collector reads host metadata and selected persistence sources. It prints re
 
 ## Arguments
 
-Pass every input as one `key=value` argument, in this order: one `since`, sorted `webroot` values, sorted `protect` values, `pattern` values in the person's order, then sorted `inspect` values. A `protect` value names a secret path; Alpacon refuses an argument spelled `secret=` as an inline credential, so the key is `protect` while its records keep the kind `secret`.
+Pass every input as one `key=value` argument, in this order: one `since`, sorted `webroot` values, sorted `protect` values, `pattern` values in the person's order, then sorted `inspect` values, each sorted by byte value. A `protect` value names a secret path; Alpacon refuses an argument spelled `secret=` as an inline credential, so the key is `protect` while its records keep the kind `secret`.
 
 | Key | Count | Value |
 |---|---:|---|
