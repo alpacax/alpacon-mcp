@@ -11,7 +11,7 @@ Secret exclusions compare logical paths, `readlink -f` targets and device and in
 | Item | ATT&CK mitigation | ATT&CK technique | Tactic | Artifact when | Unknown when |
 |---|---|---|---|---|---|
 | `run` | — | none | — | never | never |
-| `secret` | — | T1552.001 Unsecured Credentials: Credentials In Files | Credential Access | `exists=yes`, `atime_mode` is `strictatime` or `relatime`, and `atime` is on or after `since` | `exists=yes` and `atime_mode` is `noatime`, `readonly` or `?`; or `exists=yes`, `atime_mode` is `relatime`, `atime` is within the 24 hours before `since`, and later than both `mtime` and `ctime` |
+| `secret` | — | T1552.001 Unsecured Credentials: Credentials In Files | Credential Access | `type=file`, `atime_mode` is `strictatime` or `relatime`, and `atime` is on or after `since` | `type=file` and `atime_mode` is `noatime`, `readonly` or `?`; or `type=file`, `atime_mode` is `relatime`, `atime` is within the 24 hours before `since`, and later than both `mtime` and `ctime` |
 | `account` | — | T1136.001 Create Account: Local Account | Persistence | `class=root` with a name other than `root`; a name the person gave; or `password=none` | `password=?` |
 | `sudoers` | — | T1548.003 Abuse Elevation Control Mechanism: Sudo and Sudo Caching | Privilege Escalation | `mtime` or `ctime` is on or after `since`; or a comma-separated name in `principal` is a name the person gave or an artifact account | never |
 | `authkey` | — | T1098.004 Account Manipulation: SSH Authorized Keys | Persistence; Privilege Escalation | `mtime` or `ctime` is on or after `since`; its account is an artifact; or `fp` is a fingerprint the person gave | `fp=?` |
@@ -24,6 +24,11 @@ Secret exclusions compare logical paths, `readlink -f` targets and device and in
 | `webroot_file` | — | T1505.003 Server Software Component: Web Shell | Persistence | always, because the collector lists only script files changed since `since` | never |
 | `login` | — | T1078 Valid Accounts; a `pts/*` tty with a `from` address also has T1021.004 Remote Services: SSH | Stealth; Persistence; Privilege Escalation; Initial Access; Lateral Movement | `user` is a name the person gave or an artifact account; or `from` is an address the person gave | never |
 | `wtmp` | — | none | — | never | `begins` is after `since` |
+| `file` | — | none; context for the artifact it inspects | — | never | never |
+| `exec` | — | none; context | — | never | never |
+| `journal` | — | none; context | — | never | never |
+| `key_login` | — | none; context | — | never | never |
+| `process` | — | none; context | — | never | never |
 | `unknown` | — | none | — | never | always |
 | `check` | — | none | — | never | `status` is `partial` or `unknown`, or a requested check is `not_requested` |
 | `cap` | — | none | — | never | no shown record of that `kind` is an artifact |

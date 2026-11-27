@@ -7,6 +7,7 @@ import time
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
+from typing import cast
 from urllib.parse import unquote_to_bytes
 
 import pytest
@@ -17,6 +18,9 @@ REFERENCE = 'compromise-host-check/references/collect.md'
 MAPPING = SKILLS / 'compromise-host-check/references/attack-mapping.md'
 COLLECT = SKILLS / REFERENCE
 SINCE = '2026-08-03'
+NEEDS_PROC_FD = pytest.mark.skipif(
+    not Path('/proc/self/fd').is_dir(), reason='needs /proc/self/fd'
+)
 BEFORE = 1_754_000_000
 AFTER = 1_789_000_000
 REAL_TOOLS = (
@@ -132,6 +136,7 @@ def _host_tree(tmp_path: Path) -> Path:
         'etc/login.defs': 'UID_MIN 1000\nUID_MAX 60000\n',
         'etc/sudoers': 'root ALL=(ALL:ALL) ALL\n',
         'proc/self/mountinfo': '1 0 0:1 / / rw,relatime - ext4 /dev/root rw\n2 1 0:1 /app /app rw,noatime - ext4 /dev/root rw\n',
+        'var/log/wtmp': '',
     }
     for relative, content in files.items():
         path = root / relative
@@ -172,6 +177,7 @@ def _collect(
     tools: tuple[str, ...] = ('ss', 'dpkg', 'last', 'ssh-keygen'),
     awk: str = 'awk',
     extra_fakes: dict[str, str] | None = None,
+    sealed: bool = False,
     **env: str,
 ) -> Run:
     tmp_path.mkdir(parents=True, exist_ok=True)
@@ -197,15 +203,80 @@ def _collect(
         'LAST_LOG': str(tmp_path / 'last.log'),
         'KEYGEN_LOG': str(tmp_path / 'keygen.log'),
     }
-    result = subprocess.run(  # noqa: S603  # documented script against isolated fakes
-        [f'/bin/{shell}', script_path, *args],
-        env={**os.environ, 'PATH': path, **logs, **env},
-        capture_output=True,
-        check=False,
-        text=True,
-        timeout=30,
-    )
+    entry, fds = str(script_path), cast(tuple[int, ...], ())
+    if sealed:  # alpamon runs a verified file from an unlinked sealed copy
+        fd = os.open(script_path, os.O_RDONLY)
+        script_path.unlink()
+        entry, fds = f'/proc/self/fd/{fd}', (fd,)
+    try:
+        result = subprocess.run(  # noqa: S603  # documented script against isolated fakes
+            [f'/bin/{shell}', entry, *args],
+            env={**os.environ, 'PATH': path, **logs, **env},
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=30,
+            pass_fds=fds,
+        )
+    finally:
+        for fd in fds:
+            os.close(fd)
     return Run(result.returncode, result.stdout.splitlines(), result.stderr)
+
+
+JOURNALCTL = """case " $* " in
+  (*' _COMM=sshd '*) printf '%s\\n' "$JOURNAL_SSHD";;
+  (*) printf '%s\\n' "$JOURNAL_JSON";;
+esac"""
+
+
+def _inspect_host(tmp_path: Path, shell: str, *targets: str) -> Run:
+    root = _host_tree(tmp_path)
+    _write(root, 'usr/local/bin/beacon', 'binary\n')
+    _write(
+        root,
+        'etc/systemd/system/beacon.service',
+        '[Service]\nExecStartPre=-/usr/local/bin/beacon --token=hunter2\n'
+        'ExecStart=/usr/local/bin/beacon --password=hunter2\n',
+    )
+    _write(
+        root,
+        'etc/cron.d/beacon',
+        'MAILTO=root\n*/5 * * * * root /usr/local/bin/beacon --key=hunter2\n'
+        '@reboot root /usr/local/bin/beacon\n',
+    )
+    _write(
+        root,
+        'home/alice/.ssh/authorized_keys',
+        'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5fixture note\n',
+    )
+    _write(root, 'proc/4121/comm', 'beacon\n')
+    (root / 'proc/4121/exe').symlink_to(root / 'usr/local/bin/beacon')
+    _write(root, 'proc/4121/stat', '4121 (bea con) S 900 4121 4121 0\n')
+    _write(root, 'proc/900/comm', 'bash\n')
+    _write(root, 'proc/900/stat', '900 (bash) S 1 900 900 0\n')
+    _write(root, 'proc/1/comm', 'systemd\n')
+    _write(root, 'proc/1/stat', '1 (systemd) S 0 1 1 0\n')
+    return _collect(
+        tmp_path,
+        shell,
+        root,
+        f'since={SINCE}',
+        *(
+            targets
+            or (
+                'inspect=/etc/systemd/system/beacon.service',
+                'inspect=/etc/cron.d/beacon',
+                'inspect=/home/alice/.ssh/authorized_keys',
+                'inspect=/proc/4121',
+            )
+        ),
+        extra_fakes={'journalctl': JOURNALCTL},
+        JOURNAL_JSON='{"_COMM":"bash","_SYSTEMD_UNIT":"session-3.scope","MESSAGE":"hunter2"}\n'
+        '{"_COMM":"bash","_SYSTEMD_UNIT":"session-3.scope"}',
+        JOURNAL_SSHD='1789000000.5 host sshd[7]: Accepted publickey for alice from '
+        '203.0.113.9 port 51000 ssh2: ED25519 SHA256:AAAAC3Nz',
+    )
 
 
 def _record_value(record: dict[str, str], key: str) -> bytes:
@@ -238,7 +309,7 @@ def _full_host(tmp_path: Path, shell: str) -> Run:
         f'since={SINCE}',
         'webroot=/missing',
         'webroot=/var/www/html',
-        'secret=/app/.env',
+        'protect=/app/.env',
         'pattern=/dev/tcp/',
         SS_LISTEN='LISTEN 0 128 0.0.0.0:443 0.0.0.0:* users:(("server",pid=10,fd=3))',
         SS_EST='ESTAB 0 0 10.0.0.1:50000 203.0.113.50:4444 users:(("fake",pid=20,fd=4))',
@@ -291,7 +362,10 @@ def test_mapping_rows_are_exactly_the_kinds_the_script_can_emit(shell: str):
 
 
 def test_a_full_host_emits_every_kind_the_mapping_names(tmp_path: Path, shell: str):
-    results = [_full_host(tmp_path, shell)]
+    results = [
+        _full_host(tmp_path / 'full', shell),
+        _inspect_host(tmp_path / 'inspect', shell),
+    ]
 
     emitted = {line.split(' ', 1)[0] for result in results for line in result.lines}
     expected = _mapping_kinds() - {'app_account'}
@@ -299,7 +373,10 @@ def test_a_full_host_emits_every_kind_the_mapping_names(tmp_path: Path, shell: s
 
 
 def test_each_kind_prints_the_fields_collect_md_lists(tmp_path: Path, shell: str):
-    results = [_full_host(tmp_path, shell)]
+    results = [
+        _full_host(tmp_path / 'full', shell),
+        _inspect_host(tmp_path / 'inspect', shell),
+    ]
     catalog = _catalog()
 
     for line in [line for result in results for line in result.lines]:
@@ -739,7 +816,7 @@ def test_a_nologin_system_account_keeps_its_owned_artifacts(tmp_path: Path, shel
     )
     _write(root, 'var/lib/worker/.token', 'never-print\n')
 
-    result = _collect(tmp_path, shell, root, f'since={SINCE}', 'secret=~/.token')
+    result = _collect(tmp_path, shell, root, f'since={SINCE}', 'protect=~/.token')
 
     assert any(row['account'] == 'worker' for row in result.records('authkey'))
     assert {
@@ -1295,7 +1372,7 @@ def test_secret_process_metadata_makes_connection_unknown(tmp_path: Path, shell:
         shell,
         root,
         f'since={SINCE}',
-        'secret=/proc/20/comm',
+        'protect=/proc/20/comm',
         SS_EST=row,
     )
 
@@ -1439,7 +1516,7 @@ def test_rpm_preserves_paths_for_every_attribute_marker(
     assert result.records('pkg_modified')[0]['path'] == path.replace(
         ' ', '%20'
     ).replace('[', '%5B').replace(']', '%5D').replace('*', '%2A')
-    assert log.read_text().splitlines() == ['-Va --nodeps --noscripts']
+    assert log.read_text().splitlines() == ['-qal', '-Va --nodeps --noscripts']
 
 
 def test_rpm_ignores_non_file_diagnostics(tmp_path: Path, shell: str):
@@ -1602,7 +1679,7 @@ def test_a_secret_is_stat_only_and_its_content_never_appears(
     secret = 'DATABASE_PASSWORD=never-print-this'
     _write(root, 'app/.env', secret + '\n')
 
-    result = _collect(tmp_path, shell, root, f'since={SINCE}', 'secret=/app/.env')
+    result = _collect(tmp_path, shell, root, f'since={SINCE}', 'protect=/app/.env')
 
     record = result.records('secret')[0]
     assert record['exists'] == 'yes'
@@ -1614,7 +1691,7 @@ def test_atime_mode_comes_from_the_longest_mount_prefix(tmp_path: Path, shell: s
     root = _host_tree(tmp_path)
     _write(root, 'app/.env', 'secret\n')
 
-    result = _collect(tmp_path, shell, root, f'since={SINCE}', 'secret=/app/.env')
+    result = _collect(tmp_path, shell, root, f'since={SINCE}', 'protect=/app/.env')
 
     secret = result.records('secret')[0]
     assert secret['mount'] == '/app'
@@ -1631,7 +1708,7 @@ def test_mountinfo_escapes_are_decoded_before_longest_prefix_matching(
     )
     _write(root, 'app data/.env', 'secret\n')
 
-    result = _collect(tmp_path, shell, root, f'since={SINCE}', 'secret=/app data/.env')
+    result = _collect(tmp_path, shell, root, f'since={SINCE}', 'protect=/app data/.env')
 
     secret = result.records('secret')[0]
     assert _record_value(secret, 'mount') == b'/app data'
@@ -1642,7 +1719,7 @@ def test_a_secret_path_with_a_space_is_statted_as_one_path(tmp_path: Path, shell
     root = _host_tree(tmp_path)
     _write(root, 'app/my secret', 'value\n')
 
-    result = _collect(tmp_path, shell, root, f'since={SINCE}', 'secret=/app/my secret')
+    result = _collect(tmp_path, shell, root, f'since={SINCE}', 'protect=/app/my secret')
 
     assert len(result.records('secret')) == 1
     secret = result.records('secret')[0]
@@ -1657,7 +1734,7 @@ def test_a_secret_path_with_a_colon_keeps_its_metadata_and_path(
     root = _host_tree(tmp_path)
     _write(root, 'app/a:b', 'value\n')
 
-    result = _collect(tmp_path, shell, root, f'since={SINCE}', 'secret=/app/a:b')
+    result = _collect(tmp_path, shell, root, f'since={SINCE}', 'protect=/app/a:b')
 
     assert len(result.records('secret')) == 1
     secret = result.records('secret')[0]
@@ -1674,7 +1751,7 @@ def test_home_relative_secret_expands_for_every_account(tmp_path: Path, shell: s
     _write(root, 'home/alice/.aws/credentials', 'alice-secret\n')
 
     result = _collect(
-        tmp_path, shell, root, f'since={SINCE}', 'secret=~/.aws/credentials'
+        tmp_path, shell, root, f'since={SINCE}', 'protect=~/.aws/credentials'
     )
 
     records = result.records('secret')
@@ -1694,8 +1771,8 @@ def test_a_glob_secret_lists_each_match_and_an_unmatched_glob_is_exists_no(
         shell,
         root,
         f'since={SINCE}',
-        'secret=/app/.env*',
-        'secret=/app/missing*',
+        'protect=/app/.env*',
+        'protect=/app/missing*',
     )
 
     records = result.records('secret')
@@ -1715,7 +1792,7 @@ def test_a_secret_overlap_is_not_opened_by_another_collector(
         root,
         f'since={SINCE}',
         'webroot=/var/www/html',
-        'secret=/var/www/html/secret.php',
+        'protect=/var/www/html/secret.php',
     )
 
     assert any(
@@ -1758,7 +1835,7 @@ def test_a_symlink_to_a_secret_is_never_opened(
         root,
         f'since={SINCE}',
         *extra_args,
-        'secret=/app/.env',
+        'protect=/app/.env',
     )
 
     assert any(
@@ -1800,7 +1877,7 @@ def test_a_secret_fifo_reached_through_sudoers_is_never_opened(
             shell,
             root,
             f'since={SINCE}',
-            'secret=/app/secret-fifo',
+            'protect=/app/secret-fifo',
         )
     finally:
         stopped.set()
@@ -1822,7 +1899,7 @@ def test_an_absolute_secret_is_statted_before_account_files_are_read(
     passwd = root / 'etc/passwd'
     os.utime(passwd, (BEFORE, AFTER))
 
-    result = _collect(tmp_path, shell, root, f'since={SINCE}', 'secret=/etc/passwd')
+    result = _collect(tmp_path, shell, root, f'since={SINCE}', 'protect=/etc/passwd')
 
     secret = result.records('secret')[0]
     assert secret['atime'] == '2025-07-31T22:13:20Z'
@@ -1878,7 +1955,7 @@ def test_every_content_reader_honors_secret_overlap(
         root,
         f'since={SINCE}',
         *extra_args,
-        f'secret={logical}',
+        f'protect={logical}',
     )
 
     assert any(
@@ -1899,7 +1976,7 @@ def test_package_verification_does_not_hash_a_named_secret(tmp_path: Path, shell
         shell,
         root,
         f'since={SINCE}',
-        'secret=/app/.env',
+        'protect=/app/.env',
         DPKG_OUT='??5?????? /app/.env',
         DPKG_SEARCH_EXIT='0',
         DPKG_LOG=str(log),
@@ -1928,7 +2005,7 @@ def test_package_verification_does_not_follow_a_packaged_alias_to_a_secret(
         shell,
         root,
         f'since={SINCE}',
-        'secret=/app/.env',
+        'protect=/app/.env',
         DPKG_SEARCH_EXIT='1',
         DPKG_SELECTIONS='base hold',
         DPKG_LISTFILES='/etc/packaged-alias',
@@ -1959,7 +2036,7 @@ def test_package_verification_does_not_follow_a_packaged_fifo_alias_to_a_secret(
         shell,
         root,
         f'since={SINCE}',
-        'secret=/app/secret-fifo',
+        'protect=/app/secret-fifo',
         DPKG_SEARCH_EXIT='1',
         DPKG_SELECTIONS='base hold',
         DPKG_LISTFILES='/etc/packaged-alias',
@@ -2135,7 +2212,7 @@ def test_checks_that_walk_account_homes_are_unknown_when_passwd_is_not_read(
     root = _host_tree(tmp_path)
 
     result = _collect(
-        tmp_path, shell, root, f'since={SINCE}', 'secret=/etc/passwd', 'secret=~/.env'
+        tmp_path, shell, root, f'since={SINCE}', 'protect=/etc/passwd', 'protect=~/.env'
     )
 
     for kind in ('secret', 'authkey', 'systemd_unit'):
@@ -2151,7 +2228,7 @@ def test_a_hard_link_to_a_secret_is_never_opened(tmp_path: Path, shell: str):
     os.link(secret, root / 'etc/cron.d/job')
 
     result = _collect(
-        tmp_path, shell, root, f'since={SINCE}', 'secret=/app/.env', 'pattern=TOKEN'
+        tmp_path, shell, root, f'since={SINCE}', 'protect=/app/.env', 'pattern=TOKEN'
     )
 
     assert 'unknown kind=cron path=/etc/cron.d/job reason=secret-overlap' in (
@@ -2263,7 +2340,7 @@ def test_a_secret_under_an_unsearchable_directory_is_unknown_not_missing(
     (root / 'app/locked').chmod(0)
     try:
         result = _collect(
-            tmp_path, shell, root, f'since={SINCE}', 'secret=/app/locked/.env'
+            tmp_path, shell, root, f'since={SINCE}', 'protect=/app/locked/.env'
         )
     finally:
         (root / 'app/locked').chmod(0o755)
@@ -2279,7 +2356,7 @@ def test_a_symlinked_secret_takes_the_mount_of_its_target(tmp_path: Path, shell:
     target = _write(root, 'app/.env', 'TOKEN=fixture\n')
     (root / 'etc/app.env').symlink_to(target)
 
-    result = _collect(tmp_path, shell, root, f'since={SINCE}', 'secret=/etc/app.env')
+    result = _collect(tmp_path, shell, root, f'since={SINCE}', 'protect=/etc/app.env')
 
     secret = result.records('secret')[0]
     assert (secret['mount'], secret['atime_mode']) == ('/app', 'noatime')
@@ -2326,7 +2403,7 @@ exec {real_stat} "$@\""""
         root,
         f'since={SINCE}',
         'webroot=/var/www/html',
-        'secret=/app/.env',
+        'protect=/app/.env',
         extra_fakes={'stat': swapping_stat},
         SWAP_FROM=str(page),
         SWAP_TO=str(secret),
@@ -2338,6 +2415,874 @@ exec {real_stat} "$@\""""
     assert (
         'unknown kind=webroot_file path=/var/www/html/shell.php '
         'reason=changed-during-read'
+    ) in result.lines
+
+
+def test_a_file_swapped_for_a_secret_is_never_hashed_or_searched(
+    tmp_path: Path, shell: str
+):
+    root = _host_tree(tmp_path)
+    secret = _write(root, 'app/.env', 'TOKEN=fixture\n')
+    page = _write(root, 'var/www/html/shell.php', '<?php echo 1; ?>\n')
+    real_stat = shutil.which('gstat') or shutil.which('stat')
+    swapping_stat = f"""for arg do last=$arg; done
+if [ "$2" = '%Y:%Z:%s:%U:%a' ] && [ "$last" = "$SWAP_FROM" ]; then
+  /bin/rm -f "$SWAP_FROM"; /bin/ln "$SWAP_TO" "$SWAP_FROM"
+fi
+exec {real_stat} "$@\""""
+    reads = tmp_path / 'reads.log'
+    logging = {
+        name: f'{real_stat} -L -c %i /dev/stdin >> "$READ_LOG"; exec {real} "$@"'
+        for name, real in (
+            ('sha256sum', shutil.which('gsha256sum') or shutil.which('sha256sum')),
+            ('grep', shutil.which('grep')),
+        )
+    }
+
+    result = _collect(
+        tmp_path,
+        shell,
+        root,
+        f'since={SINCE}',
+        'webroot=/var/www/html',
+        'protect=/app/.env',
+        'pattern=TOKEN',
+        extra_fakes={'stat': swapping_stat, **logging},
+        SWAP_FROM=str(page),
+        SWAP_TO=str(secret),
+        READ_LOG=str(reads),
+    )
+
+    assert result.code == 0, result.stderr
+    assert result.records('webroot_file') == []
+    read_inodes = reads.read_text().split() if reads.exists() else []
+    assert str(secret.stat().st_ino) not in read_inodes
+
+
+def test_a_fifo_authorized_keys_file_is_unknown_and_collection_finishes(
+    tmp_path: Path, shell: str
+):
+    root = _host_tree(tmp_path)
+    os.mkfifo(root / 'home/alice/.ssh/authorized_keys')
+    _write(root, 'etc/cron.d/job', '* * * * * root /bin/true\n')
+
+    result = _collect(tmp_path, shell, root, f'since={SINCE}')
+
+    assert result.code == 0, result.stderr
+    assert (
+        'unknown kind=authkey path=/home/alice/.ssh/authorized_keys reason=not-a-file'
+    ) in result.lines
+    assert result.records('cron')[0]['path'] == '/etc/cron.d/job'
+    assert result.lines[-1].startswith('end status=')
+
+
+def test_a_fifo_in_sudoers_d_is_unknown_and_collection_finishes(
+    tmp_path: Path, shell: str
+):
+    root = _host_tree(tmp_path)
+    os.mkfifo(root / 'etc/sudoers.d/pipe')
+
+    result = _collect(tmp_path, shell, root, f'since={SINCE}')
+
+    assert result.code == 0, result.stderr
+    assert 'unknown kind=sudoers path=/etc/sudoers.d/pipe reason=not-a-file' in (
+        result.lines
+    )
+    assert result.lines[-1].startswith('end status=')
+
+
+def test_package_verification_skips_a_packaged_hard_link_beside_a_secret_directory(
+    tmp_path: Path, shell: str
+):
+    root = _host_tree(tmp_path)
+    key = _write(root, 'app/conf/key', 'secret\n')
+    os.link(key, root / 'etc/packaged-copy')
+    log = tmp_path / 'dpkg.log'
+
+    result = _collect(
+        tmp_path,
+        shell,
+        root,
+        f'since={SINCE}',
+        'protect=/app/conf',
+        DPKG_SEARCH_EXIT='1',
+        DPKG_SELECTIONS='base hold',
+        DPKG_LISTFILES='/etc/packaged-copy',
+        DPKG_LOG=str(log),
+    )
+
+    assert 'unknown kind=pkg_modified path= reason=secret-overlap' in result.lines
+    assert '--verify' not in log.read_text()
+
+
+def test_package_verification_runs_beside_hard_links_the_package_lists(
+    tmp_path: Path, shell: str
+):
+    root = _host_tree(tmp_path)
+    _write(root, 'app/conf/key', 'secret\n')
+    perl = _write(root, 'usr/bin/perl', 'binary\n')
+    os.link(perl, root / 'usr/bin/perl5.36.0')
+    log = tmp_path / 'dpkg.log'
+
+    result = _collect(
+        tmp_path,
+        shell,
+        root,
+        f'since={SINCE}',
+        'protect=/app/conf',
+        DPKG_SELECTIONS='perl-base hold',
+        DPKG_LISTFILES='/usr/bin/perl\n/usr/bin/perl5.36.0',
+        DPKG_LOG=str(log),
+    )
+
+    assert '--verify' in log.read_text()
+    assert all(row['kind'] != 'pkg_modified' for row in result.records('unknown'))
+
+
+def test_package_verification_runs_when_a_package_owns_the_secret_directory(
+    tmp_path: Path, shell: str
+):
+    root = _host_tree(tmp_path)
+    _write(root, 'app/conf/key', 'secret\n')
+    log = tmp_path / 'dpkg.log'
+
+    result = _collect(
+        tmp_path,
+        shell,
+        root,
+        f'since={SINCE}',
+        'protect=/app/conf',
+        DPKG_SELECTIONS='openssl hold',
+        DPKG_LISTFILES='/app\n/app/conf',
+        DPKG_LOG=str(log),
+    )
+
+    assert '--verify' in log.read_text()
+    assert all(row['kind'] != 'pkg_modified' for row in result.records('unknown'))
+
+
+def test_package_verification_skips_a_packaged_path_inside_a_secret_directory(
+    tmp_path: Path, shell: str
+):
+    root = _host_tree(tmp_path)
+    _write(root, 'app/conf/key', 'secret\n')
+    log = tmp_path / 'dpkg.log'
+
+    result = _collect(
+        tmp_path,
+        shell,
+        root,
+        f'since={SINCE}',
+        'protect=/app/conf',
+        DPKG_SEARCH_EXIT='1',
+        DPKG_SELECTIONS='base hold',
+        DPKG_LISTFILES='/app/conf/key',
+        DPKG_LOG=str(log),
+    )
+
+    assert 'unknown kind=pkg_modified path= reason=secret-overlap' in result.lines
+    assert '--verify' not in log.read_text()
+
+
+def test_package_verification_runs_beside_a_secret_directory_without_hard_links(
+    tmp_path: Path, shell: str
+):
+    root = _host_tree(tmp_path)
+    _write(root, 'app/conf/key', 'secret\n')
+    _write(root, 'etc/packaged', 'data\n')
+    log = tmp_path / 'dpkg.log'
+
+    result = _collect(
+        tmp_path,
+        shell,
+        root,
+        f'since={SINCE}',
+        'protect=/app/conf',
+        DPKG_SEARCH_EXIT='1',
+        DPKG_SELECTIONS='base hold',
+        DPKG_LISTFILES='/etc\n/etc/packaged',
+        DPKG_LOG=str(log),
+    )
+
+    assert result.code == 0, result.stderr
+    assert '--verify' in log.read_text()
+
+
+def test_package_verification_is_skipped_when_the_inventory_stat_cannot_run(
+    tmp_path: Path, shell: str
+):
+    root = _host_tree(tmp_path)
+    _write(root, 'app/.env', 'secret\n')
+    _write(root, 'etc/packaged', 'data\n')
+    log = tmp_path / 'dpkg.log'
+
+    result = _collect(
+        tmp_path,
+        shell,
+        root,
+        f'since={SINCE}',
+        'protect=/app/.env',
+        extra_fakes={'xargs': 'exit 127'},
+        DPKG_SEARCH_EXIT='1',
+        DPKG_SELECTIONS='base hold',
+        DPKG_LISTFILES='/etc/packaged',
+        DPKG_LOG=str(log),
+    )
+
+    assert 'unknown kind=pkg_modified path= reason=secret-overlap' in result.lines
+    assert '--verify' not in log.read_text()
+
+
+def test_package_verification_runs_when_a_listed_package_path_is_missing(
+    tmp_path: Path, shell: str
+):
+    root = _host_tree(tmp_path)
+    _write(root, 'app/.env', 'secret\n')
+    _write(root, 'etc/packaged', 'data\n')
+    log = tmp_path / 'dpkg.log'
+
+    result = _collect(
+        tmp_path,
+        shell,
+        root,
+        f'since={SINCE}',
+        'protect=/app/.env',
+        DPKG_SEARCH_EXIT='1',
+        DPKG_SELECTIONS='base hold',
+        DPKG_LISTFILES='/etc/packaged\n/usr/share/gone',
+        DPKG_LOG=str(log),
+    )
+
+    assert result.code == 0, result.stderr
+    assert '--verify' in log.read_text()
+
+
+def _swap_once(when: str, link: bool) -> str:
+    """A `stat` fake that replaces SWAP_FROM with SWAP_TO the first time `when` matches."""
+    real_stat = shutil.which('gstat') or shutil.which('stat')
+    replace = '/bin/ln -s' if link else '/bin/mv'
+    return f"""for arg do last=$arg; done
+if [ ! -e "$SWAP_DONE" ] && [ "$last" = "$SWAP_FROM" ] && {when}; then
+  : > "$SWAP_DONE"; /bin/rm -f "$SWAP_FROM"; {replace} "$SWAP_TO" "$SWAP_FROM"
+  [ -z "$SWAP_REFILL" ] || printf '%s\\n' new > "$SWAP_TO"
+fi
+exec {real_stat} "$@\""""
+
+
+def _logging_readers(log_env: str = 'READ_LOG') -> dict[str, str]:
+    real_stat = shutil.which('gstat') or shutil.which('stat')
+    return {
+        name: f'{real_stat} -L -c %i /dev/stdin >> "${log_env}"; exec {real} "$@"'
+        for name, real in (
+            ('sha256sum', shutil.which('gsha256sum') or shutil.which('sha256sum')),
+            ('grep', shutil.which('grep')),
+            ('awk', shutil.which('awk')),
+        )
+    }
+
+
+@NEEDS_PROC_FD
+def test_an_authorized_keys_link_swapped_into_a_secret_directory_is_not_parsed(
+    tmp_path: Path, shell: str
+):
+    root = _host_tree(tmp_path)
+    key = _write(root, 'app/conf/key', 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5leak leaked\n')
+    keys = _write(root, 'home/alice/.ssh/authorized_keys', '# none\n')
+
+    result = _collect(
+        tmp_path,
+        shell,
+        root,
+        f'since={SINCE}',
+        'protect=/app/conf',
+        extra_fakes={'stat': _swap_once('[ "$2" = %Y:%Z ]', link=True)},
+        SWAP_FROM=str(keys),
+        SWAP_TO=str(key),
+        SWAP_DONE=str(tmp_path / 'swapped'),
+        SWAP_REFILL='',
+    )
+
+    assert result.records('authkey') == []
+    assert 'leaked' not in '\n'.join(result.lines)
+    assert (
+        'unknown kind=authkey path=/home/alice/.ssh/authorized_keys '
+        'reason=changed-during-read'
+    ) in result.lines
+
+
+@NEEDS_PROC_FD
+def test_a_web_file_linked_into_a_secret_directory_before_its_identity_is_never_read(
+    tmp_path: Path, shell: str
+):
+    root = _host_tree(tmp_path)
+    key = _write(root, 'app/conf/key', 'TOKEN=fixture\n')
+    page = _write(root, 'var/www/html/shell.php', '<?php echo 1; ?>\n')
+    reads = tmp_path / 'reads.log'
+
+    result = _collect(
+        tmp_path,
+        shell,
+        root,
+        f'since={SINCE}',
+        'webroot=/var/www/html',
+        'protect=/app/conf',
+        'pattern=TOKEN',
+        extra_fakes={
+            'stat': _swap_once('[ "$1" = -L ] && [ "$3" = %d:%i ]', link=True),
+            **_logging_readers(),
+        },
+        SWAP_FROM=str(page),
+        SWAP_TO=str(key),
+        SWAP_DONE=str(tmp_path / 'swapped'),
+        SWAP_REFILL='',
+        READ_LOG=str(reads),
+    )
+
+    assert result.code == 0, result.stderr
+    read_inodes = reads.read_text().split() if reads.exists() else []
+    assert str(key.stat().st_ino) not in read_inodes
+
+
+def test_a_secret_moved_onto_a_scanned_path_after_its_snapshot_is_never_read(
+    tmp_path: Path, shell: str
+):
+    root = _host_tree(tmp_path)
+    secret = _write(root, 'app/.env', 'TOKEN=fixture\n')
+    original = secret.stat().st_ino
+    page = _write(root, 'var/www/html/shell.php', '<?php echo 1; ?>\n')
+    reads = tmp_path / 'reads.log'
+
+    result = _collect(
+        tmp_path,
+        shell,
+        root,
+        f'since={SINCE}',
+        'webroot=/var/www/html',
+        'protect=/app/.env',
+        'pattern=TOKEN',
+        extra_fakes={
+            'stat': _swap_once('[ "$1" = -L ] && [ "$3" = %d:%i ]', link=False),
+            **_logging_readers(),
+        },
+        SWAP_FROM=str(page),
+        SWAP_TO=str(secret),
+        SWAP_DONE=str(tmp_path / 'swapped'),
+        SWAP_REFILL='yes',
+        READ_LOG=str(reads),
+    )
+
+    assert result.code == 0, result.stderr
+    read_inodes = reads.read_text().split() if reads.exists() else []
+    assert str(original) not in read_inodes
+    assert 'TOKEN' not in '\n'.join(result.lines)
+
+
+def test_a_root_secret_keeps_every_file_unread(tmp_path: Path, shell: str):
+    root = _host_tree(tmp_path)
+    _write(root, 'etc/cron.d/job', '* * * * * root /bin/true\n')
+
+    result = _collect(tmp_path, shell, root, f'since={SINCE}', 'protect=/')
+
+    assert result.code == 0, result.stderr
+    assert result.records('cron') == []
+    assert 'unknown kind=cron path=/etc/cron.d/job reason=secret-overlap' in (
+        result.lines
+    )
+
+
+def test_package_verification_skips_a_packaged_link_into_a_secret_directory(
+    tmp_path: Path, shell: str
+):
+    root = _host_tree(tmp_path)
+    key = _write(root, 'app/conf/key', 'secret\n')
+    (root / 'etc/packaged-link').symlink_to(key)
+    log = tmp_path / 'dpkg.log'
+
+    result = _collect(
+        tmp_path,
+        shell,
+        root,
+        f'since={SINCE}',
+        'protect=/app/conf',
+        DPKG_SEARCH_EXIT='1',
+        DPKG_SELECTIONS='base hold',
+        DPKG_LISTFILES='/etc\n/etc/packaged-link',
+        DPKG_LOG=str(log),
+    )
+
+    assert 'unknown kind=pkg_modified path= reason=secret-overlap' in result.lines
+    assert '--verify' not in log.read_text()
+
+
+def test_package_verification_skips_a_packaged_fifo(tmp_path: Path, shell: str):
+    root = _host_tree(tmp_path)
+    os.mkfifo(root / 'etc/packaged-fifo')
+    log = tmp_path / 'dpkg.log'
+
+    result = _collect(
+        tmp_path,
+        shell,
+        root,
+        f'since={SINCE}',
+        DPKG_SELECTIONS='base hold',
+        DPKG_LISTFILES='/etc/packaged-fifo',
+        DPKG_LOG=str(log),
+    )
+
+    assert result.code == 0, result.stderr
+    assert 'unknown kind=pkg_modified path= reason=not-a-file' in result.lines
+    assert '--verify' not in log.read_text()
+
+
+def test_a_fifo_wtmp_is_unknown_and_collection_finishes(tmp_path: Path, shell: str):
+    root = _host_tree(tmp_path)
+    (root / 'var/log/wtmp').unlink()
+    os.mkfifo(root / 'var/log/wtmp')
+
+    result = _collect(tmp_path, shell, root, f'since={SINCE}')
+
+    assert result.code == 0, result.stderr
+    assert 'unknown kind=login path=/var/log/wtmp reason=not-a-file' in result.lines
+    assert 'unknown kind=wtmp path=/var/log/wtmp reason=not-a-file' in result.lines
+    assert result.lines[-1].startswith('end status=')
+
+
+def test_last_reads_wtmp_from_the_checked_descriptor(tmp_path: Path, shell: str):
+    root = _host_tree(tmp_path)
+
+    result = _collect(
+        tmp_path,
+        shell,
+        root,
+        f'since={SINCE}',
+        LAST_OUT='stdin begins 2026-07-01T00:00:00+00:00',
+    )
+
+    assert (tmp_path / 'last.log').read_text().startswith('-f /dev/stdin ')
+    assert result.records('login') == []
+    assert result.records('wtmp')[0]['begins'] == '2026-07-01T00:00:00Z'
+
+
+def test_an_unreadable_hash_input_is_unknown(tmp_path: Path, shell: str):
+    root = _host_tree(tmp_path)
+    _write(root, 'etc/cron.d/job', '* * * * * root /bin/true\n')
+
+    result = _collect(
+        tmp_path,
+        shell,
+        root,
+        f'since={SINCE}',
+        extra_fakes={'sha256sum': 'exit 1'},
+    )
+
+    assert result.records('cron')[0]['sha256'] == '?'
+    assert 'unknown kind=cron path=/etc/cron.d/job reason=unreadable' in result.lines
+
+
+def test_an_sshd_include_that_climbs_out_of_the_default_directory_is_unknown(
+    tmp_path: Path, shell: str
+):
+    root = _host_tree(tmp_path)
+    _write(
+        root, 'etc/ssh/sshd_config', 'Include /etc/ssh/sshd_config.d/../outside.conf\n'
+    )
+
+    result = _collect(tmp_path, shell, root, f'since={SINCE}')
+
+    assert (
+        'unknown kind=authkey path=/etc/ssh/sshd_config reason=include-outside-default'
+    ) in result.lines
+
+
+def test_a_file_moved_out_of_a_secret_directory_during_the_run_is_never_read(
+    tmp_path: Path, shell: str
+):
+    root = _host_tree(tmp_path)
+    key = _write(root, 'app/conf/key', 'TOKEN=fixture\n')
+    original = key.stat().st_ino
+    page = _write(root, 'var/www/html/shell.php', '<?php echo 1; ?>\n')
+    reads = tmp_path / 'reads.log'
+
+    result = _collect(
+        tmp_path,
+        shell,
+        root,
+        f'since={SINCE}',
+        'webroot=/var/www/html',
+        'protect=/app/conf',
+        'pattern=TOKEN',
+        extra_fakes={
+            'stat': _swap_once('[ "$1" = -L ] && [ "$3" = %d:%i ]', link=False),
+            **_logging_readers(),
+        },
+        SWAP_FROM=str(page),
+        SWAP_TO=str(key),
+        SWAP_DONE=str(tmp_path / 'swapped'),
+        SWAP_REFILL='',
+        READ_LOG=str(reads),
+    )
+
+    assert result.code == 0, result.stderr
+    read_inodes = reads.read_text().split() if reads.exists() else []
+    assert str(original) not in read_inodes
+    assert 'hits=1' not in '\n'.join(result.lines)
+
+
+def test_a_link_to_an_unreadable_target_is_unreadable(tmp_path: Path, shell: str):
+    root = _host_tree(tmp_path)
+    target = _write(root, 'opt/job', '* * * * * root /bin/true\n')
+    (root / 'etc/cron.d/job').symlink_to(target)
+    target.chmod(0)
+
+    try:
+        result = _collect(
+            tmp_path, shell, root, f'since={SINCE}', 'pattern=root', UID_OUT='1000'
+        )
+    finally:
+        target.chmod(0o644)
+
+    assert 'unknown kind=cron path=/etc/cron.d/job reason=unreadable' in result.lines
+    assert result.records('cron')[0]['path'] == '/etc/cron.d/job'
+
+
+def test_a_wtmpdb_last_reads_its_own_database(tmp_path: Path, shell: str):
+    root = _host_tree(tmp_path)
+    (root / 'var/log/wtmp').unlink()
+    _write(root, 'var/log/wtmp.db', 'sqlite\n')
+    fake_dir = tmp_path / f'fake-{shell}'
+    fake_dir.mkdir()
+    (fake_dir / 'last').symlink_to('wtmpdb')
+
+    result = _collect(
+        tmp_path,
+        shell,
+        root,
+        f'since={SINCE}',
+        tools=('ss', 'dpkg', 'ssh-keygen'),
+        extra_fakes={'wtmpdb': FAKES['last']},
+        LAST_OUT='alice pts/0 203.0.113.9 2026-09-14T03:11:02+00:00 - 2026-09-14T03:42:18+00:00',
+    )
+
+    assert not (tmp_path / 'last.log').read_text().startswith('-f ')
+    assert result.records('login')[0]['user'] == 'alice'
+
+
+def test_a_missing_wtmp_is_absent(tmp_path: Path, shell: str):
+    root = _host_tree(tmp_path)
+    (root / 'var/log/wtmp').unlink()
+
+    result = _collect(tmp_path, shell, root, f'since={SINCE}')
+
+    assert 'unknown kind=login path=/var/log/wtmp reason=absent' in result.lines
+
+
+def test_last_output_without_a_begins_line_is_not_trusted(tmp_path: Path, shell: str):
+    root = _host_tree(tmp_path)
+
+    result = _collect(
+        tmp_path,
+        shell,
+        root,
+        f'since={SINCE}',
+        LAST_OUT='/dev/stdin has no entries',
+    )
+
+    assert result.records('login') == []
+    assert (
+        'unknown kind=login path=/var/log/wtmp reason=missing-tool:last-iso'
+    ) in result.lines
+
+
+def test_an_sshd_include_that_returns_to_the_default_directory_is_read(
+    tmp_path: Path, shell: str
+):
+    root = _host_tree(tmp_path)
+    _write(
+        root,
+        'etc/ssh/sshd_config',
+        'Include "/etc/ssh/sshd_config.d/../sshd_config.d/*.conf"\n',
+    )
+
+    result = _collect(tmp_path, shell, root, f'since={SINCE}')
+
+    assert not any(
+        row['reason'] == 'include-outside-default' for row in result.records('unknown')
+    )
+
+
+def test_package_verification_runs_beside_a_unit_masked_with_a_dev_null_link(
+    tmp_path: Path, shell: str
+):
+    root = _host_tree(tmp_path)
+    (root / 'lib/systemd/system').mkdir(parents=True)
+    (root / 'lib/systemd/system/masked.service').symlink_to('/dev/null')
+    log = tmp_path / 'dpkg.log'
+
+    result = _collect(
+        tmp_path,
+        shell,
+        root,
+        f'since={SINCE}',
+        DPKG_SELECTIONS='base hold',
+        DPKG_LISTFILES='/lib/systemd/system/masked.service',
+        DPKG_LOG=str(log),
+    )
+
+    assert all(row['kind'] != 'pkg_modified' for row in result.records('unknown'))
+    assert '--verify' in log.read_text()
+
+
+def test_the_documented_collector_size_and_hash_match_the_block(shell: str):
+    if shell == 'bash':
+        pytest.skip('the documents do not depend on the shell')
+    body = _script().encode()
+    doc = COLLECT.read_text()
+    skill = (SKILLS / 'compromise-host-check/SKILL.md').read_text()
+
+    lines = body.count(b'\n')
+
+    assert (
+        f'The block is {lines} lines, {len(body):,} bytes, '
+        f'with sha256 `{sha256(body).hexdigest()}`'
+    ) in doc
+    assert f'every one of its {lines} lines' in skill
+
+
+def test_the_collector_has_no_whitespace_that_a_copy_can_drop(shell: str):
+    if shell == 'bash':
+        pytest.skip('the block does not depend on the shell')
+    body = _script()
+
+    assert '\t' not in body
+    assert "'\n'" not in body
+    assert "'?\n?'" not in body
+    assert '"\n"' not in body
+
+
+def test_the_skill_files_are_checked_out_with_lf_line_endings(shell: str):
+    if shell == 'bash':
+        pytest.skip('line endings do not depend on the shell')
+    rules = (SKILLS.parents[2] / '.gitattributes').read_text().splitlines()
+    files = sorted((SKILLS / 'compromise-host-check').rglob('*.md'))
+
+    crlf = [path.name for path in files if b'\r' in path.read_bytes()]
+
+    assert 'plugins/** text eol=lf' in rules
+    assert files
+    assert crlf == []
+
+
+@NEEDS_PROC_FD
+def test_a_sealed_copy_with_a_directory_secret_still_hashes_itself(
+    tmp_path: Path, shell: str
+):
+    root = _host_tree(tmp_path)
+    _write(root, 'app/conf/key', 'secret\n')
+
+    result = _collect(
+        tmp_path, shell, root, f'since={SINCE}', 'protect=/app/conf', sealed=True
+    )
+
+    run = result.records('run')[0]
+    script = re.sub(r'^R=$', f"R='{root}'", _script(), count=1, flags=re.M)
+    assert run['sha256'] == sha256(script.encode()).hexdigest()
+
+
+def test_a_package_owned_secret_directory_keeps_package_verification(
+    tmp_path: Path, shell: str
+):
+    root = _host_tree(tmp_path)
+    _write(root, 'app/conf/key', 'secret\n')
+    log = tmp_path / 'dpkg.log'
+
+    result = _collect(
+        tmp_path,
+        shell,
+        root,
+        f'since={SINCE}',
+        'protect=/app/conf',
+        DPKG_SEARCH_EXIT='0',
+        DPKG_SEARCH_OUT='ssl-cert: /app/conf',
+        DPKG_LOG=str(log),
+    )
+
+    assert '--search' not in log.read_text()
+    assert '--verify' in log.read_text()
+    assert all(row['kind'] != 'pkg_modified' for row in result.records('unknown'))
+
+
+def test_a_secret_record_names_whether_it_is_a_file_or_a_directory(
+    tmp_path: Path, shell: str
+):
+    root = _host_tree(tmp_path)
+    _write(root, 'app/.env', 'TOKEN=fixture\n')
+    _write(root, 'app/conf/key', 'secret\n')
+
+    result = _collect(
+        tmp_path,
+        shell,
+        root,
+        f'since={SINCE}',
+        'protect=/app/.env',
+        'protect=/app/conf',
+        'protect=/app/missing',
+    )
+
+    types = {row['path']: row['type'] for row in result.records('secret')}
+    assert types == {'/app/.env': 'file', '/app/conf': 'directory', '/app/missing': '?'}
+
+
+def test_a_secret_argument_is_refused_so_the_key_is_never_sent(
+    tmp_path: Path, shell: str
+):
+    root = _host_tree(tmp_path)
+
+    result = _collect(tmp_path, shell, root, f'since={SINCE}', 'secret=/app/.env')
+
+    assert result.lines[-1].startswith('end status=refused ')
+
+
+def test_inspect_mode_looks_only_at_the_named_items(tmp_path: Path, shell: str):
+    result = _inspect_host(tmp_path, shell)
+
+    kinds = {line.split(' ', 1)[0] for line in result.lines}
+
+    assert result.code == 0, result.stderr
+    assert 'account' not in kinds
+    assert 'check kind=inspect status=complete' in result.lines
+    assert result.lines[-1].startswith('end status=complete')
+
+
+def test_inspect_names_the_programs_but_never_their_arguments(
+    tmp_path: Path, shell: str
+):
+    result = _inspect_host(tmp_path, shell)
+
+    programs = {
+        (row['source'], row['key'], row['program']) for row in result.records('exec')
+    }
+
+    assert programs == {
+        ('/etc/systemd/system/beacon.service', 'ExecStartPre', '/usr/local/bin/beacon'),
+        ('/etc/systemd/system/beacon.service', 'ExecStart', '/usr/local/bin/beacon'),
+        ('/etc/cron.d/beacon', 'cron', '/usr/local/bin/beacon'),
+    }
+    assert len(result.records('exec')) == 4
+    assert all(
+        row['sha256'] == sha256(b'binary\n').hexdigest()
+        for row in result.records('exec')
+    )
+    assert 'hunter2' not in '\n'.join(result.lines)
+
+
+def test_inspect_finds_the_program_behind_a_shell_cron_line(tmp_path: Path, shell: str):
+    root = _host_tree(tmp_path)
+    tool = _write(root, 'usr/local/sbin/scrub', '#!/bin/sh\n')
+    tool.chmod(0o755)
+    _write(root, 'etc/scrub.conf', 'key=hunter2\n')
+    _write(
+        root,
+        'etc/cron.d/scrub',
+        '30 3 * * 0 root test -e /run/systemd/system || '
+        '/usr/local/sbin/scrub /etc/scrub.conf --password=hunter2\n',
+    )
+
+    result = _collect(
+        tmp_path, shell, root, f'since={SINCE}', 'inspect=/etc/cron.d/scrub'
+    )
+
+    programs = [row['program'] for row in result.records('exec')]
+    assert programs == ['test', '/usr/local/sbin/scrub']
+    assert 'hunter2' not in '\n'.join(result.lines)
+
+
+def test_inspect_reports_the_file_and_its_package_state(tmp_path: Path, shell: str):
+    result = _inspect_host(tmp_path, shell, 'inspect=/etc/cron.d/beacon')
+
+    record = result.records('file')[0]
+
+    assert record['path'] == '/etc/cron.d/beacon'
+    assert record['package'] == '-'
+    assert record['verify'] == 'none'
+    assert record['links'] == '1'
+    assert record['atime'].endswith('Z')
+
+
+def test_inspect_summarizes_the_journal_without_messages(tmp_path: Path, shell: str):
+    result = _inspect_host(tmp_path, shell, 'inspect=/etc/cron.d/beacon')
+
+    rows = result.records('journal')
+
+    assert [(row['comm'], row['unit'], row['count']) for row in rows] == [
+        ('bash', 'session-3.scope', '2')
+    ]
+    assert 'hunter2' not in '\n'.join(result.lines)
+
+
+def test_inspect_finds_logins_with_a_named_key(tmp_path: Path, shell: str):
+    result = _inspect_host(tmp_path, shell, 'inspect=/home/alice/.ssh/authorized_keys')
+
+    logins = result.records('key_login')
+
+    assert [(row['fp'], row['user'], row['from']) for row in logins] == [
+        ('SHA256:AAAAC3Nz', 'alice', '203.0.113.9')
+    ]
+    assert 'note' not in '\n'.join(result.lines)
+
+
+def test_inspect_follows_a_process_to_its_parents(tmp_path: Path, shell: str):
+    result = _inspect_host(tmp_path, shell, 'inspect=/proc/4121')
+
+    process = result.records('process')[0]
+
+    assert process['comm'] == 'beacon'
+    assert process['deleted'] == 'no'
+    assert process['sha256'] == sha256(b'binary\n').hexdigest()
+    assert process['chain'] == '900:bash,1:systemd'
+
+
+def test_inspect_never_opens_a_protected_file(tmp_path: Path, shell: str):
+    result = _inspect_host(
+        tmp_path, shell, 'protect=/etc/cron.d/beacon', 'inspect=/etc/cron.d/beacon'
+    )
+
+    assert result.records('file') == []
+    assert (
+        'unknown kind=inspect path=/etc/cron.d/beacon reason=secret-overlap'
+    ) in result.lines
+
+
+def test_inspect_reports_missing_targets_and_bad_pids(tmp_path: Path, shell: str):
+    result = _inspect_host(
+        tmp_path,
+        shell,
+        'inspect=/etc/missing',
+        'inspect=/proc/self',
+        'inspect=/proc/77',
+    )
+
+    reasons = {(row['path'], row['reason']) for row in result.records('unknown')}
+
+    assert reasons == {
+        ('/etc/missing', 'absent'),
+        ('/proc/self', 'malformed'),
+        ('/proc/77', 'exited'),
+    }
+
+
+def test_inspect_without_journalctl_is_unknown_for_the_journal(
+    tmp_path: Path, shell: str
+):
+    root = _host_tree(tmp_path)
+    _write(root, 'etc/cron.d/job', '* * * * * root /bin/true\n')
+
+    result = _collect(
+        tmp_path, shell, root, f'since={SINCE}', 'inspect=/etc/cron.d/job'
+    )
+
+    assert result.records('file')[0]['path'] == '/etc/cron.d/job'
+    assert (
+        'unknown kind=inspect path=/etc/cron.d/job reason=missing-tool:journalctl'
     ) in result.lines
 
 
@@ -2462,7 +3407,7 @@ def test_a_read_only_mount_reports_that_atime_is_not_recorded(
     )
     _write(root, 'secrets/token', 'fixture\n')
 
-    result = _collect(tmp_path, shell, root, f'since={SINCE}', 'secret=/secrets/token')
+    result = _collect(tmp_path, shell, root, f'since={SINCE}', 'protect=/secrets/token')
 
     assert result.records('secret')[0]['atime_mode'] == 'readonly'
 
@@ -2479,7 +3424,7 @@ def test_the_last_mount_on_a_mount_point_decides_its_atime_mode(
     _write(root, 'proc/self/mountinfo', mounts)
     _write(root, 'app/.env', 'fixture\n')
 
-    result = _collect(tmp_path, shell, root, f'since={SINCE}', 'secret=/app/.env')
+    result = _collect(tmp_path, shell, root, f'since={SINCE}', 'protect=/app/.env')
 
     assert result.records('secret')[0]['atime_mode'] == 'noatime'
 
@@ -2627,7 +3572,7 @@ def test_a_glob_secret_through_an_unsearchable_directory_is_unknown(
     (root / 'home/bob').chmod(0)
     try:
         result = _collect(
-            tmp_path, shell, root, f'since={SINCE}', 'secret=/home/*/.aws/credentials'
+            tmp_path, shell, root, f'since={SINCE}', 'protect=/home/*/.aws/credentials'
         )
     finally:
         (root / 'home/bob').chmod(0o755)
@@ -2761,7 +3706,9 @@ def test_sudoers_defaults_lines_are_never_rules(tmp_path: Path, shell: str):
     assert 'db-backup' not in '\n'.join(result.lines)
 
 
-def test_files_under_a_secret_directory_are_never_opened(tmp_path: Path, shell: str):
+def test_a_secret_directory_inside_a_web_root_is_never_listed(
+    tmp_path: Path, shell: str
+):
     root = _host_tree(tmp_path)
     _write(root, 'var/www/html/config/db.php', '<?php $pw = "fixture"; ?>\n')
 
@@ -2771,11 +3718,11 @@ def test_files_under_a_secret_directory_are_never_opened(tmp_path: Path, shell: 
         root,
         f'since={SINCE}',
         'webroot=/var/www/html',
-        'secret=/var/www/html/config',
+        'protect=/var/www/html/config',
     )
 
     assert result.records('webroot_file') == []
     assert (
-        'unknown kind=webroot_file path=/var/www/html/config/db.php '
-        'reason=secret-overlap'
+        'unknown kind=webroot_file path=/var/www/html/config reason=secret-overlap'
     ) in result.lines
+    assert 'db.php' not in '\n'.join(result.lines)
