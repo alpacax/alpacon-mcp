@@ -1077,6 +1077,28 @@ def test_vendor_units_are_listed_only_when_changed_since(tmp_path: Path, shell: 
     assert not any(path.endswith('/old.service') for path in paths)
 
 
+def test_an_old_vendor_unit_is_listed_when_a_requested_pattern_matches_it(
+    tmp_path: Path, shell: str
+):
+    root = _host_tree(tmp_path)
+    _write(
+        root,
+        'usr/lib/systemd/system/old.service',
+        '[Service]\nExecStart=/dev/tcp/\n',
+        BEFORE,
+    )
+    _write(root, 'usr/lib/systemd/system/plain.service', '[Service]\n', BEFORE)
+
+    result = _collect(tmp_path, shell, root, 'since=2099-01-01', 'pattern=/dev/tcp/')
+
+    rows = {
+        row['path'].rsplit('/', 1)[-1]: row['hits']
+        for row in result.records('systemd_unit')
+    }
+    assert rows.get('old.service') == '1@2'
+    assert 'plain.service' not in rows
+
+
 def test_a_timer_unit_is_listed_like_a_service(tmp_path: Path, shell: str):
     root = _host_tree(tmp_path)
     _write(root, 'etc/systemd/system/beacon.timer', '[Timer]\nOnBootSec=5m\n')
